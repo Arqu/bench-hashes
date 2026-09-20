@@ -13,7 +13,7 @@ const CALIBRATION_PROBE_NS: u128 = 1_000_000;
 const TARGET_SAMPLE_NS: u128 = 4_000_000;
 
 const INPUT_COUNT: usize = 4;
-const ALGORITHM_COUNT: usize = 3;
+const ALGORITHM_COUNT: usize = 4;
 
 /*
  * Index of the contender every ratio is taken against. BLAKE3 stays the
@@ -35,6 +35,7 @@ const BLAKE3_SOURCE_INFO: &str = env!("BLAKE3_SOURCE_INFO");
 const SHA2_SOURCE_INFO: &str = env!("SHA2_SOURCE_INFO");
 const SHA2_ASM_SOURCE_INFO: &str = env!("SHA2_ASM_SOURCE_INFO");
 const SHA1_CHECKED_SOURCE_INFO: &str = env!("SHA1_CHECKED_SOURCE_INFO");
+const BLAKE3_SME2_SOURCE_INFO: &str = env!("BLAKE3_SME2_SOURCE_INFO");
 
 const INPUT_SIZES: [InputSize; INPUT_COUNT] = [
     InputSize {
@@ -59,19 +60,18 @@ const ALGORITHMS: [Algorithm; ALGORITHM_COUNT] = [
     Algorithm::Blake3,
     Algorithm::Sha256,
     Algorithm::Sha1Dc,
+    Algorithm::Blake3Sme2,
 ];
 
 /*
  * Every permutation of the contenders. SAMPLE_ROUNDS is divisible by the
  * permutation count, so each contender runs in each position equally often.
  */
-const ALGORITHM_ORDERS: [[usize; ALGORITHM_COUNT]; 6] = [
-    [0, 1, 2],
-    [0, 2, 1],
-    [1, 0, 2],
-    [1, 2, 0],
-    [2, 0, 1],
-    [2, 1, 0],
+const ALGORITHM_ORDERS: [[usize; ALGORITHM_COUNT]; 24] = [
+    [0, 1, 2, 3], [0, 1, 3, 2], [0, 2, 1, 3], [0, 2, 3, 1], [0, 3, 1, 2], [0, 3, 2, 1],
+    [1, 0, 2, 3], [1, 0, 3, 2], [1, 2, 0, 3], [1, 2, 3, 0], [1, 3, 0, 2], [1, 3, 2, 0],
+    [2, 0, 1, 3], [2, 0, 3, 1], [2, 1, 0, 3], [2, 1, 3, 0], [2, 3, 0, 1], [2, 3, 1, 0],
+    [3, 0, 1, 2], [3, 0, 2, 1], [3, 1, 0, 2], [3, 1, 2, 0], [3, 2, 0, 1], [3, 2, 1, 0],
 ];
 
 type Results = [[Statistics; ALGORITHM_COUNT]; INPUT_COUNT];
@@ -92,6 +92,7 @@ enum Algorithm {
     Blake3,
     Sha256,
     Sha1Dc,
+    Blake3Sme2,
 }
 
 impl Algorithm {
@@ -100,6 +101,7 @@ impl Algorithm {
             Self::Blake3 => "BLAKE3",
             Self::Sha256 => "SHA-256",
             Self::Sha1Dc => "SHA-1DC",
+            Self::Blake3Sme2 => "BLAKE3 SME2",
         }
     }
 
@@ -108,6 +110,7 @@ impl Algorithm {
             Self::Blake3 => "#3b82f6",
             Self::Sha256 => "#e07a45",
             Self::Sha1Dc => "#6b9e3a",
+            Self::Blake3Sme2 => "#7c3aed",
         }
     }
 
@@ -117,6 +120,7 @@ impl Algorithm {
             Self::Blake3 => BLAKE3_SOURCE_INFO,
             Self::Sha256 => SHA2_SOURCE_INFO,
             Self::Sha1Dc => SHA1_CHECKED_SOURCE_INFO,
+            Self::Blake3Sme2 => BLAKE3_SME2_SOURCE_INFO,
         }
     }
 
@@ -126,6 +130,7 @@ impl Algorithm {
             Self::Blake3 => "single-threaded; Rayon not enabled",
             Self::Sha256 => "sha2 crate, assembly backends where available (ARMv8 SHA-256 instructions on AArch64)",
             Self::Sha1Dc => "sha1-checked crate: SHA-1 with collision detection, pure Rust (the construction git uses)",
+            Self::Blake3Sme2 => "single-threaded; SME2 kernels (512-bit streaming vectors) selected at runtime when the CPU reports SME2, NEON otherwise",
         }
     }
 }
@@ -206,6 +211,19 @@ fn main() {
 fn measure_all() -> Results {
     let inputs: [Vec<u8>; INPUT_COUNT] =
         std::array::from_fn(|index| make_input(INPUT_SIZES[index].bytes));
+
+    /*
+     * The two BLAKE3 contenders must produce the same digest on every input;
+     * a mismatch means one of them is wrong, and timing it would be noise.
+     */
+    for input in &inputs {
+        assert_eq!(
+            blake3::hash(input).as_bytes(),
+            blake3_sme2::hash(input).as_bytes(),
+            "BLAKE3 SME2 must agree with crates.io blake3 on a {}-byte input",
+            input.len(),
+        );
+    }
 
     /*
      * Each algorithm/input combination gets its own calibrated iteration
@@ -353,6 +371,12 @@ fn run_batch(
             for _ in 0..iterations {
                 let result = sha1_checked::Sha1::try_digest(black_box(input));
                 let _ = black_box(result.hash());
+            }
+        }
+        Algorithm::Blake3Sme2 => {
+            for _ in 0..iterations {
+                let digest = blake3_sme2::hash(black_box(input));
+                let _ = black_box(digest);
             }
         }
     }
@@ -640,7 +664,7 @@ fn generate_text(
 
             writeln!(
                 output,
-                "    {:<8}: {:>5.2} ({:>5.2}–{:>5.2})",
+                "    {:<12}: {:>5.2} ({:>5.2}–{:>5.2})",
                 ALGORITHMS[algorithm_index].name(),
                 statistics.median,
                 statistics.minimum,
@@ -1472,6 +1496,7 @@ fn generate_svg(
         ("SHA-256 source", SHA2_SOURCE_INFO),
         ("SHA-256 assembly source", SHA2_ASM_SOURCE_INFO),
         ("SHA-1DC source", SHA1_CHECKED_SOURCE_INFO),
+        ("BLAKE3 SME2 source", BLAKE3_SME2_SOURCE_INFO),
     ] {
         writeln!(
             svg,
@@ -1528,6 +1553,7 @@ fn generate_svg(
             package_name_and_version(SHA2_ASM_SOURCE_INFO),
             package_name_and_version(SHA1_CHECKED_SOURCE_INFO),
         ),
+        format!("BLAKE3 SME2: {}", short_git_source(BLAKE3_SME2_SOURCE_INFO)),
         format!(
             "BLAKE3: single-threaded, Rayon not enabled · platform {} · full crate checksums embedded in this file's metadata element",
             implementation.platform,
@@ -1546,6 +1572,17 @@ fn generate_svg(
 
     svg.push_str("</svg>\n");
     svg
+}
+
+/// "source URL; branch B; commit C" for a path-dependency provenance line.
+fn short_git_source(description: &str) -> String {
+    let mut fields = description.split("; ");
+    let _name = fields.next();
+    let rest: Vec<&str> = fields.collect();
+    rest.iter()
+        .map(|f| if let Some(c) = f.strip_prefix("commit ") { format!("commit {}", &c[..12.min(c.len())]) } else { f.to_string() })
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
 
 fn package_name_and_version(source_info: &str) -> &str {

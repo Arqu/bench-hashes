@@ -2,8 +2,9 @@
 
 Written by GPT-5.6 Sol and Claude Fable 5 to my (Zooko's) specifications.
 
-A small single-threaded benchmark comparing BLAKE3, SHA-256, and SHA-1DC
-(SHA-1 with collision detection, the construction git uses).
+A small single-threaded benchmark comparing BLAKE3, SHA-256, SHA-1DC
+(SHA-1 with collision detection, the construction git uses), and BLAKE3
+with SME2 kernels (Apple M4 and later).
 
 The benchmark tests inputs of size:
 
@@ -50,6 +51,14 @@ SHA-256 is provided by RustCrypto's sha2 crate with its optimized
 assembly features enabled, including the ARMv8 SHA-256 instructions on
 AArch64 and dedicated implementations on x86-64. Unsupported targets use
 the portable fallback.
+
+BLAKE3 SME2 is the same crate from the `sme2-bench` branch of
+github.com/johnservil/BLAKE3, built as a path dependency under the crate
+name `blake3_sme2` so it links beside the crates.io crate. It selects
+SME2 kernels at runtime when the CPU reports SME2 with a 512-bit
+streaming vector length, and uses NEON otherwise, so on a machine
+without SME2 it measures the fork's NEON path. Its provenance line gives
+the branch and commit instead of a registry checksum.
 
 SHA-1DC is provided by RustCrypto's sha1-checked crate: SHA-1 with the
 collision-detection pass that git applies to every object hash. The

@@ -55,6 +55,11 @@ fn main() {
         &lock,
         "sha1-checked",
     );
+    emit_path_package_git(
+        "BLAKE3_SME2_SOURCE_INFO",
+        &manifest_dir.join("../upstream/BLAKE3"),
+        "blake3_sme2",
+    );
 
     emit_git_metadata(&manifest_dir);
 
@@ -330,6 +335,38 @@ fn git_output(repository: &Path, arguments: &[&str]) -> Output {
     );
 
     output
+}
+
+/*
+ * A path dependency has no registry checksum; identify it by its git commit
+ * and working-tree state instead, the same way this repository identifies
+ * itself.
+ */
+fn emit_path_package_git(
+    environment_variable: &str,
+    repository: &Path,
+    package_name: &str,
+) {
+    let commit = git_text(repository, &["rev-parse", "HEAD"]);
+    let branch = git_text_allow_failure(repository, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .unwrap_or_else(|| "(detached)".to_owned());
+    let source = git_text_allow_failure(repository, &["remote", "get-url", "origin"])
+        .map(|url| normalize_git_source(&url))
+        .unwrap_or_else(|| "(no origin remote)".to_owned());
+    let status = git_bytes(repository, &["status", "--porcelain=v1", "-z", "--untracked-files=no"]);
+    let tree = if status.is_empty() { "clean".to_owned() } else { "dirty".to_owned() };
+
+    for entry in ["HEAD", "index"] {
+        println!(
+            "cargo:rerun-if-changed={}",
+            repository.join(".git").join(entry).display()
+        );
+    }
+
+    emit_env(
+        environment_variable,
+        &format!("{package_name} (path dependency); source {source}; branch {branch}; commit {commit}; working tree {tree}"),
+    );
 }
 
 fn emit_required_package(

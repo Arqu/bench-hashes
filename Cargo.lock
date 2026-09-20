@@ -13,6 +13,7 @@ name = "bench-hashes"
 version = "0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f"
 dependencies = [
  "blake3",
+ "blake3_sme2",
  "sha1-checked",
  "sha2",
  "sysinfo",
@@ -29,6 +30,18 @@ dependencies = [
  "cfg-if",
  "constant_time_eq",
  "cpufeatures 0.3.0",
+]
+
+[[package]]
+name = "blake3_sme2"
+version = "1.8.7"
+dependencies = [
+ "arrayvec",
+ "cc",
+ "cfg-if",
+ "constant_time_eq",
+ "cpufeatures 0.3.0",
+ "libc",
 ]
 
 [[package]]
