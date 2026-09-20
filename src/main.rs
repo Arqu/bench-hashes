@@ -13,7 +13,13 @@ const CALIBRATION_PROBE_NS: u128 = 1_000_000;
 const TARGET_SAMPLE_NS: u128 = 4_000_000;
 
 const INPUT_COUNT: usize = 4;
-const ALGORITHM_COUNT: usize = 2;
+const ALGORITHM_COUNT: usize = 3;
+
+/*
+ * Index of the contender every ratio is taken against. BLAKE3 stays the
+ * baseline so ratios read "how much faster (or slower) is X than BLAKE3".
+ */
+const BASELINE: usize = 0;
 
 const BENCH_VERSION: &str = env!("CARGO_PKG_VERSION");
 const GIT_SOURCE: &str = env!("BENCH_GIT_SOURCE");
@@ -28,6 +34,7 @@ const TARGET_FEATURES: &str = env!("BENCH_TARGET_FEATURES");
 const BLAKE3_SOURCE_INFO: &str = env!("BLAKE3_SOURCE_INFO");
 const SHA2_SOURCE_INFO: &str = env!("SHA2_SOURCE_INFO");
 const SHA2_ASM_SOURCE_INFO: &str = env!("SHA2_ASM_SOURCE_INFO");
+const SHA1_CHECKED_SOURCE_INFO: &str = env!("SHA1_CHECKED_SOURCE_INFO");
 
 const INPUT_SIZES: [InputSize; INPUT_COUNT] = [
     InputSize {
@@ -51,15 +58,20 @@ const INPUT_SIZES: [InputSize; INPUT_COUNT] = [
 const ALGORITHMS: [Algorithm; ALGORITHM_COUNT] = [
     Algorithm::Blake3,
     Algorithm::Sha256,
+    Algorithm::Sha1Dc,
 ];
 
 /*
- * SAMPLE_ROUNDS is divisible by two, so both orderings appear equally often
- * and each algorithm runs first exactly half the time.
+ * Every permutation of the contenders. SAMPLE_ROUNDS is divisible by the
+ * permutation count, so each contender runs in each position equally often.
  */
-const ALGORITHM_ORDERS: [[usize; ALGORITHM_COUNT]; 2] = [
-    [0, 1],
-    [1, 0],
+const ALGORITHM_ORDERS: [[usize; ALGORITHM_COUNT]; 6] = [
+    [0, 1, 2],
+    [0, 2, 1],
+    [1, 0, 2],
+    [1, 2, 0],
+    [2, 0, 1],
+    [2, 1, 0],
 ];
 
 type Results = [[Statistics; ALGORITHM_COUNT]; INPUT_COUNT];
@@ -70,10 +82,16 @@ struct InputSize {
     bytes: usize,
 }
 
-#[derive(Clone, Copy)]
+/*
+ * A contender is one hash implementation under test. Adding one means a
+ * variant here, a name, a color, a provenance string, and an arm in
+ * run_batch; the harness handles interleaving and reporting for any count.
+ */
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Algorithm {
     Blake3,
     Sha256,
+    Sha1Dc,
 }
 
 impl Algorithm {
@@ -81,6 +99,7 @@ impl Algorithm {
         match self {
             Self::Blake3 => "BLAKE3",
             Self::Sha256 => "SHA-256",
+            Self::Sha1Dc => "SHA-1DC",
         }
     }
 
@@ -88,6 +107,25 @@ impl Algorithm {
         match self {
             Self::Blake3 => "#3b82f6",
             Self::Sha256 => "#e07a45",
+            Self::Sha1Dc => "#6b9e3a",
+        }
+    }
+
+    /// The Cargo.lock description of the crate that implements this contender.
+    fn source(self) -> &'static str {
+        match self {
+            Self::Blake3 => BLAKE3_SOURCE_INFO,
+            Self::Sha256 => SHA2_SOURCE_INFO,
+            Self::Sha1Dc => SHA1_CHECKED_SOURCE_INFO,
+        }
+    }
+
+    /// One line on how this contender runs, for the report header.
+    fn mode(self) -> &'static str {
+        match self {
+            Self::Blake3 => "single-threaded; Rayon not enabled",
+            Self::Sha256 => "sha2 crate, assembly backends where available (ARMv8 SHA-256 instructions on AArch64)",
+            Self::Sha1Dc => "sha1-checked crate: SHA-1 with collision detection, pure Rust (the construction git uses)",
         }
     }
 }
@@ -309,6 +347,12 @@ fn run_batch(
             for _ in 0..iterations {
                 let digest = Sha256::digest(black_box(input));
                 let _ = black_box(digest);
+            }
+        }
+        Algorithm::Sha1Dc => {
+            for _ in 0..iterations {
+                let result = sha1_checked::Sha1::try_digest(black_box(input));
+                let _ = black_box(result.hash());
             }
         }
     }
@@ -549,18 +593,17 @@ fn generate_text(
     writeln!(output, "Rust compiler: {RUSTC_VERSION}").unwrap();
     writeln!(output, "Build target: {BUILD_TARGET}").unwrap();
     writeln!(output, "Target features: {TARGET_FEATURES}").unwrap();
-    writeln!(output, "BLAKE3 source: {BLAKE3_SOURCE_INFO}").unwrap();
-    writeln!(output, "SHA-256 source: {SHA2_SOURCE_INFO}").unwrap();
+    for algorithm in ALGORITHMS {
+        writeln!(output, "{} source: {}", algorithm.name(), algorithm.source()).unwrap();
+    }
     writeln!(
         output,
         "SHA-256 assembly source: {SHA2_ASM_SOURCE_INFO}"
     )
         .unwrap();
-    writeln!(
-        output,
-        "BLAKE3 mode: single-threaded; Rayon not enabled"
-    )
-        .unwrap();
+    for algorithm in ALGORITHMS {
+        writeln!(output, "{} mode: {}", algorithm.name(), algorithm.mode()).unwrap();
+    }
     writeln!(output).unwrap();
 
     append_blake3_backend_report(&mut output);
@@ -741,50 +784,65 @@ fn gigabytes_per_second(ns_per_byte: f64) -> String {
 }
 
 /*
- * Ratio convention throughout: ALGORITHMS[0] median ÷ ALGORITHMS[1] median.
- * A ratio above 1.0 means ALGORITHMS[1] is faster.
+ * Speed of each contender relative to the baseline at each size: baseline
+ * time divided by contender time. Above 1.0 means the contender is faster
+ * than the baseline; the baseline's own ratio is exactly 1.0.
  */
-fn median_ratios(results: &Results) -> [f64; INPUT_COUNT] {
+fn median_ratios(results: &Results) -> [[f64; ALGORITHM_COUNT]; INPUT_COUNT] {
     std::array::from_fn(|size_index| {
-        results[size_index][0].median / results[size_index][1].median
+        std::array::from_fn(|algorithm_index| {
+            results[size_index][BASELINE].median
+                / results[size_index][algorithm_index].median
+        })
     })
 }
 
 fn generate_takeaway(results: &Results) -> String {
     let ratios = median_ratios(results);
+    let baseline = ALGORITHMS[BASELINE].name();
+    let mut clauses = Vec::new();
 
-    let lowest = ratios.iter().copied().fold(f64::INFINITY, f64::min);
-    let highest = ratios.iter().copied().fold(0.0_f64, f64::max);
+    for algorithm_index in 0..ALGORITHM_COUNT {
+        if algorithm_index == BASELINE {
+            continue;
+        }
 
-    if lowest > 1.0 {
-        format!(
-            "{} is faster at every tested size on this machine — {:.2}× to {:.2}× faster than {}",
-            ALGORITHMS[1].name(),
-            lowest,
-            highest,
-            ALGORITHMS[0].name(),
-        )
-    } else if highest < 1.0 {
-        format!(
-            "{} is faster at every tested size on this machine — {:.2}× to {:.2}× faster than {}",
-            ALGORITHMS[0].name(),
-            1.0 / highest,
-            1.0 / lowest,
-            ALGORITHMS[1].name(),
-        )
-    } else {
-        let first_winner = if ratios[0] > 1.0 { 1 } else { 0 };
-        let last_winner =
-            if ratios[INPUT_COUNT - 1] > 1.0 { 1 } else { 0 };
+        let name = ALGORITHMS[algorithm_index].name();
+        let column: Vec<f64> =
+            ratios.iter().map(|row| row[algorithm_index]).collect();
+        let lowest = column.iter().copied().fold(f64::INFINITY, f64::min);
+        let highest = column.iter().copied().fold(0.0_f64, f64::max);
 
-        format!(
-            "{} is faster at {}; {} is faster at {} — the crossover is the story",
-            ALGORITHMS[first_winner].name(),
-            INPUT_SIZES[0].label,
-            ALGORITHMS[last_winner].name(),
-            INPUT_SIZES[INPUT_COUNT - 1].label,
-        )
+        /*
+         * ratio = baseline time / contender time. Above 1.0 the contender is
+         * faster than the baseline; below 1.0 the baseline is faster.
+         */
+        let clause = if lowest > 1.0 {
+            format!(
+                "{name} is {:.2}× to {:.2}× faster than {baseline}",
+                lowest, highest,
+            )
+        } else if highest < 1.0 {
+            format!(
+                "{baseline} is {:.2}× to {:.2}× faster than {name}",
+                1.0 / highest,
+                1.0 / lowest,
+            )
+        } else {
+            let first = if column[0] > 1.0 { name } else { baseline };
+            let last = if column[INPUT_COUNT - 1] > 1.0 { name } else { baseline };
+
+            format!(
+                "{first} leads {name}/{baseline} at {}, {last} at {}",
+                INPUT_SIZES[0].label,
+                INPUT_SIZES[INPUT_COUNT - 1].label,
+            )
+        };
+
+        clauses.push(clause);
     }
+
+    format!("On this machine: {}", clauses.join("; "))
 }
 
 fn sanitize_alphanumeric(input: &str) -> String {
@@ -822,9 +880,9 @@ fn generate_svg(
     const RATIO_TOP: f64 = 500.0;
     const RATIO_BOTTOM: f64 = 590.0;
 
-    assert_eq!(
-        ALGORITHM_COUNT, 2,
-        "the ratio panel is defined for exactly two algorithms"
+    assert!(
+        ALGORITHM_COUNT >= 2,
+        "the ratio panel needs a baseline and at least one other contender"
     );
 
     let observed_max = results
@@ -1080,11 +1138,13 @@ fn generate_svg(
 
         /*
          * Stagger labels vertically per algorithm so nearly-coincident
-         * series (BLAKE3 and SHA-256 here) never collide.
+         * series never collide: baseline above its dot, the others below
+         * at increasing offsets.
          */
-        let label_offset = match algorithm_index {
-            1 => 20.0,
-            _ => -12.0,
+        let label_offset = if algorithm_index == BASELINE {
+            -12.0
+        } else {
+            8.0 + 12.0 * algorithm_index as f64
         };
 
         for size_index in 0..INPUT_COUNT {
@@ -1177,31 +1237,34 @@ fn generate_svg(
 
         writeln!(
             svg,
-            r##"  <text x="{label_x:.1}" y="{:.2}" class="series-detail">{} ns/B · {} at 1 MiB</text>"##,
+            r##"  <text x="{label_x:.1}" y="{:.2}" class="series-detail">{} ns/B · {} at {}</text>"##,
             label_y + 18.0,
             format_result_value(statistics.median),
             gigabytes_per_second(statistics.median),
+            xml_escape(INPUT_SIZES[INPUT_COUNT - 1].label),
         )
             .unwrap();
     }
 
     /*
-     * Ratio panel: median of ALGORITHMS[0] divided by median of
-     * ALGORITHMS[1] at each size, on a log scale so equal ratios are
-     * equal distances. Above the dashed line, ALGORITHMS[1] is faster.
+     * Ratio panel: baseline median divided by each other contender's
+     * median at each size, on a log scale so equal ratios are equal
+     * distances. Above the dashed line the contender is faster than the
+     * baseline. One line per contender, in its color.
      */
     {
         let ratios = median_ratios(results);
 
-        let ratio_low = ratios
+        let all_ratios = ratios
             .iter()
-            .copied()
+            .flat_map(|row| row.iter().copied());
+
+        let ratio_low = all_ratios
+            .clone()
             .fold(1.0_f64, f64::min)
             * 0.94;
 
-        let ratio_high = ratios
-            .iter()
-            .copied()
+        let ratio_high = all_ratios
             .fold(1.0_f64, f64::max)
             * 1.06;
 
@@ -1219,11 +1282,11 @@ fn generate_svg(
 
         writeln!(
             svg,
-            r##"  <text x="{PLOT_LEFT:.1}" y="{:.1}" class="axis-title">Speed ratio: {} time ÷ {} time — above the dashed line, {} is faster</text>"##,
+            r##"  <text x="{PLOT_LEFT:.1}" y="{:.1}" class="axis-title">Speed relative to {}: {} time ÷ contender time — above the dashed line, the contender is faster than {}</text>"##,
             RATIO_TOP - 10.0,
-            xml_escape(ALGORITHMS[0].name()),
-            xml_escape(ALGORITHMS[1].name()),
-            xml_escape(ALGORITHMS[1].name()),
+            xml_escape(ALGORITHMS[BASELINE].name()),
+            xml_escape(ALGORITHMS[BASELINE].name()),
+            xml_escape(ALGORITHMS[BASELINE].name()),
         )
             .unwrap();
 
@@ -1248,12 +1311,13 @@ fn generate_svg(
                 .unwrap();
         }
 
-        /* Equal-speed reference line. */
+        /* Equal-speed reference line: the baseline itself. */
         let equal_y = map_ratio_y(1.0);
 
         writeln!(
             svg,
-            r##"  <line x1="{PLOT_LEFT:.1}" y1="{equal_y:.2}" x2="{PLOT_RIGHT:.1}" y2="{equal_y:.2}" stroke="#aaaaaa" stroke-width="1" stroke-dasharray="5,4"/>"##
+            r##"  <line x1="{PLOT_LEFT:.1}" y1="{equal_y:.2}" x2="{PLOT_RIGHT:.1}" y2="{equal_y:.2}" stroke="{}" stroke-width="1.5" stroke-dasharray="5,4"/>"##,
+            ALGORITHMS[BASELINE].color(),
         )
             .unwrap();
 
@@ -1265,83 +1329,76 @@ fn generate_svg(
         )
             .unwrap();
 
-        /* Connect the ratios, then dot and label each one. */
-        let mut path = String::new();
-
-        for size_index in 0..INPUT_COUNT {
-            let x = x_positions[size_index];
-            let y = map_ratio_y(ratios[size_index]);
-
-            if size_index == 0 {
-                write!(path, "M {x:.2} {y:.2}").unwrap();
-            } else {
-                write!(path, " L {x:.2} {y:.2}").unwrap();
+        for algorithm_index in 0..ALGORITHM_COUNT {
+            if algorithm_index == BASELINE {
+                continue;
             }
-        }
 
-        writeln!(
-            svg,
-            r##"  <path d="{path}" fill="none" stroke="#888888" stroke-width="1.5" stroke-linejoin="round"/>"##
-        )
-            .unwrap();
+            let algorithm = ALGORITHMS[algorithm_index];
+            let mut path = String::new();
 
-        for size_index in 0..INPUT_COUNT {
-            let x = x_positions[size_index];
-            let ratio = ratios[size_index];
-            let y = map_ratio_y(ratio);
+            for size_index in 0..INPUT_COUNT {
+                let x = x_positions[size_index];
+                let y = map_ratio_y(ratios[size_index][algorithm_index]);
 
-            /* Color each dot by whichever algorithm wins at that size. */
-            let winner = if ratio > 1.0 {
-                ALGORITHMS[1]
-            } else {
-                ALGORITHMS[0]
-            };
+                if size_index == 0 {
+                    write!(path, "M {x:.2} {y:.2}").unwrap();
+                } else {
+                    write!(path, " L {x:.2} {y:.2}").unwrap();
+                }
+            }
 
             writeln!(
                 svg,
-                r##"  <circle cx="{x:.2}" cy="{y:.2}" r="4.5" fill="{}" stroke="#fdfdfc" stroke-width="1.5"/>"##,
-                winner.color(),
+                r##"  <path d="{path}" fill="none" stroke="{}" stroke-width="1.5" stroke-linejoin="round"/>"##,
+                algorithm.color(),
             )
                 .unwrap();
 
-            let (label_x, anchor) = if size_index == 0 {
-                (x + 8.0, "start")
-            } else if size_index == INPUT_COUNT - 1 {
-                (x - 8.0, "end")
-            } else {
-                (x, "middle")
-            };
+            for size_index in 0..INPUT_COUNT {
+                let x = x_positions[size_index];
+                let ratio = ratios[size_index][algorithm_index];
+                let y = map_ratio_y(ratio);
 
-            let above = y - 9.0;
-            let below = y + 18.0;
+                writeln!(
+                    svg,
+                    r##"  <circle cx="{x:.2}" cy="{y:.2}" r="4.5" fill="{}" stroke="#fdfdfc" stroke-width="1.5"><title>{} vs {} at {}: {ratio:.2}×</title></circle>"##,
+                    algorithm.color(),
+                    xml_escape(algorithm.name()),
+                    xml_escape(ALGORITHMS[BASELINE].name()),
+                    xml_escape(INPUT_SIZES[size_index].label),
+                )
+                    .unwrap();
 
-            /*
-             * Place the label on the side of the dot away from the dashed
-             * equal-speed line, clamped inside the panel. The series line
-             * is locally near dot height, so the away side is clear.
-             */
-            let label_y = if ratio >= 1.0 {
-                /* Dot is above the dashed line; label above the dot. */
-                if above < RATIO_TOP + 12.0 {
-                    below
+                let (label_x, anchor) = if size_index == 0 {
+                    (x + 8.0, "start")
+                } else if size_index == INPUT_COUNT - 1 {
+                    (x - 8.0, "end")
                 } else {
-                    above
-                }
-            } else {
-                /* Dot is below the dashed line; label below the dot. */
-                if below > RATIO_BOTTOM - 4.0 {
+                    (x, "middle")
+                };
+
+                /*
+                 * Label on the side of the dot away from the dashed line,
+                 * clamped inside the panel.
+                 */
+                let above = y - 9.0;
+                let below = y + 18.0;
+                let label_y = if ratio >= 1.0 {
+                    if above < RATIO_TOP + 12.0 { below } else { above }
+                } else if below > RATIO_BOTTOM - 4.0 {
                     above
                 } else {
                     below
-                }
-            };
+                };
 
-            writeln!(
-                svg,
-                r##"  <text x="{label_x:.2}" y="{label_y:.2}" class="value-label" fill="{}" text-anchor="{anchor}">{ratio:.2}×</text>"##,
-                winner.color(),
-            )
-                .unwrap();
+                writeln!(
+                    svg,
+                    r##"  <text x="{label_x:.2}" y="{label_y:.2}" class="value-label" fill="{}" text-anchor="{anchor}">{ratio:.2}×</text>"##,
+                    algorithm.color(),
+                )
+                    .unwrap();
+            }
         }
     }
 
@@ -1414,6 +1471,7 @@ fn generate_svg(
         ("BLAKE3 source", BLAKE3_SOURCE_INFO),
         ("SHA-256 source", SHA2_SOURCE_INFO),
         ("SHA-256 assembly source", SHA2_ASM_SOURCE_INFO),
+        ("SHA-1DC source", SHA1_CHECKED_SOURCE_INFO),
     ] {
         writeln!(
             svg,
@@ -1464,10 +1522,11 @@ fn generate_svg(
             "Tag: {GIT_TAG} · Working tree: {GIT_CLEAN_STATUS}"
         ),
         format!(
-            "Crates: {} · {} (+{})",
+            "Crates: {} · {} (+{}) · {}",
             package_name_and_version(BLAKE3_SOURCE_INFO),
             package_name_and_version(SHA2_SOURCE_INFO),
             package_name_and_version(SHA2_ASM_SOURCE_INFO),
+            package_name_and_version(SHA1_CHECKED_SOURCE_INFO),
         ),
         format!(
             "BLAKE3: single-threaded, Rayon not enabled · platform {} · full crate checksums embedded in this file's metadata element",

@@ -50,6 +50,11 @@ fn main() {
         &lock,
         "sha2-asm",
     );
+    emit_required_package(
+        "SHA1_CHECKED_SOURCE_INFO",
+        &lock,
+        "sha1-checked",
+    );
 
     emit_git_metadata(&manifest_dir);
 

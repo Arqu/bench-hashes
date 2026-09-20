@@ -2,7 +2,8 @@
 
 Written by GPT-5.6 Sol and Claude Fable 5 to my (Zooko's) specifications.
 
-A small single-threaded benchmark comparing BLAKE3 and SHA-256.
+A small single-threaded benchmark comparing BLAKE3, SHA-256, and SHA-1DC
+(SHA-1 with collision detection, the construction git uses).
 
 The benchmark tests inputs of size:
 
@@ -50,6 +51,11 @@ assembly features enabled, including the ARMv8 SHA-256 instructions on
 AArch64 and dedicated implementations on x86-64. Unsupported targets use
 the portable fallback.
 
+SHA-1DC is provided by RustCrypto's sha1-checked crate: SHA-1 with the
+collision-detection pass that git applies to every object hash. The
+detection is pure Rust and has no hardware path, so this contender shows
+what git pays today rather than what raw SHA-1 costs.
+
 The resolved crate versions, sources, and registry checksums are included
 in stdout, the text report, and the SVG metadata.
 
@@ -69,7 +75,7 @@ batch.
 
 ## Interleaving
 
-The two algorithms are benchmarked in both orders equally often, and
+The contenders are benchmarked in every permutation equally often, and
 input-size order rotates independently. This distributes ordering effects,
 thermal throttling, and competing system activity evenly. Each
 algorithm/input-size combination is calibrated separately so its timed
@@ -78,8 +84,9 @@ blocks have approximately equal durations.
 ## The graph
 
 The SVG shows median lines with min–max bands on a log-log grid, plus a
-ratio panel giving the exact speed ratio between the two algorithms at
-each input size.
+ratio panel giving each contender's speed relative to BLAKE3 at each
+input size (BLAKE3 time ÷ contender time; above 1.0 the contender is
+faster).
 
 ## Native optimization
 
