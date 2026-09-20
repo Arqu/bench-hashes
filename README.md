@@ -6,12 +6,12 @@ A small single-threaded benchmark comparing BLAKE3, SHA-256, SHA-1DC
 (SHA-1 with collision detection, the construction git uses), and BLAKE3
 with SME2 kernels (Apple M4 and later).
 
-The benchmark tests inputs of size:
-
-- 64 B
-- 4096 B
-- 16 KiB
-- 1 MiB
+The benchmark tests every power-of-two input size from 64 B to 1 MiB:
+64 B, 128 B, 256 B, 512 B, 1 KiB, 2 KiB, 4 KiB, 8 KiB, 16 KiB, 32 KiB,
+64 KiB, 128 KiB, 256 KiB, 512 KiB, and 1 MiB. Below 1 KiB a BLAKE3 input
+is one chunk; from 2 KiB to 16 KiB its SIMD paths fill (4-way NEON at
+4 KiB, a sixteen-lane SME2 group at 16 KiB); above that the bulk rate
+settles.
 
 It reports median, minimum, and maximum time per byte, measured with
 `std::time::Instant`. Lower is better.

@@ -12,7 +12,7 @@ const SAMPLE_ROUNDS: usize = 120;
 const CALIBRATION_PROBE_NS: u128 = 1_000_000;
 const TARGET_SAMPLE_NS: u128 = 4_000_000;
 
-const INPUT_COUNT: usize = 4;
+const INPUT_COUNT: usize = 15;
 const ALGORITHM_COUNT: usize = 4;
 
 /*
@@ -37,23 +37,29 @@ const SHA2_ASM_SOURCE_INFO: &str = env!("SHA2_ASM_SOURCE_INFO");
 const SHA1_CHECKED_SOURCE_INFO: &str = env!("SHA1_CHECKED_SOURCE_INFO");
 const BLAKE3_SME2_SOURCE_INFO: &str = env!("BLAKE3_SME2_SOURCE_INFO");
 
+/*
+ * Every power of two from 64 B to 1 MiB. Between 64 B and 1 KiB BLAKE3 is
+ * inside one chunk; from 2 KiB to 16 KiB its SIMD paths fill up (4-way NEON
+ * at 4 KiB, a sixteen-lane SME2 group at 16 KiB); above that the bulk rate
+ * settles. SHA-1DC and SHA-256 are block-serial and have only the
+ * per-message overhead to show.
+ */
 const INPUT_SIZES: [InputSize; INPUT_COUNT] = [
-    InputSize {
-        label: "64 B",
-        bytes: 64,
-    },
-    InputSize {
-        label: "4096 B",
-        bytes: 4096,
-    },
-    InputSize {
-        label: "16 KiB",
-        bytes: 16 * 1024,
-    },
-    InputSize {
-        label: "1 MiB",
-        bytes: 1024 * 1024,
-    },
+    InputSize { label: "64 B", bytes: 64 },
+    InputSize { label: "128 B", bytes: 128 },
+    InputSize { label: "256 B", bytes: 256 },
+    InputSize { label: "512 B", bytes: 512 },
+    InputSize { label: "1 KiB", bytes: 1024 },
+    InputSize { label: "2 KiB", bytes: 2 * 1024 },
+    InputSize { label: "4 KiB", bytes: 4 * 1024 },
+    InputSize { label: "8 KiB", bytes: 8 * 1024 },
+    InputSize { label: "16 KiB", bytes: 16 * 1024 },
+    InputSize { label: "32 KiB", bytes: 32 * 1024 },
+    InputSize { label: "64 KiB", bytes: 64 * 1024 },
+    InputSize { label: "128 KiB", bytes: 128 * 1024 },
+    InputSize { label: "256 KiB", bytes: 256 * 1024 },
+    InputSize { label: "512 KiB", bytes: 512 * 1024 },
+    InputSize { label: "1 MiB", bytes: 1024 * 1024 },
 ];
 
 const ALGORITHMS: [Algorithm; ALGORITHM_COUNT] = [
@@ -556,11 +562,12 @@ fn blake3_backend_for_input(
     implementation: Blake3Implementation,
     input_bytes: usize,
 ) -> &'static str {
-    match input_bytes {
-        64 => implementation.one_chunk,
-        4096 => implementation.four_chunks,
-        16_384 | 1_048_576 => implementation.bulk,
-        _ => panic!("unexpected benchmark input size: {input_bytes}"),
+    if input_bytes <= 1024 {
+        implementation.one_chunk
+    } else if input_bytes < 16 * 1024 {
+        implementation.four_chunks
+    } else {
+        implementation.bulk
     }
 }
 
@@ -647,34 +654,46 @@ fn generate_text(
 
     writeln!(
         output,
-        "Time per byte in ns/B; median (minimum–maximum), lower is better:"
+        "Time per byte in ns/B: median, with minimum–maximum beneath; lower is better."
     )
         .unwrap();
+    writeln!(output).unwrap();
+
+    /* Header row: one column per contender. */
+    write!(output, "  {:<8}", "size").unwrap();
+    for algorithm in ALGORITHMS {
+        write!(output, "  {:>13}", algorithm.name()).unwrap();
+    }
+    writeln!(output).unwrap();
 
     for size_index in 0..INPUT_COUNT {
-        writeln!(
-            output,
-            "  {}:",
-            INPUT_SIZES[size_index].label
-        )
-            .unwrap();
-
+        write!(output, "  {:<8}", INPUT_SIZES[size_index].label).unwrap();
         for algorithm_index in 0..ALGORITHM_COUNT {
-            let statistics = results[size_index][algorithm_index];
-
-            writeln!(
+            write!(
                 output,
-                "    {:<12}: {:>5.2} ({:>5.2}–{:>5.2})",
-                ALGORITHMS[algorithm_index].name(),
-                statistics.median,
-                statistics.minimum,
-                statistics.maximum,
+                "  {:>13.3}",
+                results[size_index][algorithm_index].median,
             )
                 .unwrap();
         }
+        writeln!(output).unwrap();
 
+        write!(output, "  {:<8}", "").unwrap();
+        for algorithm_index in 0..ALGORITHM_COUNT {
+            let statistics = results[size_index][algorithm_index];
+            write!(
+                output,
+                "  {:>13}",
+                format!("{:.3}–{:.3}", statistics.minimum, statistics.maximum),
+            )
+                .unwrap();
+        }
         writeln!(output).unwrap();
     }
+
+    writeln!(output).unwrap();
+    writeln!(output, "{}", generate_takeaway(results)).unwrap();
+    writeln!(output).unwrap();
 
     output
 }
@@ -841,23 +860,43 @@ fn generate_takeaway(results: &Results) -> String {
          * ratio = baseline time / contender time. Above 1.0 the contender is
          * faster than the baseline; below 1.0 the baseline is faster.
          */
-        let clause = if lowest > 1.0 {
-            format!(
-                "{name} is {:.2}× to {:.2}× faster than {baseline}",
-                lowest, highest,
-            )
-        } else if highest < 1.0 {
+        /*
+         * Within a few percent the two are indistinguishable at this
+         * benchmark's precision; say so rather than pick a winner.
+         */
+        const TIE: f64 = 0.05;
+        let tied_low = lowest > 1.0 - TIE;
+        let tied_high = highest < 1.0 + TIE;
+
+        let clause = if tied_low && tied_high {
+            format!("{name} matches {baseline} at every size")
+        } else if lowest > 1.0 + TIE {
+            format!("{name} is {lowest:.2}× to {highest:.2}× faster than {baseline}")
+        } else if highest < 1.0 - TIE {
             format!(
                 "{baseline} is {:.2}× to {:.2}× faster than {name}",
                 1.0 / highest,
                 1.0 / lowest,
             )
+        } else if tied_low {
+            /* Never slower than the baseline; faster from some size up. */
+            let first_faster = column.iter().position(|r| *r > 1.0 + TIE).expect("some ratio is above the tie band");
+            format!(
+                "{name} matches {baseline} below {} and is up to {highest:.2}× faster from there",
+                INPUT_SIZES[first_faster].label,
+            )
+        } else if tied_high {
+            let last_slower = column.iter().rposition(|r| *r < 1.0 - TIE).expect("some ratio is below the tie band");
+            format!(
+                "{baseline} is up to {:.2}× faster than {name} through {}, then they match",
+                1.0 / lowest,
+                INPUT_SIZES[last_slower].label,
+            )
         } else {
             let first = if column[0] > 1.0 { name } else { baseline };
             let last = if column[INPUT_COUNT - 1] > 1.0 { name } else { baseline };
-
             format!(
-                "{first} leads {name}/{baseline} at {}, {last} at {}",
+                "{first} is faster at {}, {last} at {}",
                 INPUT_SIZES[0].label,
                 INPUT_SIZES[INPUT_COUNT - 1].label,
             )
@@ -983,7 +1022,7 @@ fn generate_svg(
     .method { font-size: 11px; fill: #8a8a8a; }
     .axis-title { font-size: 12px; fill: #666666; }
     .tick-label { font-size: 11px; fill: #777777; }
-    .size-label { font-size: 13px; font-weight: 600; fill: #333333; }
+    .size-label { font-size: 11px; font-weight: 600; fill: #333333; }
     .size-sublabel { font-size: 10px; fill: #999999; }
     .value-label { font-size: 10px; font-weight: 700; }
     .series-name { font-size: 13px; font-weight: 700; }
@@ -1062,25 +1101,13 @@ fn generate_svg(
             xml_escape(INPUT_SIZES[size_index].label),
         )
             .unwrap();
-
-        if !INPUT_SIZES[size_index].label.starts_with(
-            &INPUT_SIZES[size_index].bytes.to_string(),
-        ) {
-            writeln!(
-                svg,
-                r##"  <text x="{x:.2}" y="{:.1}" class="size-sublabel" text-anchor="middle">{} bytes</text>"##,
-                RATIO_BOTTOM + 38.0,
-                INPUT_SIZES[size_index].bytes,
-            )
-                .unwrap();
-        }
     }
 
     writeln!(
         svg,
         r##"  <text x="{:.1}" y="{:.1}" class="axis-title" text-anchor="middle">Input size (logarithmic spacing)</text>"##,
         (PLOT_LEFT + PLOT_RIGHT) / 2.0,
-        RATIO_BOTTOM + 60.0,
+        RATIO_BOTTOM + 46.0,
     )
         .unwrap();
 
@@ -1201,6 +1228,19 @@ fn generate_svg(
              * Edge columns anchor inward so labels never spill into the
              * y-axis gutter or the right-edge series labels.
              */
+            /*
+             * With fifteen columns, a value at every dot would overprint.
+             * Label the ends and every fourth size; hovering a dot shows
+             * the rest.
+             */
+            let labeled = size_index == 0
+                || size_index == INPUT_COUNT - 1
+                || size_index % 4 == 0;
+
+            if !labeled {
+                continue;
+            }
+
             let (label_x, anchor) = if size_index == 0 {
                 (x + 9.0, "start")
             } else if size_index == INPUT_COUNT - 1 {
@@ -1393,6 +1433,14 @@ fn generate_svg(
                     xml_escape(INPUT_SIZES[size_index].label),
                 )
                     .unwrap();
+
+                let labeled = size_index == 0
+                    || size_index == INPUT_COUNT - 1
+                    || size_index % 4 == 0;
+
+                if !labeled {
+                    continue;
+                }
 
                 let (label_x, anchor) = if size_index == 0 {
                     (x + 8.0, "start")
