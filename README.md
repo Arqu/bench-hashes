@@ -16,18 +16,31 @@ bulk rate settles. 3 KiB is where the SME2 fork's integer + NEON hybrid
 kernels first overtake hardware SHA-256.
 
 It reports median, minimum, and maximum time per byte in integer
-picoseconds. Samples are timed on the platform's raw hardware counter
-(`CLOCK_UPTIME_RAW` on Darwin, `CLOCK_MONOTONIC` on Linux, via
-`std::time::Instant`): a counter read with no NTP slew that stops while
-the machine sleeps. Lower is better. The clock is named in the report's
-provenance.
+picoseconds. Lower is better.
 
-Thread CPU time was tried and rejected: it is scheduler accounting, and
-an interruption mid-sample can leave a slice under-counted, so the
-sample reports an impossibly fast hash. The min–max bands widened
-downward by 12% on an M4 Max under that clock, identically across
-three unrelated SHA-256 implementations. A hardware counter can only
-over-count, which the median absorbs and the band reports honestly.
+On Apple silicon the reported time is **cycles per byte at the run's
+sustained clock**. Each sample reads the thread's cycle counter
+(`thread_selfcounts`) around the work; the run's sustained clock is the
+median over every sample of cycles ÷ elapsed time; and each sample's
+cycles per byte is divided by that rate. A core boost or throttle during
+a sample stretches or shrinks its elapsed time and leaves its cycles
+alone, so the reported time is unmoved. On an M4 Max this took the
+median cell's min–max spread from 11% to 1.3%, with medians unchanged;
+what remains in the band is the code's own variation, cache effects,
+and the cycles a preempted thread spends warming back up. The result
+reads in the unit a stopwatch gives, with the machine's frequency
+excursions removed. The provenance names the rate.
+
+Where no per-thread cycle counter is available, the reported time is
+the elapsed time on the platform's hardware counter (`CLOCK_UPTIME_RAW`
+on Darwin, `CLOCK_MONOTONIC` on Linux, via `std::time::Instant`), and
+the provenance says so.
+
+Elapsed time is always measured on that hardware counter: a register
+read with no NTP slew that stops while the machine sleeps. Thread CPU
+time was examined as an alternative and found accurate but no better
+at the millisecond scale; the frequency excursions it appeared to
+reveal were real, and cycles are the instrument that sees them.
 
 ## Build and run
 

@@ -77,8 +77,8 @@ const INPUT_SIZES: [InputSize; INPUT_COUNT] = [
 ];
 
 /// results[contender_index][size_index], contenders in the roster's order.
-type Results = Vec<[Statistics; INPUT_COUNT]>;
-type Samples = Vec<[Vec<PsPerByte>; INPUT_COUNT]>;
+type Results = Vec<[Cell; INPUT_COUNT]>;
+type Samples = Vec<[Vec<Sample>; INPUT_COUNT]>;
 
 #[derive(Clone, Copy)]
 struct InputSize {
@@ -237,11 +237,20 @@ impl Algorithm {
 type PsPerByte = u64;
 const PS_PER_NS: u64 = 1_000;
 
+/*
+ * Cycles per byte in integer millicycles. The thread's cycle count over a
+ * sample divided by bytes hashed: frequency-independent, so a core boost
+ * or throttle mid-run leaves it unmoved, and comparable across runs on the
+ * same microarchitecture. Read on Apple silicon from thread_selfcounts;
+ * zero where no per-thread cycle counter is available.
+ */
+type MilliCyclesPerByte = u64;
+
 #[derive(Clone, Copy)]
 struct Statistics {
-    minimum: PsPerByte,
-    median: PsPerByte,
-    maximum: PsPerByte,
+    minimum: u64,
+    median: u64,
+    maximum: u64,
 }
 
 impl Statistics {
@@ -250,6 +259,66 @@ impl Statistics {
         median: 0,
         maximum: 0,
     };
+}
+
+/// One (contender, size) cell: the reported time per byte (see TimeBasis).
+#[derive(Clone, Copy)]
+struct Cell {
+    time: Statistics,
+}
+
+impl Cell {
+    const ZERO: Self = Self { time: Statistics::ZERO };
+}
+
+/// One timed run of a contender over an input.
+#[derive(Clone, Copy)]
+struct Sample {
+    /// Measured on the hardware counter.
+    ps_per_byte: PsPerByte,
+    /// From the thread cycle counter; zero without one.
+    millicycles_per_byte: MilliCyclesPerByte,
+    /// The raw readings the two above came from, for the run's clock rate.
+    elapsed_ns: u64,
+    cycles: u64,
+}
+
+/*
+ * How each cell's reported time was arrived at.
+ *
+ * With a per-thread cycle counter, the reported time is cycles per byte
+ * at the run's sustained clock: the median over every sample of cycles ÷
+ * elapsed time. A core boost or throttle during a sample changes its
+ * elapsed time and leaves its cycles alone, so the normalised time is
+ * unmoved; the median rate is unmoved too, since excursions are brief.
+ * The result reads in the same unit a stopwatch gives, with the machine's
+ * frequency excursions taken out.
+ *
+ * Without a counter the reported time is the measured time.
+ */
+#[derive(Clone, Copy)]
+enum TimeBasis {
+    Measured,
+    /// Cycles per byte divided by this rate, in kHz.
+    NormalisedToKhz(u64),
+}
+
+impl TimeBasis {
+    fn describe(self) -> String {
+        match self {
+            Self::Measured => "measured elapsed time on the hardware counter".to_owned(),
+            Self::NormalisedToKhz(khz) => format!(
+                "per-thread cycles at the run's sustained clock, {} GHz (median of cycles ÷ elapsed time over every sample)",
+                format_khz_as_ghz(khz),
+            ),
+        }
+    }
+}
+
+/// kHz as GHz with three decimals: 3_996_000 → "3.996".
+fn format_khz_as_ghz(khz: u64) -> String {
+    let mhz = (khz + 500) / 1_000;
+    format!("{}.{:03}", mhz / 1_000, mhz % 1_000)
 }
 
 struct MachineMetadata {
@@ -446,20 +515,20 @@ fn main() {
      * keeps the Pareto-best per family and reports on those alone. Timing
      * cost is the same as --all; only the report narrows.
      */
-    let (roster, results, selection_note) = match selection {
+    let (roster, results, basis, selection_note) = match selection {
         Selection::Explicit => {
             let roster = Roster::new(explicit);
-            let results = measure_all(&roster, trace.as_mut());
-            (roster, results, String::from("contenders chosen on the command line"))
+            let (results, basis) = measure_all(&roster, trace.as_mut());
+            (roster, results, basis, String::from("contenders chosen on the command line"))
         }
         Selection::All => {
             let roster = Roster::new(available);
-            let results = measure_all(&roster, trace.as_mut());
-            (roster, results, String::from("every contender available on this machine"))
+            let (results, basis) = measure_all(&roster, trace.as_mut());
+            (roster, results, basis, String::from("every contender available on this machine"))
         }
         Selection::Best => {
             let full = Roster::new(available);
-            let full_results = measure_all(&full, trace.as_mut());
+            let (full_results, basis) = measure_all(&full, trace.as_mut());
             let (keep, note) = choose_best_per_family(&full, &full_results);
             let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect());
             let results: Results = full_results
@@ -468,7 +537,7 @@ fn main() {
                 .filter(|(index, _)| keep.contains(index))
                 .map(|(_, row)| *row)
                 .collect();
-            (roster, results, note)
+            (roster, results, basis, note)
         }
     };
 
@@ -476,8 +545,8 @@ fn main() {
         trace.write();
     }
 
-    let text = generate_text(&roster, &results, &machine, &selection_note);
-    let svg = generate_svg(&roster, &results, &machine, &selection_note);
+    let text = generate_text(&roster, &results, &machine, &selection_note, basis);
+    let svg = generate_svg(&roster, &results, &machine, &selection_note, basis);
 
     print!("{text}");
 
@@ -572,7 +641,7 @@ fn choose_best_per_family(roster: &Roster, results: &Results) -> (Vec<usize>, St
         let dominates = |a: usize, b: usize| {
             let mut strictly = false;
             for size_index in 0..INPUT_COUNT {
-                let (ma, mb) = (results[a][size_index].median, results[b][size_index].median);
+                let (ma, mb) = (results[a][size_index].time.median, results[b][size_index].time.median);
                 if ma > mb {
                     return false;
                 }
@@ -621,13 +690,13 @@ fn choose_best_per_family(roster: &Roster, results: &Results) -> (Vec<usize>, St
 
 /// The first tested size at which the faster of two contenders changes.
 fn first_crossover(results: &Results, a: usize, b: usize) -> Option<&'static str> {
-    let leader = |size_index: usize| results[a][size_index].median < results[b][size_index].median;
+    let leader = |size_index: usize| results[a][size_index].time.median < results[b][size_index].time.median;
     (1..INPUT_COUNT)
         .find(|&size_index| leader(size_index) != leader(size_index - 1))
         .map(|size_index| INPUT_SIZES[size_index].label)
 }
 
-fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> Results {
+fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results, TimeBasis) {
     let inputs: [Vec<u8>; INPUT_COUNT] =
         std::array::from_fn(|index| make_input(INPUT_SIZES[index].bytes));
 
@@ -741,11 +810,13 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> Results {
                     (0, 0, 0, PerfCounters::default())
                 };
 
+                let cycles0 = trace_clocks::thread_cycles();
                 let started = sample_clock::now();
 
                 run_batch(algorithm, input, iterations);
 
                 let elapsed_ns = sample_clock::since_ns(started);
+                let cycles = trace_clocks::thread_cycles() - cycles0;
 
                 if let Some(trace) = trace.as_deref_mut() {
                     let perf1 = trace_clocks::perf_counters();
@@ -776,31 +847,55 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> Results {
                 let elapsed_ps = elapsed_ns
                     .checked_mul(PS_PER_NS)
                     .expect("a sample of under a second fits in picoseconds");
-                let picoseconds_per_byte = (elapsed_ps + total_bytes / 2) / total_bytes;
+                let ps_per_byte = (elapsed_ps + total_bytes / 2) / total_bytes;
 
-                assert!(
-                    picoseconds_per_byte > 0,
-                    "every timing sample must be positive"
-                );
+                assert!(ps_per_byte > 0, "every timing sample must be positive");
+
+                /* Rounded to the nearest millicycle per byte; zero without a counter. */
+                let millicycles_per_byte = (cycles * 1_000 + total_bytes / 2) / total_bytes;
 
                 samples[algorithm_index][size_index]
-                    .push(picoseconds_per_byte);
+                    .push(Sample { ps_per_byte, millicycles_per_byte, elapsed_ns, cycles });
             }
         }
     }
 
     progress.finish(&samples);
 
-    let mut results: Results = vec![[Statistics::ZERO; INPUT_COUNT]; roster.len()];
+    let basis = time_basis(&samples);
+
+    let mut results: Results = vec![[Cell::ZERO; INPUT_COUNT]; roster.len()];
 
     for algorithm_index in 0..roster.len() {
         for size_index in 0..INPUT_COUNT {
             results[algorithm_index][size_index] =
-                summarize(&mut samples[algorithm_index][size_index], roster.rounds);
+                summarize_cell(&samples[algorithm_index][size_index], roster.rounds, basis);
         }
     }
 
-    results
+    (results, basis)
+}
+
+/*
+ * The run's sustained clock: the median over all samples of cycles per
+ * elapsed nanosecond, in kHz. Measured when any sample lacks cycles.
+ */
+fn time_basis(samples: &Samples) -> TimeBasis {
+    let mut rates_khz: Vec<u64> = Vec::new();
+    for cell in samples.iter().flatten() {
+        for sample in cell {
+            if sample.cycles == 0 {
+                return TimeBasis::Measured;
+            }
+            /* cycles / ns = GHz; × 10⁶ = kHz. Rounded. */
+            rates_khz.push((sample.cycles * 1_000_000 + sample.elapsed_ns / 2) / sample.elapsed_ns);
+        }
+    }
+    if rates_khz.is_empty() {
+        return TimeBasis::Measured;
+    }
+    rates_khz.sort_unstable();
+    TimeBasis::NormalisedToKhz(median_of_sorted(&rates_khz))
 }
 
 /*
@@ -904,7 +999,7 @@ fn running_medians(roster: &Roster, samples: &Samples, size_index: usize) -> Str
 
     let parts: Vec<String> = (0..roster.len())
         .map(|algorithm_index| {
-            let mut sorted = samples[algorithm_index][size_index].clone();
+            let mut sorted: Vec<u64> = samples[algorithm_index][size_index].iter().map(|s| s.ps_per_byte).collect();
             sorted.sort_unstable();
             format!("{} {}", roster.algorithms[algorithm_index].name(), format_ps(median_of_sorted(&sorted)))
         })
@@ -1093,9 +1188,21 @@ impl PerfCounters {
     }
 }
 
-/// Reads for the trace; each is a syscall-free counter or accounting read.
+/*
+ * Reads around each sample. thread_cycles() feeds the cycles-per-byte
+ * result on every sample; the rest serve --trace-clocks.
+ */
 mod trace_clocks {
     use super::PerfCounters;
+
+    /// The calling thread's cycles so far, all core kinds together; zero
+    /// where no per-thread counter exists. About 200 ns per call on Apple
+    /// silicon, against a 1 ms sample.
+    #[inline]
+    pub fn thread_cycles() -> u64 {
+        let counters = perf_counters();
+        counters.p_cycles + counters.e_cycles
+    }
 
     #[cfg(target_vendor = "apple")]
     pub fn perf_counters() -> PerfCounters {
@@ -1311,7 +1418,7 @@ fn calibrate_batch(
  * Requires a non-empty, ascending slice. For an even count the median is
  * the mean of the two middle values, rounded half up.
  */
-fn median_of_sorted(sorted: &[PsPerByte]) -> PsPerByte {
+fn median_of_sorted(sorted: &[u64]) -> u64 {
     assert!(!sorted.is_empty(), "median requires at least one sample");
     debug_assert!(sorted.windows(2).all(|pair| pair[0] <= pair[1]));
 
@@ -1323,18 +1430,35 @@ fn median_of_sorted(sorted: &[PsPerByte]) -> PsPerByte {
     }
 }
 
-fn summarize(samples: &mut [PsPerByte], rounds: usize) -> Statistics {
+fn summarize_cell(samples: &[Sample], rounds: usize, basis: TimeBasis) -> Cell {
     assert_eq!(
         samples.len(),
         rounds,
         "every result must contain exactly one sample per round"
     );
 
-    assert!(
-        samples.iter().all(|sample| *sample > 0),
-        "all samples must be positive"
-    );
+    /*
+     * The reported time per sample: measured, or cycles per byte at the
+     * sustained rate. (millicycles/B × 10⁻³ cycles/millicycle) ÷ (kHz ×
+     * 10³ cycles/s) = s/B; × 10¹² ps/s gives ps/B = millicycles/B × 10⁶ / kHz.
+     */
+    let mut times: Vec<u64> = samples
+        .iter()
+        .map(|sample| match basis {
+            TimeBasis::Measured => sample.ps_per_byte,
+            TimeBasis::NormalisedToKhz(khz) => {
+                (sample.millicycles_per_byte * 1_000_000 + khz / 2) / khz
+            }
+        })
+        .collect();
+    assert!(times.iter().all(|&t| t > 0), "all timing samples must be positive");
 
+    Cell { time: summarize(&mut times) }
+}
+
+/// Requires a non-empty slice; sorts it. Zeros summarise to zeros.
+fn summarize(samples: &mut [u64]) -> Statistics {
+    assert!(!samples.is_empty(), "a cell has at least one sample");
     samples.sort_unstable();
 
     let median = median_of_sorted(samples);
@@ -1642,6 +1766,7 @@ fn generate_text(
     results: &Results,
     machine: &MachineMetadata,
     selection_note: &str,
+    basis: TimeBasis,
 ) -> String {
     let mut output = String::new();
 
@@ -1666,6 +1791,7 @@ fn generate_text(
     writeln!(output, "Build target: {BUILD_TARGET}").unwrap();
     writeln!(output, "Target features: {TARGET_FEATURES}").unwrap();
     writeln!(output, "Sample clock: {}", sample_clock::NAME).unwrap();
+    writeln!(output, "Reported time: {}", basis.describe()).unwrap();
     writeln!(output, "Contenders: {}", selection_note).unwrap();
     for algorithm in &roster.algorithms {
         writeln!(output, "{} source: {}", algorithm.name(), algorithm.source()).unwrap();
@@ -1714,7 +1840,7 @@ fn generate_text(
             write!(
                 output,
                 "  {:>13}",
-                format_ps(results[algorithm_index][size_index].median),
+                format_ps(results[algorithm_index][size_index].time.median),
             )
                 .unwrap();
         }
@@ -1722,7 +1848,7 @@ fn generate_text(
 
         write!(output, "  {:<8}", "").unwrap();
         for algorithm_index in 0..roster.len() {
-            let statistics = results[algorithm_index][size_index];
+            let statistics = results[algorithm_index][size_index].time;
             /* A trailing mark flags a wide spread; the legend below explains it. */
             let flag = if spread_permille(statistics) >= SPREAD_WIDE_PERMILLE { "!" } else { " " };
             write!(
@@ -1738,7 +1864,7 @@ fn generate_text(
     let wide_cells = results
         .iter()
         .flatten()
-        .filter(|statistics| spread_permille(**statistics) >= SPREAD_WIDE_PERMILLE)
+        .filter(|cell| spread_permille(cell.time) >= SPREAD_WIDE_PERMILLE)
         .count();
     writeln!(output).unwrap();
     if wide_cells > 0 {
@@ -1934,8 +2060,8 @@ fn median_ratios_permille(roster: &Roster, results: &Results) -> Vec<[u64; INPUT
     (0..roster.len())
         .map(|algorithm_index| {
             std::array::from_fn(|size_index| {
-                let baseline = results[roster.baseline][size_index].median;
-                let contender = results[algorithm_index][size_index].median;
+                let baseline = results[roster.baseline][size_index].time.median;
+                let contender = results[algorithm_index][size_index].time.median;
                 (baseline * 1000 + contender / 2) / contender
             })
         })
@@ -2122,6 +2248,7 @@ fn generate_svg(
     results: &Results,
     machine: &MachineMetadata,
     selection_note: &str,
+    basis: TimeBasis,
 ) -> String {
     assert!(
         roster.len() >= 2,
@@ -2136,14 +2263,14 @@ fn generate_svg(
     let observed_max = results
         .iter()
         .flatten()
-        .map(|statistics| statistics.maximum)
+        .map(|cell| cell.time.maximum)
         .max()
         .expect("there are results");
 
     let observed_min = results
         .iter()
         .flatten()
-        .map(|statistics| statistics.minimum)
+        .map(|cell| cell.time.minimum)
         .min()
         .expect("there are results");
 
@@ -2179,7 +2306,7 @@ fn generate_svg(
         roster.algorithms.iter().map(|&algorithm| detect_implementation(algorithm)).collect();
     let takeaway = generate_takeaway(roster, results);
 
-    let provenance_shared = shared_provenance_lines(machine, selection_note);
+    let provenance_shared = shared_provenance_lines(machine, selection_note, basis);
     let provenance_total = provenance_shared.len()
         + roster
             .algorithms
@@ -2395,7 +2522,7 @@ fn generate_svg(
         .map(|algorithm_index| {
             (
                 algorithm_index,
-                map_y(results[algorithm_index][INPUT_COUNT - 1].median),
+                map_y(results[algorithm_index][INPUT_COUNT - 1].time.median),
             )
         })
         .collect();
@@ -2453,7 +2580,7 @@ fn generate_svg(
         let mut band = String::new();
         for size_index in 0..INPUT_COUNT {
             let x = x_positions[size_index];
-            let y = map_y(results[algorithm_index][size_index].maximum);
+            let y = map_y(results[algorithm_index][size_index].time.maximum);
             if size_index == 0 {
                 write!(band, "M {x:.2} {y:.2}").unwrap();
             } else {
@@ -2462,7 +2589,7 @@ fn generate_svg(
         }
         for size_index in (0..INPUT_COUNT).rev() {
             let x = x_positions[size_index];
-            let y = map_y(results[algorithm_index][size_index].minimum);
+            let y = map_y(results[algorithm_index][size_index].time.minimum);
             write!(band, " L {x:.2} {y:.2}").unwrap();
         }
         band.push_str(" Z");
@@ -2475,7 +2602,7 @@ fn generate_svg(
          * dashed outline appears, so a broad band cannot pass as decor.
          */
         let worst_spread = (0..INPUT_COUNT)
-            .map(|size_index| spread_permille(results[algorithm_index][size_index]))
+            .map(|size_index| spread_permille(results[algorithm_index][size_index].time))
             .max()
             .expect("there is at least one size");
         let (opacity_hundredths, outline) = band_style(worst_spread);
@@ -2490,7 +2617,7 @@ fn generate_svg(
         let mut path = String::new();
         for size_index in 0..INPUT_COUNT {
             let x = x_positions[size_index];
-            let y = map_y(results[algorithm_index][size_index].median);
+            let y = map_y(results[algorithm_index][size_index].time.median);
             if size_index == 0 {
                 write!(path, "M {x:.2} {y:.2}").unwrap();
             } else {
@@ -2506,7 +2633,7 @@ fn generate_svg(
 
         for size_index in 0..INPUT_COUNT {
             let x = x_positions[size_index];
-            let statistics = results[algorithm_index][size_index];
+            let statistics = results[algorithm_index][size_index].time;
             let median_y = map_y(statistics.median);
 
             /*
@@ -2568,7 +2695,7 @@ fn generate_svg(
         writeln!(svg, "    </g>").unwrap();
 
         /* Clickable label at right: swatch, name, detail, hint. */
-        let statistics = results[algorithm_index][INPUT_COUNT - 1];
+        let statistics = results[algorithm_index][INPUT_COUNT - 1].time;
         let label_x = PLOT_RIGHT + 14.0;
         let label_y = label_y_by_algorithm[algorithm_index];
 
@@ -2717,6 +2844,7 @@ fn generate_svg(
     /* Machine-readable provenance, complete and untruncated. */
     writeln!(svg, "  <metadata>").unwrap();
 
+    let basis_description = basis.describe();
     for (name, value) in [
         ("timestamp", machine.timestamp.as_str()),
         ("git source", GIT_SOURCE),
@@ -2730,6 +2858,7 @@ fn generate_svg(
         ("build target", BUILD_TARGET),
         ("target features", TARGET_FEATURES),
         ("sample clock", sample_clock::NAME),
+        ("reported time", basis_description.as_str()),
         ("BLAKE3 source", BLAKE3_SOURCE_INFO),
         ("SHA-256 source", SHA2_SOURCE_INFO),
         ("SHA-1DC source", SHA1_CHECKED_SOURCE_INFO),
@@ -2838,13 +2967,13 @@ fn place_value_labels(
     for size_index in 0..INPUT_COUNT {
         let mut order: Vec<usize> = (0..roster.len()).collect();
         order.sort_by(|&a, &b| {
-            results[b][size_index].median.cmp(&results[a][size_index].median)
+            results[b][size_index].time.median.cmp(&results[a][size_index].time.median)
         });
         /* Smallest y (fastest, highest on the plot) first. */
         order.reverse();
         let mut taken: Vec<f64> = Vec::new();
         for algorithm_index in order {
-            let dot_y = map_y(results[algorithm_index][size_index].median);
+            let dot_y = map_y(results[algorithm_index][size_index].time.median);
             let clear = |y: f64, taken: &[f64]| taken.iter().all(|t| (t - y).abs() >= VALUE_LABEL_HEIGHT);
             let mut y = dot_y + VALUE_LABEL_ABOVE;
             if !clear(y, &taken) {
@@ -2895,7 +3024,7 @@ fn provenance_line_y(slot: usize) -> f64 {
 }
 
 /* Provenance that describes the run as a whole. */
-fn shared_provenance_lines(machine: &MachineMetadata, selection_note: &str) -> Vec<String> {
+fn shared_provenance_lines(machine: &MachineMetadata, selection_note: &str, basis: TimeBasis) -> Vec<String> {
     vec![
         format!(
             "Run: {} · bench-hashes {BENCH_VERSION}",
@@ -2908,6 +3037,7 @@ fn shared_provenance_lines(machine: &MachineMetadata, selection_note: &str) -> V
         ),
         format!("Toolchain: {RUSTC_VERSION} · {BUILD_TARGET}"),
         format!("Sample clock: {}", sample_clock::NAME),
+        format!("Reported time: {}", basis.describe()),
         format!("Source: {GIT_SOURCE} @ {GIT_COMMIT}"),
         format!("Tag: {GIT_TAG} · Working tree: {GIT_CLEAN_STATUS}"),
         "Full crate checksums are in this file's metadata element".to_owned(),
@@ -2988,17 +3118,17 @@ fn write_interaction_script(
         data.push_str("],\"min\":[");
         for size_index in 0..INPUT_COUNT {
             if size_index > 0 { data.push(','); }
-            write!(data, "{}", format_ps(results[algorithm_index][size_index].minimum)).unwrap();
+            write!(data, "{}", format_ps(results[algorithm_index][size_index].time.minimum)).unwrap();
         }
         data.push_str("],\"med\":[");
         for size_index in 0..INPUT_COUNT {
             if size_index > 0 { data.push(','); }
-            write!(data, "{}", format_ps(results[algorithm_index][size_index].median)).unwrap();
+            write!(data, "{}", format_ps(results[algorithm_index][size_index].time.median)).unwrap();
         }
         data.push_str("],\"max\":[");
         for size_index in 0..INPUT_COUNT {
             if size_index > 0 { data.push(','); }
-            write!(data, "{}", format_ps(results[algorithm_index][size_index].maximum)).unwrap();
+            write!(data, "{}", format_ps(results[algorithm_index][size_index].time.maximum)).unwrap();
         }
         data.push_str("]}");
     }
