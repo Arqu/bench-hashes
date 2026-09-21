@@ -43,17 +43,6 @@ features = ["std"]
 [dependencies.sha1-checked]
 version = "0.10"
 
-# Temporary diagnostic for CommonCrypto SHA-256's per-call cost (Apple
-# only). Remove this stanza and src/bin/cc-diagnose.rs once the question
-# is settled.
-[[bin]]
-name = "cc-diagnose"
-path = "src/bin/cc-diagnose.rs"
-
-[[bin]]
-name = "bench-hashes"
-path = "src/main.rs"
-
 [build-dependencies]
 # Used to fingerprint a dirty benchmark working tree.
 [build-dependencies.blake3]

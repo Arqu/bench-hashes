@@ -30,21 +30,6 @@ const TARGET_SAMPLE_NS: u128 = 1_000_000;
 
 const INPUT_COUNT: usize = 16;
 
-/*
- * Apple platforms add a fifth contender: the system's CommonCrypto
- * SHA-256, the implementation most Apple software actually calls.
- */
-#[cfg(target_vendor = "apple")]
-const ALGORITHM_COUNT: usize = 5;
-#[cfg(not(target_vendor = "apple"))]
-const ALGORITHM_COUNT: usize = 4;
-
-/*
- * Index of the contender every ratio is taken against. BLAKE3 stays the
- * baseline so ratios read "how much faster (or slower) is X than BLAKE3".
- */
-const BASELINE: usize = 0;
-
 const BENCH_VERSION: &str = env!("CARGO_PKG_VERSION");
 const GIT_SOURCE: &str = env!("BENCH_GIT_SOURCE");
 const GIT_COMMIT: &str = env!("BENCH_GIT_COMMIT");
@@ -89,53 +74,9 @@ const INPUT_SIZES: [InputSize; INPUT_COUNT] = [
     InputSize { label: "1 MiB", bytes: 1024 * 1024 },
 ];
 
-#[cfg(target_vendor = "apple")]
-const ALGORITHMS: [Algorithm; ALGORITHM_COUNT] = [
-    Algorithm::Blake3,
-    Algorithm::Sha256,
-    Algorithm::Sha1Dc,
-    Algorithm::Blake3Sme2,
-    Algorithm::Sha256CommonCrypto,
-];
-#[cfg(not(target_vendor = "apple"))]
-const ALGORITHMS: [Algorithm; ALGORITHM_COUNT] = [
-    Algorithm::Blake3,
-    Algorithm::Sha256,
-    Algorithm::Sha1Dc,
-    Algorithm::Blake3Sme2,
-];
-
-/*
- * The interleaving spreads one contender's lingering effects (cache state,
- * clock, thermal drift) evenly over the others. These orders do that with
- * the same balance as all permutations: every contender takes every
- * position equally often, and every ordered pair "Y runs right after X"
- * occurs equally often across the set (a Williams design; four rows for
- * four contenders, ten for five). assert_orders_balanced() checks this at
- * startup, and SAMPLE_ROUNDS is a multiple of the row count.
- */
-#[cfg(not(target_vendor = "apple"))]
-const ALGORITHM_ORDERS: [[usize; ALGORITHM_COUNT]; 4] = [
-    [0, 1, 2, 3],
-    [1, 3, 0, 2],
-    [2, 0, 3, 1],
-    [3, 2, 1, 0],
-];
-#[cfg(target_vendor = "apple")]
-const ALGORITHM_ORDERS: [[usize; ALGORITHM_COUNT]; 10] = [
-    [0, 1, 4, 2, 3],
-    [1, 2, 0, 3, 4],
-    [2, 3, 1, 4, 0],
-    [3, 4, 2, 0, 1],
-    [4, 0, 3, 1, 2],
-    [3, 2, 4, 1, 0],
-    [4, 3, 0, 2, 1],
-    [0, 4, 1, 3, 2],
-    [1, 0, 2, 4, 3],
-    [2, 1, 3, 0, 4],
-];
-
-type Results = [[Statistics; ALGORITHM_COUNT]; INPUT_COUNT];
+/// results[contender_index][size_index], contenders in the roster's order.
+type Results = Vec<[Statistics; INPUT_COUNT]>;
+type Samples = Vec<[Vec<f64>; INPUT_COUNT]>;
 
 #[derive(Clone, Copy)]
 struct InputSize {
@@ -145,21 +86,91 @@ struct InputSize {
 
 /*
  * A contender is one hash implementation under test. Adding one means a
- * variant here, a name, a color, a provenance string, and an arm in
- * run_batch; the harness handles interleaving and reporting for any count.
+ * variant here, an entry in ALL, a key, a name, a color, a provenance
+ * string, an implementation description, and an arm in run_batch; the
+ * harness handles selection, interleaving, and reporting for any count.
  */
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Algorithm {
     Blake3,
     Sha256,
     Sha1Dc,
     Blake3Sme2,
-    /// Apple's CommonCrypto CC_SHA256, the system library implementation.
-    #[cfg_attr(not(target_vendor = "apple"), allow(dead_code))]
+    /// Apple's CommonCrypto SHA-256 through CC_SHA256_Init/Update/Final.
     Sha256CommonCrypto,
 }
 
+/// The hash function a contender implements; "best available" is chosen
+/// within a family.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Family {
+    Blake3,
+    Sha256,
+    Sha1Dc,
+}
+
+impl Family {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Blake3 => "BLAKE3",
+            Self::Sha256 => "SHA-256",
+            Self::Sha1Dc => "SHA-1DC",
+        }
+    }
+}
+
 impl Algorithm {
+    const ALL: [Algorithm; 5] = [
+        Algorithm::Blake3,
+        Algorithm::Sha256,
+        Algorithm::Sha1Dc,
+        Algorithm::Blake3Sme2,
+        Algorithm::Sha256CommonCrypto,
+    ];
+
+    /// Command-line key, as in `--contenders blake3,sha256-cc`.
+    fn key(self) -> &'static str {
+        match self {
+            Self::Blake3 => "blake3",
+            Self::Sha256 => "sha256",
+            Self::Sha1Dc => "sha1dc",
+            Self::Blake3Sme2 => "blake3-sme2",
+            Self::Sha256CommonCrypto => "sha256-cc",
+        }
+    }
+
+    fn family(self) -> Family {
+        match self {
+            Self::Blake3 | Self::Blake3Sme2 => Family::Blake3,
+            Self::Sha256 | Self::Sha256CommonCrypto => Family::Sha256,
+            Self::Sha1Dc => Family::Sha1Dc,
+        }
+    }
+
+    /// Whether this contender can run on the current machine, or why not.
+    fn availability(self) -> Result<(), String> {
+        match self {
+            Self::Blake3 | Self::Sha256 | Self::Sha1Dc => Ok(()),
+            Self::Blake3Sme2 => {
+                let platform = blake3_sme2::platform::Platform::detect();
+                if format!("{platform:?}") == "SME2" {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "the blake3_sme2 crate selected {platform:?} on this machine; BLAKE3 SME2 needs a CPU with SME2 and 512-bit streaming vectors (Apple M4 and later)"
+                    ))
+                }
+            }
+            Self::Sha256CommonCrypto => {
+                if cfg!(target_vendor = "apple") {
+                    Ok(())
+                } else {
+                    Err("CommonCrypto is Apple's system library; this build is not for an Apple platform".to_owned())
+                }
+            }
+        }
+    }
+
     fn name(self) -> &'static str {
         match self {
             Self::Blake3 => "BLAKE3",
@@ -191,7 +202,7 @@ impl Algorithm {
             Self::Sha256 => SHA2_SOURCE_INFO,
             Self::Sha1Dc => SHA1_CHECKED_SOURCE_INFO,
             Self::Blake3Sme2 => BLAKE3_SME2_SOURCE_INFO,
-            Self::Sha256CommonCrypto => "CommonCrypto CC_SHA256 from the running macOS (libSystem); version follows the OS",
+            Self::Sha256CommonCrypto => "CommonCrypto CC_SHA256_Init/Update/Final from the running macOS (libSystem); version follows the OS",
         }
     }
 
@@ -201,8 +212,8 @@ impl Algorithm {
             Self::Blake3 => "single-threaded; Rayon not enabled",
             Self::Sha256 => "assembly backends where available (ARMv8 SHA-256 instructions on AArch64)",
             Self::Sha1Dc => "SHA-1 with collision detection, pure Rust (the construction git uses)",
-            Self::Blake3Sme2 => "single-threaded; SME2 kernel for groups of sixteen chunks, integer + NEON hybrid kernels below that; the benchmark stops on a CPU without SME2",
-            Self::Sha256CommonCrypto => "Apple CommonCrypto one-shot CC_SHA256 via FFI; the system's own SHA-256 (corecrypto, ARMv8 SHA-256 instructions on Apple silicon)",
+            Self::Blake3Sme2 => "single-threaded; SME2 kernel for groups of sixteen chunks, integer + NEON hybrid kernels below that; needs a CPU with SME2",
+            Self::Sha256CommonCrypto => "Apple CommonCrypto CC_SHA256_Init/Update/Final via FFI; the system's own SHA-256 (corecrypto, ARMv8 SHA-256 instructions on Apple silicon). The one-shot CC_SHA256 is avoided: its finalisation costs ~110 ns per compression",
         }
     }
 }
@@ -229,41 +240,197 @@ struct MachineMetadata {
     os_type: String,
 }
 
-fn main() {
-    assert_eq!(
-        SAMPLE_ROUNDS % ALGORITHM_ORDERS.len(),
-        0,
-        "SAMPLE_ROUNDS must use every algorithm order equally"
-    );
+/*
+ * The contenders selected for this run, in column order, with the
+ * interleaving orders that balance them and the index of the baseline
+ * every ratio is taken against.
+ *
+ * Contract: two to six contenders, each available on this machine, no
+ * duplicates. The baseline is the first BLAKE3-family contender when one
+ * is present, otherwise the first contender.
+ */
+struct Roster {
+    algorithms: Vec<Algorithm>,
+    orders: Vec<Vec<usize>>,
+    baseline: usize,
+}
 
+impl Roster {
+    fn new(algorithms: Vec<Algorithm>) -> Self {
+        assert!(
+            (2..=6).contains(&algorithms.len()),
+            "a run compares two to six contenders; {} were selected",
+            algorithms.len()
+        );
+        for (index, algorithm) in algorithms.iter().enumerate() {
+            assert!(
+                !algorithms[..index].contains(algorithm),
+                "{} was selected twice",
+                algorithm.name()
+            );
+            if let Err(reason) = algorithm.availability() {
+                panic!("{} cannot run here: {reason}", algorithm.name());
+            }
+        }
+        let orders = williams_orders(algorithms.len());
+        assert_eq!(
+            SAMPLE_ROUNDS % orders.len(),
+            0,
+            "SAMPLE_ROUNDS ({SAMPLE_ROUNDS}) must be a multiple of the order count ({})",
+            orders.len()
+        );
+        let baseline = algorithms
+            .iter()
+            .position(|algorithm| algorithm.family() == Family::Blake3)
+            .unwrap_or(0);
+        Self { algorithms, orders, baseline }
+    }
+
+    fn len(&self) -> usize {
+        self.algorithms.len()
+    }
+}
+
+/*
+ * A Williams design on n contenders: n orders when n is even, 2n when odd.
+ * Every contender takes every position equally often and every ordered
+ * adjacency "Y right after X" occurs equally often, so the set balances
+ * carry-over effects the way all n! permutations would.
+ */
+fn williams_orders(n: usize) -> Vec<Vec<usize>> {
+    assert!(n >= 2, "a Williams design needs at least two contenders");
+    let mut rows: Vec<Vec<usize>> = (0..n)
+        .map(|start| {
+            (0..n)
+                .map(|k| {
+                    let offset = if k % 2 == 1 { (k + 1) / 2 } else { n - k / 2 };
+                    (start + offset) % n
+                })
+                .collect()
+        })
+        .collect();
+    if n % 2 == 1 {
+        let reversed: Vec<Vec<usize>> = rows.iter().map(|row| row.iter().rev().copied().collect()).collect();
+        rows.extend(reversed);
+    }
+    assert_orders_balanced(&rows, n);
+    rows
+}
+
+/// How the user chose the contenders, for the report header.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Selection {
+    /// Default: SHA-1DC and the best available member of each other family.
+    Best,
+    /// `--all`: every contender that can run here.
+    All,
+    /// `--contenders a,b,c`.
+    Explicit,
+}
+
+const USAGE: &str = "\
+bench-hashes: single-threaded hash throughput by input size
+
+  bench-hashes                     SHA-1DC plus the best available BLAKE3 and
+                                   SHA-256 on this machine (best = Pareto-better
+                                   at every size; the run says so if none is)
+  bench-hashes --all               every contender this machine can run
+  bench-hashes --contenders K,...  exactly these, in this column order
+  bench-hashes --list              contenders and their availability here
+
+Keys: blake3, blake3-sme2, sha256, sha256-cc, sha1dc
+";
+
+fn parse_arguments() -> (Selection, Vec<Algorithm>) {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    match arguments.as_slice() {
+        [] => (Selection::Best, Vec::new()),
+        [flag] if flag == "--all" => (Selection::All, Vec::new()),
+        [flag] if flag == "--list" => {
+            for algorithm in Algorithm::ALL {
+                let status = match algorithm.availability() {
+                    Ok(()) => "available".to_owned(),
+                    Err(reason) => format!("unavailable: {reason}"),
+                };
+                println!("  {:<12} {:<22} {status}", algorithm.key(), algorithm.name());
+            }
+            std::process::exit(0);
+        }
+        [flag, keys] if flag == "--contenders" => {
+            let algorithms = keys
+                .split(',')
+                .map(|key| {
+                    Algorithm::ALL
+                        .into_iter()
+                        .find(|algorithm| algorithm.key() == key.trim())
+                        .unwrap_or_else(|| {
+                            eprintln!("unknown contender {key:?}\n\n{USAGE}");
+                            std::process::exit(2);
+                        })
+                })
+                .collect();
+            (Selection::Explicit, algorithms)
+        }
+        [flag] if flag == "--help" || flag == "-h" => {
+            print!("{USAGE}");
+            std::process::exit(0);
+        }
+        _ => {
+            eprint!("{USAGE}");
+            std::process::exit(2);
+        }
+    }
+}
+
+fn main() {
     assert_eq!(
         SAMPLE_ROUNDS % INPUT_SIZES.len(),
         0,
         "SAMPLE_ROUNDS must use every input-size position equally"
     );
 
-    assert_orders_balanced();
-
-    /*
-     * The BLAKE3 SME2 column measures the fork with its SME2 kernel
-     * selected. The fork falls back to its NEON backend on a CPU without
-     * SME2, which is a fine library behaviour and a wrong benchmark
-     * heading; the check belongs here, where the heading is.
-     */
-    let sme2_platform = blake3_sme2::platform::Platform::detect();
-    assert_eq!(
-        format!("{sme2_platform:?}"),
-        "SME2",
-        "the blake3_sme2 crate selected {sme2_platform:?} on this machine; \
-         the BLAKE3 SME2 column needs a CPU with SME2 and 512-bit streaming \
-         vectors (Apple M4 and later)",
-    );
+    let (selection, explicit) = parse_arguments();
+    let available: Vec<Algorithm> = Algorithm::ALL
+        .into_iter()
+        .filter(|algorithm| algorithm.availability().is_ok())
+        .collect();
 
     let machine = machine_metadata();
-    let results = measure_all();
 
-    let text = generate_text(&results, &machine);
-    let svg = generate_svg(&results, &machine);
+    /*
+     * The default run picks the best available member of each family. That
+     * needs measurements, so it measures every available contender, then
+     * keeps the Pareto-best per family and reports on those alone. Timing
+     * cost is the same as --all; only the report narrows.
+     */
+    let (roster, results, selection_note) = match selection {
+        Selection::Explicit => {
+            let roster = Roster::new(explicit);
+            let results = measure_all(&roster);
+            (roster, results, String::from("contenders chosen on the command line"))
+        }
+        Selection::All => {
+            let roster = Roster::new(available);
+            let results = measure_all(&roster);
+            (roster, results, String::from("every contender available on this machine"))
+        }
+        Selection::Best => {
+            let full = Roster::new(available);
+            let full_results = measure_all(&full);
+            let (keep, note) = choose_best_per_family(&full, &full_results);
+            let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect());
+            let results: Results = full_results
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| keep.contains(index))
+                .map(|(_, row)| *row)
+                .collect();
+            (roster, results, note)
+        }
+    };
+
+    let text = generate_text(&roster, &results, &machine, &selection_note);
+    let svg = generate_svg(&roster, &results, &machine, &selection_note);
 
     print!("{text}");
 
@@ -298,23 +465,20 @@ fn main() {
 }
 
 /*
- * ALGORITHM_ORDERS must place every contender in every position equally
- * often and realise every ordered adjacency equally often. This is what
- * lets a handful of orders stand in for all permutations.
+ * The orders must place every contender in every position equally often
+ * and realise every ordered adjacency equally often. This is what lets a
+ * handful of orders stand in for all permutations.
  */
-fn assert_orders_balanced() {
-    let rows = ALGORITHM_ORDERS.len();
-    assert_eq!(
-        rows % ALGORITHM_COUNT, 0,
-        "the order count must be a multiple of the contender count"
-    );
-    let per_position = rows / ALGORITHM_COUNT;
-    let per_adjacency = rows / ALGORITHM_COUNT;
+fn assert_orders_balanced(rows: &[Vec<usize>], n: usize) {
+    assert_eq!(rows.len() % n, 0, "the order count must be a multiple of the contender count");
+    let per_position = rows.len() / n;
+    let per_adjacency = rows.len() / n;
 
-    let mut positions = [[0usize; ALGORITHM_COUNT]; ALGORITHM_COUNT];
-    let mut adjacencies = [[0usize; ALGORITHM_COUNT]; ALGORITHM_COUNT];
+    let mut positions = vec![vec![0usize; n]; n];
+    let mut adjacencies = vec![vec![0usize; n]; n];
 
-    for order in ALGORITHM_ORDERS {
+    for order in rows {
+        assert_eq!(order.len(), n);
         for (position, &algorithm) in order.iter().enumerate() {
             positions[algorithm][position] += 1;
             if position > 0 {
@@ -323,24 +487,100 @@ fn assert_orders_balanced() {
         }
     }
 
-    for algorithm in 0..ALGORITHM_COUNT {
-        for position in 0..ALGORITHM_COUNT {
+    for algorithm in 0..n {
+        for position in 0..n {
             assert_eq!(
                 positions[algorithm][position], per_position,
-                "contender {algorithm} must take position {position} {per_position} time(s) across ALGORITHM_ORDERS"
+                "contender {algorithm} must take position {position} {per_position} time(s) across the orders"
             );
         }
-        for follower in 0..ALGORITHM_COUNT {
+        for follower in 0..n {
             let expected = if follower == algorithm { 0 } else { per_adjacency };
             assert_eq!(
                 adjacencies[algorithm][follower], expected,
-                "contender {follower} must run right after {algorithm} {expected} time(s) across ALGORITHM_ORDERS"
+                "contender {follower} must run right after {algorithm} {expected} time(s) across the orders"
             );
         }
     }
 }
 
-fn measure_all() -> Results {
+/*
+ * For each family with more than one available contender, the member that
+ * is at least as fast (by median) at every size, and strictly faster at
+ * one, is the best. Without such a member the family has no best: both
+ * are kept and the note says so. Returns the kept indices in roster order.
+ */
+fn choose_best_per_family(roster: &Roster, results: &Results) -> (Vec<usize>, String) {
+    let mut keep: Vec<usize> = Vec::new();
+    let mut notes: Vec<String> = Vec::new();
+
+    for family in [Family::Blake3, Family::Sha256, Family::Sha1Dc] {
+        let members: Vec<usize> = (0..roster.len())
+            .filter(|&index| roster.algorithms[index].family() == family)
+            .collect();
+        if members.len() <= 1 {
+            keep.extend(&members);
+            continue;
+        }
+        let dominates = |a: usize, b: usize| {
+            let mut strictly = false;
+            for size_index in 0..INPUT_COUNT {
+                let (ma, mb) = (results[a][size_index].median, results[b][size_index].median);
+                if ma > mb {
+                    return false;
+                }
+                if ma < mb {
+                    strictly = true;
+                }
+            }
+            strictly
+        };
+        let best: Vec<usize> = members
+            .iter()
+            .copied()
+            .filter(|&a| members.iter().all(|&b| a == b || dominates(a, b)))
+            .collect();
+        match best.as_slice() {
+            [winner] => {
+                keep.push(*winner);
+                let others: Vec<&str> = members
+                    .iter()
+                    .filter(|&&index| index != *winner)
+                    .map(|&index| roster.algorithms[index].name())
+                    .collect();
+                notes.push(format!(
+                    "{} is the best {} here (faster than {} at every size)",
+                    roster.algorithms[*winner].name(),
+                    family.name(),
+                    others.join(" and "),
+                ));
+            }
+            _ => {
+                keep.extend(&members);
+                let names: Vec<&str> = members.iter().map(|&index| roster.algorithms[index].name()).collect();
+                let crossover = first_crossover(results, members[0], members[1]);
+                notes.push(format!(
+                    "no best {} here: {} each win at some sizes{}; both are shown",
+                    family.name(),
+                    names.join(" and "),
+                    crossover.map(|label| format!(" (lead changes at {label})")).unwrap_or_default(),
+                ));
+            }
+        }
+    }
+    keep.sort_unstable();
+    (keep, notes.join("; "))
+}
+
+/// The first tested size at which the faster of two contenders changes.
+fn first_crossover(results: &Results, a: usize, b: usize) -> Option<&'static str> {
+    let leader = |size_index: usize| results[a][size_index].median < results[b][size_index].median;
+    (1..INPUT_COUNT)
+        .find(|&size_index| leader(size_index) != leader(size_index - 1))
+        .map(|size_index| INPUT_SIZES[size_index].label)
+}
+
+fn measure_all(roster: &Roster) -> Results {
     let inputs: [Vec<u8>; INPUT_COUNT] =
         std::array::from_fn(|index| make_input(INPUT_SIZES[index].bytes));
 
@@ -355,7 +595,7 @@ fn measure_all() -> Results {
             "BLAKE3 SME2 must agree with crates.io blake3 on a {}-byte input",
             input.len(),
         );
-        if ALGORITHMS.contains(&Algorithm::Sha256CommonCrypto) {
+        if roster.algorithms.contains(&Algorithm::Sha256CommonCrypto) {
             assert_eq!(
                 Sha256::digest(input).as_slice(),
                 &common_crypto::sha256(input)[..],
@@ -369,17 +609,16 @@ fn measure_all() -> Results {
      * Each algorithm/input combination gets its own calibrated iteration
      * count so that timed blocks have approximately equal durations.
      */
-    let mut progress = Progress::new();
+    let mut progress = Progress::new(roster);
     progress.phase("calibrating");
 
-    let mut batch_iterations =
-        [[1usize; ALGORITHM_COUNT]; INPUT_COUNT];
+    let mut batch_iterations: Vec<[usize; INPUT_COUNT]> = vec![[1usize; INPUT_COUNT]; roster.len()];
 
     for size_index in 0..INPUT_COUNT {
-        for algorithm_index in 0..ALGORITHM_COUNT {
-            batch_iterations[size_index][algorithm_index] =
+        for algorithm_index in 0..roster.len() {
+            batch_iterations[algorithm_index][size_index] =
                 calibrate_batch(
-                    ALGORITHMS[algorithm_index],
+                    roster.algorithms[algorithm_index],
                     &inputs[size_index],
                 );
         }
@@ -391,27 +630,26 @@ fn measure_all() -> Results {
      * Warm every algorithm in every ordering position, on every input size.
      * The input size that runs first is rotated as well.
      */
-    for warmup_round in 0..ALGORITHM_ORDERS.len() {
-        let order = ALGORITHM_ORDERS[warmup_round];
+    for warmup_round in 0..roster.orders.len() {
+        let order = &roster.orders[warmup_round];
 
         for size_offset in 0..INPUT_COUNT {
             let size_index =
                 (size_offset + warmup_round) % INPUT_COUNT;
 
-            for algorithm_index in order {
+            for &algorithm_index in order {
                 run_batch(
-                    ALGORITHMS[algorithm_index],
+                    roster.algorithms[algorithm_index],
                     &inputs[size_index],
-                    batch_iterations[size_index][algorithm_index],
+                    batch_iterations[algorithm_index][size_index],
                 );
             }
         }
     }
 
-    let mut samples: [[Vec<f64>; ALGORITHM_COUNT]; INPUT_COUNT] =
-        std::array::from_fn(|_| {
-            std::array::from_fn(|_| Vec::with_capacity(SAMPLE_ROUNDS))
-        });
+    let mut samples: Samples = (0..roster.len())
+        .map(|_| std::array::from_fn(|_| Vec::with_capacity(SAMPLE_ROUNDS)))
+        .collect();
 
     /*
      * The algorithm order cycles through all six permutations. Input-size
@@ -423,8 +661,7 @@ fn measure_all() -> Results {
     for round in 0..SAMPLE_ROUNDS {
         progress.round(round, &samples);
 
-        let algorithm_order =
-            ALGORITHM_ORDERS[round % ALGORITHM_ORDERS.len()];
+        let algorithm_order = &roster.orders[round % roster.orders.len()];
 
         for size_offset in 0..INPUT_COUNT {
             let size_index =
@@ -432,10 +669,10 @@ fn measure_all() -> Results {
 
             let input = &inputs[size_index];
 
-            for algorithm_index in algorithm_order {
-                let algorithm = ALGORITHMS[algorithm_index];
+            for &algorithm_index in algorithm_order {
+                let algorithm = roster.algorithms[algorithm_index];
                 let iterations =
-                    batch_iterations[size_index][algorithm_index];
+                    batch_iterations[algorithm_index][size_index];
 
                 let started = Instant::now();
 
@@ -455,7 +692,7 @@ fn measure_all() -> Results {
                     "every timing sample must be finite and positive"
                 );
 
-                samples[size_index][algorithm_index]
+                samples[algorithm_index][size_index]
                     .push(nanoseconds_per_byte);
             }
         }
@@ -463,13 +700,12 @@ fn measure_all() -> Results {
 
     progress.finish(&samples);
 
-    let mut results =
-        [[Statistics::ZERO; ALGORITHM_COUNT]; INPUT_COUNT];
+    let mut results: Results = vec![[Statistics::ZERO; INPUT_COUNT]; roster.len()];
 
-    for size_index in 0..INPUT_COUNT {
-        for algorithm_index in 0..ALGORITHM_COUNT {
-            results[size_index][algorithm_index] =
-                summarize(&mut samples[size_index][algorithm_index]);
+    for algorithm_index in 0..roster.len() {
+        for size_index in 0..INPUT_COUNT {
+            results[algorithm_index][size_index] =
+                summarize(&mut samples[algorithm_index][size_index]);
         }
     }
 
@@ -483,19 +719,21 @@ fn measure_all() -> Results {
  * The line redraws in place on a terminal; elsewhere each update is its
  * own line, so a log still shows the run advancing.
  */
-struct Progress {
+struct Progress<'a> {
+    roster: &'a Roster,
     started: Instant,
     measuring_started: Option<Instant>,
     interactive: bool,
     last_width: usize,
 }
 
-impl Progress {
+impl<'a> Progress<'a> {
     const BAR_WIDTH: usize = 30;
 
-    fn new() -> Self {
+    fn new(roster: &'a Roster) -> Self {
         let interactive = std::io::stderr().is_terminal();
         Self {
+            roster,
             started: Instant::now(),
             measuring_started: None,
             interactive,
@@ -514,7 +752,7 @@ impl Progress {
     }
 
     /* Called at the start of each round; `samples` holds every round so far. */
-    fn round(&mut self, round: usize, samples: &[[Vec<f64>; ALGORITHM_COUNT]; INPUT_COUNT]) {
+    fn round(&mut self, round: usize, samples: &Samples) {
         let measuring_started = self
             .measuring_started
             .expect("round() runs inside the measuring phase");
@@ -534,16 +772,16 @@ impl Progress {
             "[{:>5.1}s] measuring {bar} {:>3}/{SAMPLE_ROUNDS} rounds · {remaining} · {}",
             self.started.elapsed().as_secs_f64(),
             round,
-            running_medians(samples, INPUT_COUNT - 1),
+            running_medians(self.roster, samples, INPUT_COUNT - 1),
         ));
     }
 
-    fn finish(&mut self, samples: &[[Vec<f64>; ALGORITHM_COUNT]; INPUT_COUNT]) {
+    fn finish(&mut self, samples: &Samples) {
         let bar = "█".repeat(Self::BAR_WIDTH);
         self.draw(&format!(
             "[{:>5.1}s] measured  {bar} {SAMPLE_ROUNDS}/{SAMPLE_ROUNDS} rounds · {}",
             self.started.elapsed().as_secs_f64(),
-            running_medians(samples, INPUT_COUNT - 1),
+            running_medians(self.roster, samples, INPUT_COUNT - 1),
         ));
         eprintln!();
     }
@@ -566,16 +804,16 @@ impl Progress {
  * "BLAKE3 0.39 · SHA-256 0.33 · … ns/B at 1 MiB" from the samples collected
  * so far, or a placeholder before the first round completes.
  */
-fn running_medians(samples: &[[Vec<f64>; ALGORITHM_COUNT]; INPUT_COUNT], size_index: usize) -> String {
-    if samples[size_index][0].is_empty() {
+fn running_medians(roster: &Roster, samples: &Samples, size_index: usize) -> String {
+    if samples[0][size_index].is_empty() {
         return format!("medians at {} pending", INPUT_SIZES[size_index].label);
     }
 
-    let parts: Vec<String> = (0..ALGORITHM_COUNT)
+    let parts: Vec<String> = (0..roster.len())
         .map(|algorithm_index| {
-            let mut sorted = samples[size_index][algorithm_index].clone();
+            let mut sorted = samples[algorithm_index][size_index].clone();
             sorted.sort_by(f64::total_cmp);
-            format!("{} {:.3}", ALGORITHMS[algorithm_index].name(), median_of_sorted(&sorted))
+            format!("{} {:.3}", roster.algorithms[algorithm_index].name(), median_of_sorted(&sorted))
         })
         .collect();
 
@@ -646,34 +884,55 @@ fn run_batch(
 }
 
 /*
- * Apple's CommonCrypto SHA-256, linked from libSystem. Only the one-shot
- * entry point is used, matching how the other contenders are called.
+ * Apple's CommonCrypto SHA-256, linked from libSystem, through the
+ * streaming Init/Update/Final calls.
+ *
+ * The one-shot CC_SHA256() (and CCDigest()) is avoided on purpose: measured
+ * on an M4 Max, its finalisation costs about 110 ns per compression against
+ * 17 ns for the same arithmetic elsewhere, so a 64-byte digest took 182 ns
+ * one-shot and 51 ns through Init/Update/Final, with identical bulk
+ * throughput. The streaming path is the efficient way to call corecrypto.
  */
 #[cfg(target_vendor = "apple")]
 mod common_crypto {
     pub const DIGEST_LEN: usize = 32;
 
+    /// CC_SHA256_CTX: two 32-bit counters, eight state words, a 64-byte
+    /// block buffer. Layout fixed by <CommonCrypto/CommonDigest.h>.
+    #[repr(C)]
+    struct Context {
+        count: [u32; 2],
+        hash: [u32; 8],
+        wbuf: [u32; 16],
+    }
+
     unsafe extern "C" {
-        /// `unsigned char *CC_SHA256(const void *data, CC_LONG len, unsigned char *md);`
-        /// CC_LONG is uint32_t, so inputs are limited to 4 GiB; every input
-        /// here is at most 1 MiB.
-        fn CC_SHA256(data: *const u8, len: u32, md: *mut u8) -> *mut u8;
+        fn CC_SHA256_Init(ctx: *mut Context) -> i32;
+        /// CC_LONG is uint32_t, so one Update takes at most 4 GiB; every
+        /// input here is at most 1 MiB.
+        fn CC_SHA256_Update(ctx: *mut Context, data: *const u8, len: u32) -> i32;
+        fn CC_SHA256_Final(md: *mut u8, ctx: *mut Context) -> i32;
     }
 
     pub fn sha256(input: &[u8]) -> [u8; DIGEST_LEN] {
-        let len = u32::try_from(input.len()).expect("CC_SHA256 takes a 32-bit length");
+        let len = u32::try_from(input.len()).expect("CC_SHA256_Update takes a 32-bit length");
+        let mut context = Context { count: [0; 2], hash: [0; 8], wbuf: [0; 16] };
         let mut digest = [0u8; DIGEST_LEN];
-        // Safe: `input` is valid for `len` bytes and `digest` for 32 bytes,
-        // and CC_SHA256 writes exactly 32 bytes to `md`.
-        let returned = unsafe { CC_SHA256(input.as_ptr(), len, digest.as_mut_ptr()) };
-        assert!(!returned.is_null(), "CC_SHA256 returned NULL");
+        // Safe: `context` is a valid CC_SHA256_CTX for the three calls,
+        // `input` is valid for `len` bytes, and Final writes exactly 32
+        // bytes to `digest`. Each call returns 1 on success.
+        unsafe {
+            assert_eq!(CC_SHA256_Init(&mut context), 1, "CC_SHA256_Init failed");
+            assert_eq!(CC_SHA256_Update(&mut context, input.as_ptr(), len), 1, "CC_SHA256_Update failed");
+            assert_eq!(CC_SHA256_Final(digest.as_mut_ptr(), &mut context), 1, "CC_SHA256_Final failed");
+        }
         digest
     }
 }
 
 #[cfg(not(target_vendor = "apple"))]
 mod common_crypto {
-    /// Never called: the contender is absent from ALGORITHMS off Apple.
+    /// Never called: Roster::new rejects the contender off Apple.
     pub fn sha256(_input: &[u8]) -> [u8; 32] {
         unreachable!("CommonCrypto SHA-256 is an Apple-only contender")
     }
@@ -994,7 +1253,7 @@ fn detect_common_crypto_implementation() -> Implementation {
         "CommonCrypto",
         vec![Regime {
             first: 0,
-            name: "CC_SHA256 (corecrypto, ARMv8 SHA-256 instructions)",
+            name: "CC_SHA256_Init/Update/Final (corecrypto, ARMv8 SHA-256 instructions)",
             why: "One implementation at every size.",
             mark: Mark::Circle,
         }],
@@ -1045,8 +1304,10 @@ fn append_implementation_report(output: &mut String, algorithm: Algorithm) {
 }
 
 fn generate_text(
+    roster: &Roster,
     results: &Results,
     machine: &MachineMetadata,
+    selection_note: &str,
 ) -> String {
     let mut output = String::new();
 
@@ -1070,7 +1331,8 @@ fn generate_text(
     writeln!(output, "Rust compiler: {RUSTC_VERSION}").unwrap();
     writeln!(output, "Build target: {BUILD_TARGET}").unwrap();
     writeln!(output, "Target features: {TARGET_FEATURES}").unwrap();
-    for algorithm in ALGORITHMS {
+    writeln!(output, "Contenders: {}", selection_note).unwrap();
+    for algorithm in &roster.algorithms {
         writeln!(output, "{} source: {}", algorithm.name(), algorithm.source()).unwrap();
     }
     writeln!(
@@ -1078,13 +1340,16 @@ fn generate_text(
         "SHA-256 assembly source: {SHA2_ASM_SOURCE_INFO}"
     )
         .unwrap();
-    for algorithm in ALGORITHMS {
+    for algorithm in &roster.algorithms {
         writeln!(output, "{} mode: {}", algorithm.name(), algorithm.mode()).unwrap();
     }
     writeln!(output).unwrap();
 
-    append_implementation_report(&mut output, Algorithm::Blake3);
-    append_implementation_report(&mut output, Algorithm::Blake3Sme2);
+    for algorithm in &roster.algorithms {
+        if detect_implementation(*algorithm).regimes.len() > 1 {
+            append_implementation_report(&mut output, *algorithm);
+        }
+    }
 
     writeln!(
         output,
@@ -1108,26 +1373,26 @@ fn generate_text(
 
     /* Header row: one column per contender; wide names get a short form. */
     write!(output, "  {:<8}", "size").unwrap();
-    for algorithm in ALGORITHMS {
-        write!(output, "  {:>13}", column_heading(algorithm)).unwrap();
+    for algorithm in &roster.algorithms {
+        write!(output, "  {:>13}", column_heading(*algorithm)).unwrap();
     }
     writeln!(output).unwrap();
 
     for size_index in 0..INPUT_COUNT {
         write!(output, "  {:<8}", INPUT_SIZES[size_index].label).unwrap();
-        for algorithm_index in 0..ALGORITHM_COUNT {
+        for algorithm_index in 0..roster.len() {
             write!(
                 output,
                 "  {:>13.3}",
-                results[size_index][algorithm_index].median,
+                results[algorithm_index][size_index].median,
             )
                 .unwrap();
         }
         writeln!(output).unwrap();
 
         write!(output, "  {:<8}", "").unwrap();
-        for algorithm_index in 0..ALGORITHM_COUNT {
-            let statistics = results[size_index][algorithm_index];
+        for algorithm_index in 0..roster.len() {
+            let statistics = results[algorithm_index][size_index];
             /* A trailing mark flags a wide spread; the legend below explains it. */
             let flag = if spread(statistics) >= SPREAD_WIDE { "!" } else { " " };
             write!(
@@ -1151,7 +1416,7 @@ fn generate_text(
             output,
             "!  marks a cell whose minimum–maximum spread is at least {:.0}% of its median: {wide_cells} of {} cells; treat those medians as low precision.",
             SPREAD_WIDE * 100.0,
-            INPUT_COUNT * ALGORITHM_COUNT,
+            INPUT_COUNT * roster.len(),
         )
             .unwrap();
     } else {
@@ -1163,7 +1428,7 @@ fn generate_text(
             .unwrap();
     }
     writeln!(output).unwrap();
-    writeln!(output, "{}", generate_takeaway(results)).unwrap();
+    writeln!(output, "{}", generate_takeaway(roster, results)).unwrap();
     writeln!(output).unwrap();
 
     output
@@ -1310,19 +1575,22 @@ fn gigabytes_per_second(ns_per_byte: f64) -> String {
  * time divided by contender time. Above 1.0 means the contender is faster
  * than the baseline; the baseline's own ratio is exactly 1.0.
  */
-fn median_ratios(results: &Results) -> [[f64; ALGORITHM_COUNT]; INPUT_COUNT] {
-    std::array::from_fn(|size_index| {
-        std::array::from_fn(|algorithm_index| {
-            results[size_index][BASELINE].median
-                / results[size_index][algorithm_index].median
+/// ratios[contender][size] = baseline median / contender median.
+fn median_ratios(roster: &Roster, results: &Results) -> Vec<[f64; INPUT_COUNT]> {
+    (0..roster.len())
+        .map(|algorithm_index| {
+            std::array::from_fn(|size_index| {
+                results[roster.baseline][size_index].median
+                    / results[algorithm_index][size_index].median
+            })
         })
-    })
+        .collect()
 }
 
-fn generate_takeaway(results: &Results) -> String {
-    let clauses: Vec<String> = (0..ALGORITHM_COUNT)
-        .filter(|&algorithm_index| algorithm_index != BASELINE)
-        .map(|algorithm_index| takeaway_clause(results, algorithm_index))
+fn generate_takeaway(roster: &Roster, results: &Results) -> String {
+    let clauses: Vec<String> = (0..roster.len())
+        .filter(|&algorithm_index| algorithm_index != roster.baseline)
+        .map(|algorithm_index| takeaway_clause(roster, results, algorithm_index))
         .collect();
 
     format!("On this machine: {}", clauses.join("; "))
@@ -1351,16 +1619,15 @@ fn wrap_takeaway(takeaway: &str) -> Vec<String> {
  * One contender's speed relative to the baseline, phrased for the headline.
  * Requires a non-baseline contender.
  */
-fn takeaway_clause(results: &Results, algorithm_index: usize) -> String {
-    assert_ne!(algorithm_index, BASELINE, "the baseline has no clause of its own");
+fn takeaway_clause(roster: &Roster, results: &Results, algorithm_index: usize) -> String {
+    assert_ne!(algorithm_index, roster.baseline, "the baseline has no clause of its own");
 
-    let ratios = median_ratios(results);
-    let baseline = ALGORITHMS[BASELINE].name();
+    let ratios = median_ratios(roster, results);
+    let baseline = roster.algorithms[roster.baseline].name();
 
     {
-        let name = ALGORITHMS[algorithm_index].name();
-        let column: Vec<f64> =
-            ratios.iter().map(|row| row[algorithm_index]).collect();
+        let name = roster.algorithms[algorithm_index].name();
+        let column: Vec<f64> = ratios[algorithm_index].to_vec();
         let lowest = column.iter().copied().fold(f64::INFINITY, f64::min);
         let highest = column.iter().copied().fold(0.0_f64, f64::max);
 
@@ -1442,7 +1709,11 @@ fn output_directory(machine: &MachineMetadata) -> std::path::PathBuf {
  * JSON block, so a single source of truth drives both.
  */
 const SVG_WIDTH: f64 = 1200.0;
-const SVG_HEIGHT: f64 = 755.0;
+/// Canvas height: the provenance block ends where the lines end, with the
+/// bottom margin that follows.
+fn svg_height(provenance_lines: usize) -> f64 {
+    provenance_line_y(provenance_lines.saturating_sub(1)) + PROVENANCE_LINE_HEIGHT + 8.0
+}
 const PLOT_LEFT: f64 = 110.0;
 const PLOT_RIGHT: f64 = 1000.0;
 const PLOT_TOP: f64 = 150.0;
@@ -1475,11 +1746,13 @@ fn log_axis_bounds(observed_min: f64, observed_max: f64) -> (f64, f64) {
 }
 
 fn generate_svg(
+    roster: &Roster,
     results: &Results,
     machine: &MachineMetadata,
+    selection_note: &str,
 ) -> String {
     assert!(
-        ALGORITHM_COUNT >= 2,
+        roster.len() >= 2,
         "the takeaway needs a baseline and at least one other contender"
     );
 
@@ -1517,8 +1790,18 @@ fn generate_svg(
         });
 
     let implementations: Vec<Implementation> =
-        ALGORITHMS.iter().map(|&algorithm| detect_implementation(algorithm)).collect();
-    let takeaway = generate_takeaway(results);
+        roster.algorithms.iter().map(|&algorithm| detect_implementation(algorithm)).collect();
+    let takeaway = generate_takeaway(roster, results);
+
+    let provenance_shared = shared_provenance_lines(machine, selection_note);
+    let provenance_total = provenance_shared.len()
+        + roster
+            .algorithms
+            .iter()
+            .zip(&implementations)
+            .map(|(&algorithm, implementation)| contender_provenance_lines(algorithm, implementation).len())
+            .sum::<usize>();
+    let svg_height = svg_height(provenance_total);
 
     let mut svg = String::new();
 
@@ -1527,13 +1810,13 @@ fn generate_svg(
 
     writeln!(
         svg,
-        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SVG_WIDTH:.0} {SVG_HEIGHT:.0}" width="{SVG_WIDTH:.0}" height="{SVG_HEIGHT:.0}">"##
+        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SVG_WIDTH:.0} {svg_height:.0}" width="{SVG_WIDTH:.0}" height="{svg_height:.0}">"##
     )
         .unwrap();
 
     writeln!(
         svg,
-        r##"  <rect width="{SVG_WIDTH:.0}" height="{SVG_HEIGHT:.0}" fill="#fdfdfc"/>"##
+        r##"  <rect width="{SVG_WIDTH:.0}" height="{svg_height:.0}" fill="#fdfdfc"/>"##
     )
         .unwrap();
 
@@ -1721,11 +2004,11 @@ fn generate_svg(
      * its slot, anchored where its line would end on the current axis and
      * clamped to the plot edge, so its grey label points toward its data.
      */
-    let mut label_slots: Vec<(usize, f64)> = (0..ALGORITHM_COUNT)
+    let mut label_slots: Vec<(usize, f64)> = (0..roster.len())
         .map(|algorithm_index| {
             (
                 algorithm_index,
-                map_y(results[INPUT_COUNT - 1][algorithm_index].median),
+                map_y(results[algorithm_index][INPUT_COUNT - 1].median),
             )
         })
         .collect();
@@ -1740,7 +2023,7 @@ fn generate_svg(
         }
     }
 
-    let mut label_y_by_algorithm = [0.0_f64; ALGORITHM_COUNT];
+    let mut label_y_by_algorithm = vec![0.0_f64; roster.len()];
     for (algorithm_index, label_y) in &label_slots {
         label_y_by_algorithm[*algorithm_index] = *label_y;
     }
@@ -1750,9 +2033,10 @@ fn generate_svg(
      * line, dots, value labels, the clickable label at right, and its
      * provenance line. Toggling flips one attribute on the group.
      */
-    let provenance_shared = shared_provenance_lines(machine);
     let shared_count = provenance_shared.len();
     let mut provenance_slot = shared_count;
+
+    let value_label_y = place_value_labels(roster, results, &map_y);
 
     /*
      * Dots are collected here and emitted after every series' band and
@@ -1760,14 +2044,14 @@ fn generate_svg(
      * the hover. Each dot layer carries its series index; the script and
      * stylesheet treat it as part of that series.
      */
-    let mut dot_layers: Vec<String> = (0..ALGORITHM_COUNT)
+    let mut dot_layers: Vec<String> = (0..roster.len())
         .map(|algorithm_index| {
             format!("  <g class=\"dots\" id=\"dots-{algorithm_index}\" data-on=\"true\">\n")
         })
         .collect();
 
-    for algorithm_index in 0..ALGORITHM_COUNT {
-        let algorithm = ALGORITHMS[algorithm_index];
+    for algorithm_index in 0..roster.len() {
+        let algorithm = roster.algorithms[algorithm_index];
         let color = algorithm.color();
         let implementation = &implementations[algorithm_index];
 
@@ -1782,7 +2066,7 @@ fn generate_svg(
         let mut band = String::new();
         for size_index in 0..INPUT_COUNT {
             let x = x_positions[size_index];
-            let y = map_y(results[size_index][algorithm_index].maximum);
+            let y = map_y(results[algorithm_index][size_index].maximum);
             if size_index == 0 {
                 write!(band, "M {x:.2} {y:.2}").unwrap();
             } else {
@@ -1791,7 +2075,7 @@ fn generate_svg(
         }
         for size_index in (0..INPUT_COUNT).rev() {
             let x = x_positions[size_index];
-            let y = map_y(results[size_index][algorithm_index].minimum);
+            let y = map_y(results[algorithm_index][size_index].minimum);
             write!(band, " L {x:.2} {y:.2}").unwrap();
         }
         band.push_str(" Z");
@@ -1804,7 +2088,7 @@ fn generate_svg(
          * dashed outline appears, so a broad band cannot pass as decor.
          */
         let worst_spread = (0..INPUT_COUNT)
-            .map(|size_index| spread(results[size_index][algorithm_index]))
+            .map(|size_index| spread(results[algorithm_index][size_index]))
             .fold(0.0_f64, f64::max);
         let (opacity, outline) = band_style(worst_spread);
 
@@ -1818,7 +2102,7 @@ fn generate_svg(
         let mut path = String::new();
         for size_index in 0..INPUT_COUNT {
             let x = x_positions[size_index];
-            let y = map_y(results[size_index][algorithm_index].median);
+            let y = map_y(results[algorithm_index][size_index].median);
             if size_index == 0 {
                 write!(path, "M {x:.2} {y:.2}").unwrap();
             } else {
@@ -1832,22 +2116,9 @@ fn generate_svg(
         )
             .unwrap();
 
-        /*
-         * Stagger value labels per algorithm so nearly-coincident series
-         * never collide: baseline above its dot, the others below at
-         * increasing offsets.
-         */
-        let label_offset = match algorithm_index {
-            BASELINE => -11.0,
-            1 => 17.0,
-            2 => -11.0,
-            3 => 27.0,
-            _ => -21.0,
-        };
-
         for size_index in 0..INPUT_COUNT {
             let x = x_positions[size_index];
-            let statistics = results[size_index][algorithm_index];
+            let statistics = results[algorithm_index][size_index];
             let median_y = map_y(statistics.median);
 
             /*
@@ -1899,8 +2170,8 @@ fn generate_svg(
 
             writeln!(
                 svg,
-                r##"      <text class="value-label" data-size="{size_index}" data-offset="{label_offset:.1}" x="{label_x:.2}" y="{:.2}" fill="{color}" text-anchor="{anchor}">{}</text>"##,
-                median_y + label_offset,
+                r##"      <text class="value-label" data-size="{size_index}" x="{label_x:.2}" y="{:.2}" fill="{color}" text-anchor="{anchor}">{}</text>"##,
+                value_label_y[algorithm_index][size_index],
                 format_result_value(statistics.median),
             )
                 .unwrap();
@@ -1909,7 +2180,7 @@ fn generate_svg(
         writeln!(svg, "    </g>").unwrap();
 
         /* Clickable label at right: swatch, name, detail, hint. */
-        let statistics = results[INPUT_COUNT - 1][algorithm_index];
+        let statistics = results[algorithm_index][INPUT_COUNT - 1];
         let label_x = PLOT_RIGHT + 14.0;
         let label_y = label_y_by_algorithm[algorithm_index];
 
@@ -2116,14 +2387,13 @@ fn generate_svg(
             .unwrap();
     }
 
-    let last_line_y = provenance_line_y(provenance_slot - 1);
-    assert!(
-        last_line_y + PROVENANCE_LINE_HEIGHT <= SVG_HEIGHT,
-        "provenance must fit inside the canvas: last line at {last_line_y}, height {SVG_HEIGHT}"
+    assert_eq!(
+        provenance_slot, provenance_total,
+        "the provenance lines emitted must match the count the canvas was sized for"
     );
 
     /* Data and behaviour for the interactive toggles. */
-    write_interaction_script(&mut svg, results, &implementations, &x_positions, &label_y_by_algorithm, shared_count);
+    write_interaction_script(&mut svg, roster, results, &implementations, &x_positions, &label_y_by_algorithm, shared_count);
 
     svg.push_str("</svg>\n");
     svg
@@ -2155,6 +2425,47 @@ fn band_style(worst_spread: f64) -> (f64, bool) {
         0.30
     };
     (opacity, worst_spread >= SPREAD_WIDE)
+}
+
+/*
+ * Value labels sit above their dot by default. Within a column, labels
+ * are processed top to bottom; one that would land within a label height
+ * of the previous label moves below its dot instead, and if that also
+ * collides it steps down until clear. The script repeats this rule.
+ */
+const VALUE_LABEL_ABOVE: f64 = -11.0;
+const VALUE_LABEL_BELOW: f64 = 17.0;
+const VALUE_LABEL_HEIGHT: f64 = 11.0;
+
+fn place_value_labels(
+    roster: &Roster,
+    results: &Results,
+    map_y: &dyn Fn(f64) -> f64,
+) -> Vec<[f64; INPUT_COUNT]> {
+    let mut placed = vec![[0.0_f64; INPUT_COUNT]; roster.len()];
+    for size_index in 0..INPUT_COUNT {
+        let mut order: Vec<usize> = (0..roster.len()).collect();
+        order.sort_by(|&a, &b| {
+            results[a][size_index].median.total_cmp(&results[b][size_index].median).reverse()
+        });
+        /* Smallest y (fastest, highest on the plot) first. */
+        order.reverse();
+        let mut taken: Vec<f64> = Vec::new();
+        for algorithm_index in order {
+            let dot_y = map_y(results[algorithm_index][size_index].median);
+            let clear = |y: f64, taken: &[f64]| taken.iter().all(|t| (t - y).abs() >= VALUE_LABEL_HEIGHT);
+            let mut y = dot_y + VALUE_LABEL_ABOVE;
+            if !clear(y, &taken) {
+                y = dot_y + VALUE_LABEL_BELOW;
+                while !clear(y, &taken) {
+                    y += VALUE_LABEL_HEIGHT;
+                }
+            }
+            taken.push(y);
+            placed[algorithm_index][size_index] = y;
+        }
+    }
+    placed
 }
 
 fn json_string(text: &str) -> String {
@@ -2192,12 +2503,13 @@ fn provenance_line_y(slot: usize) -> f64 {
 }
 
 /* Provenance that describes the run as a whole. */
-fn shared_provenance_lines(machine: &MachineMetadata) -> Vec<String> {
+fn shared_provenance_lines(machine: &MachineMetadata, selection_note: &str) -> Vec<String> {
     vec![
         format!(
             "Run: {} · bench-hashes {BENCH_VERSION}",
             machine.timestamp,
         ),
+        format!("Contenders: {selection_note}"),
         format!(
             "Machine: {} · {} logical CPUs · {}",
             machine.cpu_type, machine.cpu_count, machine.os_type,
@@ -2250,18 +2562,19 @@ fn contender_provenance_lines(
  */
 fn write_interaction_script(
     svg: &mut String,
+    roster: &Roster,
     results: &Results,
     implementations: &[Implementation],
     x_positions: &[f64; INPUT_COUNT],
-    label_y_by_algorithm: &[f64; ALGORITHM_COUNT],
+    label_y_by_algorithm: &[f64],
     shared_count: usize,
 ) {
     let mut data = String::from("{\"series\":[");
-    for algorithm_index in 0..ALGORITHM_COUNT {
+    for algorithm_index in 0..roster.len() {
         if algorithm_index > 0 {
             data.push(',');
         }
-        write!(data, "{{\"name\":\"{}\",\"regimes\":[", ALGORITHMS[algorithm_index].name()).unwrap();
+        write!(data, "{{\"name\":\"{}\",\"regimes\":[", roster.algorithms[algorithm_index].name()).unwrap();
         for (regime_index, regime) in implementations[algorithm_index].regimes.iter().enumerate() {
             if regime_index > 0 { data.push(','); }
             let first_size = INPUT_SIZES.iter().position(|size| size.bytes >= regime.first)
@@ -2278,17 +2591,17 @@ fn write_interaction_script(
         data.push_str("],\"min\":[");
         for size_index in 0..INPUT_COUNT {
             if size_index > 0 { data.push(','); }
-            write!(data, "{}", results[size_index][algorithm_index].minimum).unwrap();
+            write!(data, "{}", results[algorithm_index][size_index].minimum).unwrap();
         }
         data.push_str("],\"med\":[");
         for size_index in 0..INPUT_COUNT {
             if size_index > 0 { data.push(','); }
-            write!(data, "{}", results[size_index][algorithm_index].median).unwrap();
+            write!(data, "{}", results[algorithm_index][size_index].median).unwrap();
         }
         data.push_str("],\"max\":[");
         for size_index in 0..INPUT_COUNT {
             if size_index > 0 { data.push(','); }
-            write!(data, "{}", results[size_index][algorithm_index].maximum).unwrap();
+            write!(data, "{}", results[algorithm_index][size_index].maximum).unwrap();
         }
         data.push_str("]}");
     }
@@ -2303,7 +2616,7 @@ fn write_interaction_script(
         write!(data, "{y:.2}").unwrap();
     }
     data.push_str("],\"colors\":[");
-    for (index, algorithm) in ALGORITHMS.iter().enumerate() {
+    for (index, algorithm) in roster.algorithms.iter().enumerate() {
         if index > 0 { data.push(','); }
         write!(data, "\"{}\"", algorithm.color()).unwrap();
     }
@@ -2314,8 +2627,9 @@ fn write_interaction_script(
     }
     write!(
         data,
-        "],\"baseline\":{BASELINE},\"sharedProv\":{shared_count},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"plotTop\":{PLOT_TOP},\"plotBottom\":{PLOT_BOTTOM},\"labelGap\":{SERIES_LABEL_GAP},\"spreadNoticeable\":{SPREAD_NOTICEABLE},\"spreadWide\":{SPREAD_WIDE},\"provTop\":{PROVENANCE_TOP},\"provLine\":{PROVENANCE_LINE_HEIGHT},\"takeaway\":\"{}\"}}",
-        generate_takeaway(results).replace('\\', "\\\\").replace('"', "\\\""),
+        "],\"baseline\":{},\"sharedProv\":{shared_count},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"plotTop\":{PLOT_TOP},\"plotBottom\":{PLOT_BOTTOM},\"labelGap\":{SERIES_LABEL_GAP},\"labelAbove\":{VALUE_LABEL_ABOVE},\"labelBelow\":{VALUE_LABEL_BELOW},\"labelHeight\":{VALUE_LABEL_HEIGHT},\"spreadNoticeable\":{SPREAD_NOTICEABLE},\"spreadWide\":{SPREAD_WIDE},\"provTop\":{PROVENANCE_TOP},\"provLine\":{PROVENANCE_LINE_HEIGHT},\"takeaway\":\"{}\"}}",
+        roster.baseline,
+        generate_takeaway(roster, results).replace('\\', "\\\\").replace('"', "\\\""),
     )
         .unwrap();
 
@@ -2442,12 +2756,23 @@ function relayout() {
       const k = +dot.getAttribute("data-size");
       dot.setAttribute("transform", `translate(${X[k]} ${mapY(s.med[k]).toFixed(2)})`);
     });
-    g.querySelectorAll(".value-label").forEach(t => {
-      const k = +t.getAttribute("data-size");
-      t.setAttribute("y", (mapY(s.med[k]) + +t.getAttribute("data-offset")).toFixed(2));
-    });
   });
 
+  /* Value labels: above the dot unless that collides within the column. */
+  for (let k = 0; k < DATA.x.length; k++) {
+    const order = visible.slice().sort((a, b) => DATA.series[a].med[k] - DATA.series[b].med[k]);
+    const taken = [];
+    const clear = y => taken.every(t => Math.abs(t - y) >= DATA.labelHeight);
+    for (const i of order) {
+      const dotY = mapY(DATA.series[i].med[k]);
+      let y = dotY + DATA.labelAbove;
+      if (!clear(y)) { y = dotY + DATA.labelBelow; while (!clear(y)) y += DATA.labelHeight; }
+      taken.push(y);
+      document.getElementById("series-" + i).querySelectorAll(".value-label").forEach(t => {
+        if (+t.getAttribute("data-size") === k) t.setAttribute("y", y.toFixed(2));
+      });
+    }
+  }
   /*
    * Right-edge labels, every contender in its slot. Each anchors level with
    * its line's last point on the current axis; a hidden contender's anchor

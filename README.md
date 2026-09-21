@@ -24,6 +24,24 @@ It reports median, minimum, and maximum time per byte, measured with
 cargo run --release
 ```
 
+With no options the benchmark compares SHA-1DC with the best available
+BLAKE3 and the best available SHA-256 on this machine. "Best" means
+Pareto-better: at least as fast at every tested size and faster at
+one. When two members of a family each win at some sizes, both are
+shown and the report says so and names the size where the lead changes.
+The default run measures every available contender to make that choice,
+so it costs the same as `--all`.
+
+```sh
+cargo run --release -- --all                         # every contender this machine can run
+cargo run --release -- --contenders sha256,sha256-cc # exactly these, in this column order
+cargo run --release -- --list                        # keys and availability here
+```
+
+Keys: `blake3`, `blake3-sme2`, `sha256`, `sha256-cc`, `sha1dc`. The
+baseline for ratios is the first BLAKE3 contender in the column order,
+or the first contender when no BLAKE3 is selected.
+
 ### Requirements
 
 The BLAKE3 SME2 contender is a git dependency on the `sme2-bench`
@@ -110,12 +128,20 @@ so this column measures the SME2 kernel on every machine where the
 benchmark runs. Its provenance line gives the branch and commit instead
 of a registry checksum.
 
-SHA-256 CommonCrypto, on Apple platforms only, calls the one-shot
-`CC_SHA256` from the system's libSystem through FFI. This is the
-implementation most Apple software reaches for, so it anchors the sha2
-crate's number against the platform's own. The benchmark checks that
-the two agree on every input before timing them. Its provenance is the
-running OS rather than a crate version.
+SHA-256 CommonCrypto, on Apple platforms only, calls the system's
+libSystem through FFI using `CC_SHA256_Init`, `CC_SHA256_Update`, and
+`CC_SHA256_Final`. This is the implementation most Apple software
+reaches for, so it anchors the sha2 crate's number against the
+platform's own. The benchmark checks that the two agree on every input
+before timing them. Its provenance is the running OS rather than a
+crate version.
+
+The one-shot `CC_SHA256()` (and `CCDigest()`) is avoided deliberately.
+Measured on an M4 Max, its finalisation costs about 110 ns per
+compression against 17 ns for the same arithmetic elsewhere: a 64-byte
+digest took 182 ns one-shot and 51 ns through Init/Update/Final, with
+identical bulk throughput. Anyone calling CommonCrypto for small
+inputs should use the streaming calls.
 
 SHA-1DC is provided by RustCrypto's sha1-checked crate: SHA-1 with the
 collision-detection pass that git applies to every object hash. The
@@ -150,10 +176,10 @@ fork's `src/ffi_sme2.rs` and `src/ffi_neon_hybrid.rs`.
 
 ## Interleaving and precision
 
-The contenders run in a fixed set of orders that together place every
-contender in every position equally often and realise every "Y right
-after X" adjacency equally often — the balance all permutations would
-give (four orders for four contenders, ten for five). Input-size order
+The contenders run in a Williams design: a set of orders that together
+place every contender in every position equally often and realise every
+"Y right after X" adjacency equally often — the balance all permutations
+would give (n orders for an even count of contenders, 2n for odd). Input-size order
 rotates independently. Each contender/size combination is calibrated
 separately so its timed samples last about 1 ms each.
 
