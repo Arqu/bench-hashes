@@ -666,173 +666,257 @@ fn summarize(samples: &mut [f64]) -> Statistics {
     }
 }
 
+/*
+ * One code path a contender uses for a range of input sizes. `first` is the
+ * smallest input in bytes that takes this path; a contender's regimes are
+ * listed in ascending order of `first`, the first starting at 0.
+ */
 #[derive(Clone, Copy)]
-struct Blake3Implementation {
-    platform: &'static str,
-    one_chunk: &'static str,
-    four_chunks: &'static str,
-    bulk: &'static str,
+struct Regime {
+    first: usize,
+    /// Short name for the report and the hover panel, e.g. "NEON hash_many".
+    name: &'static str,
+    /// One sentence on why the path changes here, for the first dot of the regime.
+    why: &'static str,
+    /// Mark drawn at every dot in this regime.
+    mark: Mark,
+}
+
+/// Dot shapes: the same colour keeps the contender's identity, the shape
+/// says which code path produced the point.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mark {
+    Circle,
+    Diamond,
+    Square,
+}
+
+impl Mark {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Circle => "circle",
+            Self::Diamond => "diamond",
+            Self::Square => "square",
+        }
+    }
 }
 
 /*
- * These backend inferences are based on BLAKE3 v1.8.7, particularly
- * src/platform.rs and the SIMD hash_many fallback chains.
+ * A contender's code paths by input size, with the platform name for the
+ * report header. `regimes` is non-empty, ascending in `first`, and starts
+ * at 0.
  */
-fn detect_blake3_implementation() -> Blake3Implementation {
+struct Implementation {
+    platform: &'static str,
+    regimes: Vec<Regime>,
+}
+
+impl Implementation {
+    fn new(platform: &'static str, regimes: Vec<Regime>) -> Self {
+        assert!(!regimes.is_empty(), "a contender has at least one regime");
+        assert_eq!(regimes[0].first, 0, "the first regime covers the smallest inputs");
+        assert!(
+            regimes.windows(2).all(|pair| pair[0].first < pair[1].first),
+            "regimes ascend in their first input size"
+        );
+        Self { platform, regimes }
+    }
+
+    /// Index of the regime for this input, and whether this is the smallest
+    /// tested input in that regime.
+    fn regime_index_for(&self, size_index: usize) -> (usize, bool) {
+        let bytes = INPUT_SIZES[size_index].bytes;
+        let index = self
+            .regimes
+            .iter()
+            .rposition(|regime| bytes >= regime.first)
+            .expect("the first regime starts at 0");
+        let first_in_regime = size_index == 0
+            || self.regime_index_for(size_index - 1).0 != index;
+        (index, first_in_regime)
+    }
+}
+
+/*
+ * Code paths of the crates.io blake3 crate, from BLAKE3 v1.8.7's
+ * src/platform.rs and the SIMD hash_many fallback chains. One chunk is
+ * 1024 bytes; hash_many batches whole chunks and hands leftovers below the
+ * SIMD degree to the single-chunk path.
+ */
+fn detect_blake3_implementation() -> Implementation {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if std::arch::is_x86_feature_detected!("avx512f")
+        let (platform, one, wide, degree) = if std::arch::is_x86_feature_detected!("avx512f")
             && std::arch::is_x86_feature_detected!("avx512vl")
         {
-            return Blake3Implementation {
-                platform: "AVX-512",
-                one_chunk: "AVX-512 compression",
-                four_chunks:
-                "SSE4.1 hash_many (4-way SIMD fallback)",
-                bulk: "AVX-512 hash_many (16-way SIMD)",
-            };
-        }
-
-        if std::arch::is_x86_feature_detected!("avx2") {
-            return Blake3Implementation {
-                platform: "AVX2",
-                one_chunk: "SSE4.1 compression",
-                four_chunks:
-                "SSE4.1 hash_many (4-way SIMD fallback)",
-                bulk: "AVX2 hash_many (8-way SIMD)",
-            };
-        }
-
-        if std::arch::is_x86_feature_detected!("sse4.1") {
-            return Blake3Implementation {
-                platform: "SSE4.1",
-                one_chunk: "SSE4.1 compression",
-                four_chunks: "SSE4.1 hash_many (4-way SIMD)",
-                bulk: "SSE4.1 hash_many (4-way SIMD)",
-            };
-        }
-
-        if std::arch::is_x86_feature_detected!("sse2") {
-            return Blake3Implementation {
-                platform: "SSE2",
-                one_chunk: "SSE2 compression",
-                four_chunks: "SSE2 hash_many (4-way SIMD)",
-                bulk: "SSE2 hash_many (4-way SIMD)",
-            };
-        }
-
-        return Blake3Implementation {
-            platform: "portable",
-            one_chunk: "portable compression",
-            four_chunks: "portable hash_many",
-            bulk: "portable hash_many",
+            ("AVX-512", "AVX-512 compression", "AVX-512 hash_many (16-way)", 16)
+        } else if std::arch::is_x86_feature_detected!("avx2") {
+            ("AVX2", "SSE4.1 compression", "AVX2 hash_many (8-way)", 8)
+        } else if std::arch::is_x86_feature_detected!("sse4.1") {
+            ("SSE4.1", "SSE4.1 compression", "SSE4.1 hash_many (4-way)", 4)
+        } else if std::arch::is_x86_feature_detected!("sse2") {
+            ("SSE2", "SSE2 compression", "SSE2 hash_many (4-way)", 4)
+        } else {
+            ("portable", "portable compression", "portable hash_many", 1)
         };
+        let mut regimes = vec![Regime {
+            first: 0,
+            name: one,
+            why: "Up to one chunk, so a single compression handles the whole input.",
+            mark: Mark::Circle,
+        }];
+        if degree > 4 {
+            regimes.push(Regime {
+                first: 4 * 1024,
+                name: "SSE4.1 hash_many (4-way fallback)",
+                why: "Four whole chunks fill the narrowest SIMD batch; wider batches wait for more chunks.",
+                mark: Mark::Diamond,
+            });
+        }
+        if degree > 1 {
+            regimes.push(Regime {
+                first: degree * 1024,
+                name: wide,
+                why: "Enough whole chunks to fill the widest SIMD batch on this CPU.",
+                mark: if degree > 4 { Mark::Square } else { Mark::Diamond },
+            });
+        }
+        return Implementation::new(platform, regimes);
     }
 
     #[cfg(target_arch = "aarch64")]
     {
-        return Blake3Implementation {
-            platform: "NEON",
-            one_chunk:
-            "portable compression (one chunk; NEON bulk path not used)",
-            four_chunks:
-            "NEON hash_many (4-way SIMD; leftover chunks below four use portable compression, so 2 KiB and 3 KiB are all portable)",
-            bulk: "NEON hash_many (4-way SIMD)",
-        };
+        return Implementation::new(
+            "NEON",
+            vec![
+                Regime {
+                    first: 0,
+                    name: "portable compression",
+                    why: "Fewer than four whole chunks: each runs through the portable single-chunk compressor, so 2 KiB and 3 KiB take this path too.",
+                    mark: Mark::Circle,
+                },
+                Regime {
+                    first: 4 * 1024,
+                    name: "NEON hash_many (4-way)",
+                    why: "Four whole chunks fill a NEON batch; from here the bulk of the input runs four chunks at a time.",
+                    mark: Mark::Diamond,
+                },
+            ],
+        );
     }
 
     #[allow(unreachable_code)]
-    Blake3Implementation {
-        platform: "portable",
-        one_chunk: "portable compression",
-        four_chunks: "portable hash_many",
-        bulk: "portable hash_many",
-    }
-}
-
-fn blake3_backend_for_input(
-    implementation: Blake3Implementation,
-    input_bytes: usize,
-) -> &'static str {
-    if input_bytes <= 1024 {
-        implementation.one_chunk
-    } else if input_bytes < 16 * 1024 {
-        implementation.four_chunks
-    } else {
-        implementation.bulk
-    }
-}
-
-fn append_blake3_backend_report(output: &mut String) {
-    let implementation = detect_blake3_implementation();
-
-    writeln!(output, "BLAKE3 implementation selection:").unwrap();
-    writeln!(
-        output,
-        "  selected platform: {}",
-        implementation.platform,
+    Implementation::new(
+        "portable",
+        vec![Regime {
+            first: 0,
+            name: "portable compression",
+            why: "This build has no SIMD path; every size runs the portable compressor.",
+            mark: Mark::Circle,
+        }],
     )
-        .unwrap();
-
-    for input_size in INPUT_SIZES {
-        writeln!(
-            output,
-            "  {:>7}: {}",
-            input_size.label,
-            blake3_backend_for_input(
-                implementation,
-                input_size.bytes,
-            ),
-        )
-            .unwrap();
-    }
-
-    writeln!(output).unwrap();
 }
 
 /*
- * The SME2 fork exposes its runtime platform choice directly, so this
- * report asks the crate rather than inferring from CPU features. main()
- * has already asserted that the platform is SME2, so this section
- * describes the fork's per-size behaviour with that selection.
- *
- * Backend inferences follow the fork's src/ffi_sme2.rs and
- * src/ffi_neon_hybrid.rs: a single chunk runs on the integer-only scalar
- * kernel (k1); two to fifteen whole chunks run on the integer + NEON
- * hybrid kernels (one or two chunks on the integer ALUs beside NEON pairs
- * or quads, xar from the SHA-3 extension); groups of sixteen whole chunks
- * go to the SME2 kernel, with any remainder on the hybrid kernels.
+ * Code paths of the SME2 fork, from its src/ffi_sme2.rs and
+ * src/ffi_neon_hybrid.rs. main() has asserted Platform::SME2.
  */
-fn append_blake3_sme2_backend_report(output: &mut String) {
-    let platform = blake3_sme2::platform::Platform::detect();
-    let degree = platform.simd_degree();
-
-    writeln!(output, "BLAKE3 SME2 implementation selection:").unwrap();
-    writeln!(
-        output,
-        "  selected platform: {platform:?} (512-bit streaming vectors, \
-         sixteen-lane groups, hash_many degree {degree})",
+fn detect_blake3_sme2_implementation() -> Implementation {
+    Implementation::new(
+        "SME2",
+        vec![
+            Regime {
+                first: 0,
+                name: "scalar kernel k1",
+                why: "One chunk runs on the integer ALUs alone.",
+                mark: Mark::Circle,
+            },
+            Regime {
+                first: 2 * 1024,
+                name: "integer + NEON hybrid kernels",
+                why: "Two or more whole chunks: hybrid kernels keep the integer and NEON units busy together, up to fifteen chunks at a time.",
+                mark: Mark::Diamond,
+            },
+            Regime {
+                first: 16 * 1024,
+                name: "SME2 hash16_chunks kernel",
+                why: "Sixteen whole chunks fill an SME2 group on 512-bit streaming vectors; leftovers below sixteen stay on the hybrid kernels.",
+                mark: Mark::Square,
+            },
+        ],
     )
-        .unwrap();
+}
 
-    let implementation = Blake3Implementation {
-        platform: "SME2",
-        one_chunk:
-        "scalar kernel k1 (one chunk on the integer ALUs)",
-        four_chunks:
-        "integer + NEON hybrid kernels (fewer than sixteen chunks; SME2 group not filled)",
-        bulk: "SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors); remainder on hybrid kernels",
+/*
+ * SHA-256 and SHA-1DC each run one code path at every size. Their regimes
+ * still carry a name so the hover panel can say what produced the point.
+ */
+fn detect_sha256_implementation() -> Implementation {
+    let name = if cfg!(target_arch = "aarch64") {
+        "ARMv8 SHA-256 instructions (sha2-asm)"
+    } else if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
+        "sha2-asm x86-64 assembly (SHA-NI where present)"
+    } else {
+        "sha2 portable"
     };
+    Implementation::new(
+        "sha2",
+        vec![Regime {
+            first: 0,
+            name,
+            why: "One implementation at every size.",
+            mark: Mark::Circle,
+        }],
+    )
+}
 
-    for input_size in INPUT_SIZES {
+fn detect_sha1dc_implementation() -> Implementation {
+    Implementation::new(
+        "sha1-checked",
+        vec![Regime {
+            first: 0,
+            name: "SHA-1 with collision detection, pure Rust",
+            why: "One implementation at every size.",
+            mark: Mark::Circle,
+        }],
+    )
+}
+
+fn detect_implementation(algorithm: Algorithm) -> Implementation {
+    match algorithm {
+        Algorithm::Blake3 => detect_blake3_implementation(),
+        Algorithm::Sha256 => detect_sha256_implementation(),
+        Algorithm::Sha1Dc => detect_sha1dc_implementation(),
+        Algorithm::Blake3Sme2 => detect_blake3_sme2_implementation(),
+    }
+}
+
+fn append_implementation_report(output: &mut String, algorithm: Algorithm) {
+    let implementation = detect_implementation(algorithm);
+
+    writeln!(output, "{} implementation selection:", algorithm.name()).unwrap();
+    if algorithm == Algorithm::Blake3Sme2 {
+        let platform = blake3_sme2::platform::Platform::detect();
         writeln!(
             output,
-            "  {:>7}: {}",
+            "  selected platform: {platform:?} (512-bit streaming vectors, \
+             sixteen-lane groups, hash_many degree {})",
+            platform.simd_degree(),
+        )
+            .unwrap();
+    } else {
+        writeln!(output, "  selected platform: {}", implementation.platform).unwrap();
+    }
+
+    for (size_index, input_size) in INPUT_SIZES.iter().enumerate() {
+        let (regime_index, first) = implementation.regime_index_for(size_index);
+        let regime = &implementation.regimes[regime_index];
+        writeln!(
+            output,
+            "  {:>7}: {}{}",
             input_size.label,
-            blake3_backend_for_input(
-                implementation,
-                input_size.bytes,
-            ),
+            regime.name,
+            if first && regime_index > 0 { "  ← new path from here" } else { "" },
         )
             .unwrap();
     }
@@ -879,8 +963,8 @@ fn generate_text(
     }
     writeln!(output).unwrap();
 
-    append_blake3_backend_report(&mut output);
-    append_blake3_sme2_backend_report(&mut output);
+    append_implementation_report(&mut output, Algorithm::Blake3);
+    append_implementation_report(&mut output, Algorithm::Blake3Sme2);
 
     writeln!(
         output,
@@ -1280,7 +1364,8 @@ fn generate_svg(
                 * (PLOT_RIGHT - PLOT_LEFT - 2.0 * X_INSET)
         });
 
-    let implementation = detect_blake3_implementation();
+    let implementations: Vec<Implementation> =
+        ALGORITHMS.iter().map(|&algorithm| detect_implementation(algorithm)).collect();
     let takeaway = generate_takeaway(results);
 
     let mut svg = String::new();
@@ -1332,6 +1417,9 @@ fn generate_svg(
     .series[data-on="false"] .series-swatch { fill: #fdfdfc; }
     .series-swatch { stroke-width: 2; transition: fill 0.3s ease; }
     .dot { cursor: crosshair; }
+    .dot-ring { stroke-width: 1.5; stroke-opacity: 0.55; }
+    .dot:hover .dot-ring { stroke-opacity: 1; }
+    .legend { font-size: 10px; fill: #8a8a8a; }
     #hover { pointer-events: none; }
     #hover-guide { stroke: #9a9a9a; stroke-width: 1; stroke-dasharray: 3,3; }
     #hover-box { fill: #ffffff; fill-opacity: 0.97; stroke: #c8c8c4; stroke-width: 1; }
@@ -1341,6 +1429,8 @@ fn generate_svg(
     .hover-row-focus { font-weight: 700; }
     .hover-ratio { font-size: 11px; font-weight: 600; }
     .hover-note { font-size: 9px; font-style: italic; fill: #9a9a9a; }
+    .hover-path { font-weight: 700; fill: #333333; }
+    .hover-why { font-size: 10px; fill: #555555; }
   </style>
 "##,
     );
@@ -1374,7 +1464,7 @@ fn generate_svg(
         .unwrap();
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="123" class="method">Hover a dot to compare contenders at that size · click a name at right to hide or show that contender</text>"##
+        r##"  <text x="{PLOT_LEFT:.0}" y="123" class="method">Dot shape marks the code path a contender used at that size; a ringed dot is where a new path begins · hover any dot to compare contenders and see the path · click a name at right to hide or show that contender</text>"##
     )
         .unwrap();
 
@@ -1489,6 +1579,7 @@ fn generate_svg(
     for algorithm_index in 0..ALGORITHM_COUNT {
         let algorithm = ALGORITHMS[algorithm_index];
         let color = algorithm.color();
+        let implementation = &implementations[algorithm_index];
 
         writeln!(
             svg,
@@ -1555,18 +1646,29 @@ fn generate_svg(
             let statistics = results[size_index][algorithm_index];
             let median_y = map_y(statistics.median);
 
+            /*
+             * The dot's shape names the code path that produced this point;
+             * the first dot of a new path is drawn larger, with a ring, as
+             * the place to hover for the explanation.
+             */
+            let (regime_index, first_in_regime) = implementation.regime_index_for(size_index);
+            let regime = &implementation.regimes[regime_index];
+            let transition = first_in_regime && regime_index > 0;
             writeln!(
                 svg,
-                r##"      <circle class="dot" data-size="{size_index}" cx="{x:.2}" cy="{median_y:.2}" r="5" fill="{color}" stroke="#fdfdfc" stroke-width="1.5" onmouseenter="showHover({algorithm_index},{size_index})" onmouseleave="hideHover()">"##
+                r##"      <g class="dot{}" data-size="{size_index}" transform="translate({x:.2} {median_y:.2})" onmouseenter="showHover({algorithm_index},{size_index})" onmouseleave="hideHover()">"##,
+                if transition { " dot-transition" } else { "" },
             )
                 .unwrap();
-
-            /*
-             * A native <title> would pop over the hover panel, so the panel
-             * alone carries the numbers. The value labels below stay for
-             * viewers without script.
-             */
-            svg.push_str("      </circle>\n");
+            if transition {
+                writeln!(
+                    svg,
+                    r##"        <circle class="dot-ring" r="9.5" fill="none" stroke="{color}"/>"##
+                )
+                    .unwrap();
+            }
+            writeln!(svg, "        {}", mark_shape(regime.mark, color, if transition { 6.0 } else { 5.0 })).unwrap();
+            svg.push_str("      </g>\n");
 
             /*
              * With sixteen columns, a value at every dot would overprint.
@@ -1671,60 +1773,62 @@ fn generate_svg(
     }
 
     /*
-     * Annotate the BLAKE3 single-chunk elbow: the 64 B point uses a
-     * different code path than the bulk sizes, and that is the whole story
-     * of its shape. It follows the BLAKE3 dot, so it lives in a group the
-     * script moves and hides with that series.
+     * Shape legend under the plot's right end: one entry per mark in use,
+     * in neutral grey, since colour belongs to contenders and shape to
+     * code paths.
      */
     {
-        let blake3_index = 0;
-        let x = x_positions[0];
-        let y = map_y(results[0][blake3_index].median);
-
-        let short_backend = implementation
-            .one_chunk
-            .split(" (")
-            .next()
-            .expect("backend description is not empty");
-
+        let mut marks: Vec<Mark> = Vec::new();
+        for implementation in &implementations {
+            for regime in &implementation.regimes {
+                if !marks.contains(&regime.mark) {
+                    marks.push(regime.mark);
+                }
+            }
+        }
+        let legend_y = PLOT_BOTTOM + 68.0;
+        let mut x = PLOT_RIGHT;
+        let entries: Vec<(Mark, &str)> = marks
+            .iter()
+            .enumerate()
+            .map(|(index, &mark)| {
+                (mark, match index { 0 => "first code path", 1 => "second", _ => "third" })
+            })
+            .collect();
+        /* Lay out right-to-left so the row ends flush with the plot edge. */
+        for (mark, label) in entries.iter().rev() {
+            let label_width = label.len() as f64 * 5.6;
+            x -= label_width;
+            writeln!(
+                svg,
+                r##"  <text x="{x:.1}" y="{:.1}" class="legend">{label}</text>"##,
+                legend_y,
+            )
+                .unwrap();
+            x -= 12.0;
+            writeln!(
+                svg,
+                r##"  <g transform="translate({x:.1} {:.1}) scale(0.75)">{}</g>"##,
+                legend_y - 3.5,
+                mark_shape(*mark, "#8a8a8a", 5.0),
+            )
+                .unwrap();
+            x -= 18.0;
+        }
         writeln!(
             svg,
-            r##"  <g id="elbow" transform="translate({x:.2} {y:.2})">"##
+            r##"  <g transform="translate({:.1} {:.1}) scale(0.75)"><circle r="9.5" fill="none" stroke="#8a8a8a" stroke-width="1.5"/><circle r="5" fill="#8a8a8a"/></g>"##,
+            x - 6.0,
+            legend_y - 3.5,
         )
             .unwrap();
-
-        /*
-         * Above and to the right of the dot. The other BLAKE3 flavour and
-         * SHA-256 sit at or below this dot at 64 B, so the space above it is
-         * the clear side; the leader starts past the 64 B value labels.
-         */
         writeln!(
             svg,
-            r##"    <line x1="10" y1="-8" x2="70" y2="-40" stroke="#bbbbbb" stroke-width="1"/>"##
+            r##"  <text x="{:.1}" y="{:.1}" class="legend" text-anchor="end">a new path begins</text>"##,
+            x - 18.0,
+            legend_y,
         )
             .unwrap();
-
-        writeln!(
-            svg,
-            r##"    <text x="74" y="-44" class="annotation">BLAKE3 at 64 B: one chunk → {}</text>"##,
-            xml_escape(short_backend),
-        )
-            .unwrap();
-
-        writeln!(
-            svg,
-            r##"    <text x="74" y="-32" class="annotation">(bulk sizes use {})</text>"##,
-            xml_escape(
-                implementation
-                    .bulk
-                    .split(" (")
-                    .next()
-                    .expect("backend description is not empty"),
-            ),
-        )
-            .unwrap();
-
-        writeln!(svg, "  </g>").unwrap();
     }
 
     /*
@@ -1809,10 +1913,40 @@ fn generate_svg(
     );
 
     /* Data and behaviour for the interactive toggles. */
-    write_interaction_script(&mut svg, results, &x_positions, &label_y_by_algorithm, shared_count);
+    write_interaction_script(&mut svg, results, &implementations, &x_positions, &label_y_by_algorithm, shared_count);
 
     svg.push_str("</svg>\n");
     svg
+}
+
+fn json_string(text: &str) -> String {
+    format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/*
+ * A mark centred on the origin. Diamonds and squares are sized to match a
+ * circle's visual weight at the same radius.
+ */
+fn mark_shape(mark: Mark, color: &str, radius: f64) -> String {
+    let stroke = r##"stroke="#fdfdfc" stroke-width="1.5""##;
+    match mark {
+        Mark::Circle => format!(r##"<circle r="{radius:.1}" fill="{color}" {stroke}/>"##),
+        Mark::Diamond => {
+            let r = radius * 1.25;
+            format!(
+                r##"<path d="M 0 {a:.2} L {r:.2} 0 L 0 {r:.2} L {a:.2} 0 Z" fill="{color}" {stroke}/>"##,
+                a = -r,
+            )
+        }
+        Mark::Square => {
+            let h = radius * 0.9;
+            format!(
+                r##"<rect x="{a:.2}" y="{a:.2}" width="{w:.2}" height="{w:.2}" fill="{color}" {stroke}/>"##,
+                a = -h,
+                w = 2.0 * h,
+            )
+        }
+    }
 }
 
 fn provenance_line_y(slot: usize) -> f64 {
@@ -1840,7 +1974,7 @@ fn shared_provenance_lines(machine: &MachineMetadata) -> Vec<String> {
 /* Provenance that belongs to one contender and hides with it. */
 fn contender_provenance_lines(
     algorithm: Algorithm,
-    implementation: Blake3Implementation,
+    implementation: &Implementation,
 ) -> Vec<String> {
     let name = algorithm.name();
     match algorithm {
@@ -1878,6 +2012,7 @@ fn contender_provenance_lines(
 fn write_interaction_script(
     svg: &mut String,
     results: &Results,
+    implementations: &[Implementation],
     x_positions: &[f64; INPUT_COUNT],
     label_y_by_algorithm: &[f64; ALGORITHM_COUNT],
     shared_count: usize,
@@ -1887,7 +2022,21 @@ fn write_interaction_script(
         if algorithm_index > 0 {
             data.push(',');
         }
-        write!(data, "{{\"name\":\"{}\",\"min\":[", ALGORITHMS[algorithm_index].name()).unwrap();
+        write!(data, "{{\"name\":\"{}\",\"regimes\":[", ALGORITHMS[algorithm_index].name()).unwrap();
+        for (regime_index, regime) in implementations[algorithm_index].regimes.iter().enumerate() {
+            if regime_index > 0 { data.push(','); }
+            let first_size = INPUT_SIZES.iter().position(|size| size.bytes >= regime.first)
+                .expect("every regime starts at or below the largest tested size");
+            write!(
+                data,
+                "{{\"from\":{first_size},\"name\":{},\"why\":{},\"mark\":\"{}\"}}",
+                json_string(regime.name),
+                json_string(regime.why),
+                regime.mark.name(),
+            )
+                .unwrap();
+        }
+        data.push_str("],\"min\":[");
         for size_index in 0..INPUT_COUNT {
             if size_index > 0 { data.push(','); }
             write!(data, "{}", results[size_index][algorithm_index].minimum).unwrap();
@@ -2050,7 +2199,7 @@ function relayout() {
     g.querySelector(".median").setAttribute("d", med);
     g.querySelectorAll(".dot").forEach(dot => {
       const k = +dot.getAttribute("data-size");
-      dot.setAttribute("cy", mapY(s.med[k]).toFixed(2));
+      dot.setAttribute("transform", `translate(${X[k]} ${mapY(s.med[k]).toFixed(2)})`);
     });
     g.querySelectorAll(".value-label").forEach(t => {
       const k = +t.getAttribute("data-size");
@@ -2078,12 +2227,6 @@ function relayout() {
     const lab = document.getElementById("series-" + i).querySelector(".series-label");
     lab.setAttribute("transform", `translate(0 ${(y - overrun).toFixed(2)})`);
   }
-
-  /* Elbow annotation follows the baseline's first dot. */
-  const elbow = document.getElementById("elbow");
-  const b = DATA.series[DATA.baseline];
-  elbow.setAttribute("transform", `translate(${DATA.x[0]} ${mapY(b.med[0]).toFixed(2)})`);
-  elbow.style.display = on[DATA.baseline] ? "" : "none";
 
   /* Provenance: visible contenders' lines close ranks after the shared lines. */
   let slot = DATA.sharedProv;
@@ -2123,6 +2266,26 @@ function gbps(nsPerByte) {
   return (t >= 10 ? t.toFixed(0) : t.toFixed(1)) + " GB/s";
 }
 
+function markGlyph(mark, color) {
+  const stroke = ["stroke", "#fdfdfc"], sw = ["stroke-width", "1.5"];
+  let el;
+  if (mark === "diamond") { el = document.createElementNS(NS, "path"); el.setAttribute("d", "M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z"); }
+  else if (mark === "square") { el = document.createElementNS(NS, "rect"); el.setAttribute("x", -4.5); el.setAttribute("y", -4.5); el.setAttribute("width", 9); el.setAttribute("height", 9); }
+  else { el = document.createElementNS(NS, "circle"); el.setAttribute("r", 5); }
+  el.setAttribute("fill", color); el.setAttribute(...stroke); el.setAttribute(...sw);
+  return el;
+}
+
+function wrapText(text, maxChars) {
+  const lines = []; let line = "";
+  for (const word of text.split(" ")) {
+    if (line && (line + " " + word).length > maxChars) { lines.push(line); line = word; }
+    else line = line ? line + " " + word : word;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
 function textEl(x, y, cls, content, extra) {
   const t = document.createElementNS(NS, "text");
   t.setAttribute("x", x); t.setAttribute("y", y); t.setAttribute("class", cls);
@@ -2144,12 +2307,33 @@ function showHover(focus, k) {
   const f = DATA.series[focus];
   const rows = DATA.series.map((s, i) => [i, s.med[k]]).filter(([i]) => on[i]).sort((a, b) => a[1] - b[1]);
 
-  const PAD = 10, LINE = 16, W = 330;
+  const PAD = 10, LINE = 16, W = 350;
   let y = PAD + 12;
   body.appendChild(textEl(PAD, y, "hover-head", `${f.name} at ${DATA.sizes[k]}`));
   y += 14;
   body.appendChild(textEl(PAD, y, "hover-sub",
     `median ${f.med[k].toFixed(3)} ns/B (${gbps(f.med[k])}) · range ${f.min[k].toFixed(3)}–${f.max[k].toFixed(3)}`));
+
+  /* Code path at this size; the first size of a new path explains why. */
+  let ri = 0;
+  f.regimes.forEach((r, j) => { if (k >= r.from) ri = j; });
+  const regime = f.regimes[ri];
+  const isTransition = ri > 0 && regime.from === k;
+  y += 14;
+  const pathRow = textEl(PAD, y, "hover-sub", "");
+  const shape = markGlyph(regime.mark, DATA.colors[focus]);
+  shape.setAttribute("transform", `translate(${PAD + 5} ${y - 3.5}) scale(0.8)`);
+  body.appendChild(shape);
+  pathRow.setAttribute("x", PAD + 14);
+  pathRow.textContent = (isTransition ? "new path from here: " : "code path: ") + regime.name;
+  if (isTransition) pathRow.setAttribute("class", "hover-sub hover-path");
+  body.appendChild(pathRow);
+  if (isTransition) {
+    for (const line of wrapText(regime.why, 62)) {
+      y += 13;
+      body.appendChild(textEl(PAD + 14, y, "hover-why", line));
+    }
+  }
   y += 10;
 
   if (rows.length > 1) {

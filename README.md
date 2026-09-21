@@ -117,25 +117,28 @@ what git pays today rather than what raw SHA-1 costs.
 The resolved crate versions, sources, and registry checksums are included
 in stdout, the text report, and the SVG metadata.
 
-## BLAKE3 backend reporting
+## Code paths by input size
 
-The benchmark reports the BLAKE3 implementation selected for the
-performance-dominant path at each input size. These inferences are based
-on BLAKE3 v1.8.7.
+Each contender may switch implementation as the input grows. BLAKE3
+divides input into 1024-byte chunks; the crates.io crate runs a single
+chunk through its one-chunk compressor and batches whole chunks into
+the widest SIMD `hash_many` it can fill (four-way NEON on AArch64, so
+four chunks at 4 KiB; AVX-512, AVX2, SSE4.1, or SSE2 on x86). The SME2
+fork runs one chunk on a scalar kernel, two to fifteen on integer + NEON
+hybrid kernels, and groups of sixteen on the SME2 kernel (16 KiB and
+above). SHA-256 and SHA-1DC run one path at every size.
 
-BLAKE3 divides input into 1024-byte chunks. A 64-byte input fits in one
-chunk and does not enter the bulk SIMD path; on AArch64 that means the
-portable compressor. Multi-chunk inputs use the widest available
-hash_many implementation: AVX-512, AVX2, SSE4.1, or SSE2 selected at
-runtime on x86, and four-way NEON on AArch64. Wider implementations fall
-through to narrower ones when an input does not fill a complete SIMD
-batch.
+The text report lists the path at each size for both BLAKE3s and marks
+where a new one begins. In the graph, dot shape carries the same
+information: a circle for a contender's first path, a diamond for its
+second, a square for its third. The first dot of a new path wears a
+ring; hovering any dot names its path, and hovering a ringed dot adds a
+sentence on why the path changes there. A legend under the plot
+explains the shapes. Colour stays with the contender, so a line keeps
+one colour while its dots change shape.
 
-A second section reports the BLAKE3 SME2 crate's selection, taken from
-the fork's `Platform::detect()` rather than inferred. Single chunks (up
-to 1 KiB) use the portable compressor, inputs of fewer than sixteen
-chunks (2 KiB to 8 KiB) are handed to NEON because they do not fill a
-sixteen-lane group, and 16 KiB and above run the SME2 chunk kernel.
+These inferences follow BLAKE3 v1.8.7's `src/platform.rs` and the
+fork's `src/ffi_sme2.rs` and `src/ffi_neon_hybrid.rs`.
 
 ## Interleaving
 
@@ -154,7 +157,7 @@ headline sentence beneath the title states each contender's speed
 relative to BLAKE3 across the size range.
 
 Hovering a dot opens a panel for that input size: the hovered
-contender's median and range, then every visible contender ranked
+contender's median, range, and code path, then every visible contender ranked
 fastest first with its ns/B, GB/s, and speed relative to the hovered
 one ("1.35× faster", "about the same", "3.22× slower"). Hidden
 contenders stay out of the ranking.

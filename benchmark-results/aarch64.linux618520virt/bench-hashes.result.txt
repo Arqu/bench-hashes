@@ -1,8 +1,8 @@
-TIMESTAMP: 2026-09-21 13:42:15 UTC
+TIMESTAMP: 2026-09-21 13:49:46 UTC
 git source: https://github.com/johnservil/bench-hashes
-git commit: 270695eec03e5c30b14c970c237ac1ddc10aa8a8
-git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+16 commits)
-git clean status: dirty-00f4f33b32365fbf62e081f49ed21284e8e1a7061a2f6417afd84c98ac7e591c
+git commit: 60a2d1611dff9fe1c3c3b09790a6a787f84faa0d
+git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+17 commits)
+git clean status: dirty-18ac3947dc278b07dd7ec6c5080d39982b7c2980fe2d0a775e96c6ca4245bd40
 bench-hashes version: 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f
 CPU type: aarch64
 CPU count: 2
@@ -22,41 +22,41 @@ BLAKE3 SME2 mode: single-threaded; SME2 kernel for groups of sixteen chunks, int
 
 BLAKE3 implementation selection:
   selected platform: NEON
-     64 B: portable compression (one chunk; NEON bulk path not used)
-    128 B: portable compression (one chunk; NEON bulk path not used)
-    256 B: portable compression (one chunk; NEON bulk path not used)
-    512 B: portable compression (one chunk; NEON bulk path not used)
-    1 KiB: portable compression (one chunk; NEON bulk path not used)
-    2 KiB: NEON hash_many (4-way SIMD; leftover chunks below four use portable compression, so 2 KiB and 3 KiB are all portable)
-    3 KiB: NEON hash_many (4-way SIMD; leftover chunks below four use portable compression, so 2 KiB and 3 KiB are all portable)
-    4 KiB: NEON hash_many (4-way SIMD; leftover chunks below four use portable compression, so 2 KiB and 3 KiB are all portable)
-    8 KiB: NEON hash_many (4-way SIMD; leftover chunks below four use portable compression, so 2 KiB and 3 KiB are all portable)
-   16 KiB: NEON hash_many (4-way SIMD)
-   32 KiB: NEON hash_many (4-way SIMD)
-   64 KiB: NEON hash_many (4-way SIMD)
-  128 KiB: NEON hash_many (4-way SIMD)
-  256 KiB: NEON hash_many (4-way SIMD)
-  512 KiB: NEON hash_many (4-way SIMD)
-    1 MiB: NEON hash_many (4-way SIMD)
+     64 B: portable compression
+    128 B: portable compression
+    256 B: portable compression
+    512 B: portable compression
+    1 KiB: portable compression
+    2 KiB: portable compression
+    3 KiB: portable compression
+    4 KiB: NEON hash_many (4-way)  ← new path from here
+    8 KiB: NEON hash_many (4-way)
+   16 KiB: NEON hash_many (4-way)
+   32 KiB: NEON hash_many (4-way)
+   64 KiB: NEON hash_many (4-way)
+  128 KiB: NEON hash_many (4-way)
+  256 KiB: NEON hash_many (4-way)
+  512 KiB: NEON hash_many (4-way)
+    1 MiB: NEON hash_many (4-way)
 
 BLAKE3 SME2 implementation selection:
   selected platform: SME2 (512-bit streaming vectors, sixteen-lane groups, hash_many degree 128)
-     64 B: scalar kernel k1 (one chunk on the integer ALUs)
-    128 B: scalar kernel k1 (one chunk on the integer ALUs)
-    256 B: scalar kernel k1 (one chunk on the integer ALUs)
-    512 B: scalar kernel k1 (one chunk on the integer ALUs)
-    1 KiB: scalar kernel k1 (one chunk on the integer ALUs)
-    2 KiB: integer + NEON hybrid kernels (fewer than sixteen chunks; SME2 group not filled)
-    3 KiB: integer + NEON hybrid kernels (fewer than sixteen chunks; SME2 group not filled)
-    4 KiB: integer + NEON hybrid kernels (fewer than sixteen chunks; SME2 group not filled)
-    8 KiB: integer + NEON hybrid kernels (fewer than sixteen chunks; SME2 group not filled)
-   16 KiB: SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors); remainder on hybrid kernels
-   32 KiB: SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors); remainder on hybrid kernels
-   64 KiB: SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors); remainder on hybrid kernels
-  128 KiB: SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors); remainder on hybrid kernels
-  256 KiB: SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors); remainder on hybrid kernels
-  512 KiB: SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors); remainder on hybrid kernels
-    1 MiB: SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors); remainder on hybrid kernels
+     64 B: scalar kernel k1
+    128 B: scalar kernel k1
+    256 B: scalar kernel k1
+    512 B: scalar kernel k1
+    1 KiB: scalar kernel k1
+    2 KiB: integer + NEON hybrid kernels  ← new path from here
+    3 KiB: integer + NEON hybrid kernels
+    4 KiB: integer + NEON hybrid kernels
+    8 KiB: integer + NEON hybrid kernels
+   16 KiB: SME2 hash16_chunks kernel  ← new path from here
+   32 KiB: SME2 hash16_chunks kernel
+   64 KiB: SME2 hash16_chunks kernel
+  128 KiB: SME2 hash16_chunks kernel
+  256 KiB: SME2 hash16_chunks kernel
+  512 KiB: SME2 hash16_chunks kernel
+    1 MiB: SME2 hash16_chunks kernel
 
 ============================================================
 BENCHMARK SUMMARY
@@ -65,38 +65,38 @@ BENCHMARK SUMMARY
 Time per byte in ns/B: median, with minimum–maximum beneath; lower is better.
 
   size             BLAKE3        SHA-256        SHA-1DC    BLAKE3 SME2
-  64 B              0.780          0.545          3.009          0.813
-              0.714–0.816    0.497–0.582    2.723–3.239    0.773–0.879
-  128 B             0.795          0.432          2.015          0.828
-              0.722–0.836    0.389–0.489    1.911–2.097    0.762–0.893
-  256 B             0.781          0.384          1.636          0.772
-              0.730–1.009    0.344–0.426    1.514–1.743    0.701–0.864
-  512 B             0.778          0.379          1.370          0.749
-              0.720–0.846    0.343–0.403    1.270–1.573    0.699–0.807
-  1 KiB             0.776          0.376          1.265          0.731
-              0.715–0.824    0.345–0.399    1.143–1.318    0.665–0.792
-  2 KiB             0.799          0.376          1.229          0.525
-              0.757–0.845    0.344–0.391    1.155–1.446    0.469–0.567
-  3 KiB             0.808          0.371          1.241          0.370
-              0.760–0.867    0.342–0.390    1.131–1.343    0.341–0.401
-  4 KiB             0.445          0.372          1.219          0.348
-              0.413–0.485    0.342–0.416    1.148–1.309    0.322–0.365
-  8 KiB             0.438          0.372          1.245          0.314
-              0.400–0.479    0.336–0.401    1.154–1.352    0.280–0.334
-  16 KiB            0.433          0.372          1.227          0.239
-              0.394–0.480    0.329–0.403    1.140–1.339    0.234–0.247
-  32 KiB            0.434          0.370          1.260          0.220
-              0.395–0.464    0.338–0.411    1.179–1.368    0.215–0.234
-  64 KiB            0.430          0.369          1.257          0.206
-              0.397–0.468    0.338–0.408    1.132–1.352    0.204–0.228
-  128 KiB           0.432          0.369          1.283          0.204
-              0.404–0.463    0.336–0.426    1.189–1.373    0.203–0.220
-  256 KiB           0.430          0.370          1.314          0.191
-              0.394–0.462    0.340–0.413    1.194–1.446    0.182–0.201
-  512 KiB           0.431          0.370          1.341          0.186
-              0.393–0.467    0.338–0.411    1.226–1.463    0.177–0.196
-  1 MiB             0.431          0.369          1.351          0.175
-              0.395–0.463    0.343–0.421    1.241–1.414    0.169–0.181
+  64 B              0.783          0.550          2.804          0.815
+              0.780–0.801    0.545–0.559    2.780–2.851    0.813–0.843
+  128 B             0.799          0.435          1.922          0.832
+              0.791–0.829    0.431–0.448    1.903–1.959    0.826–0.853
+  256 B             0.787          0.387          1.589          0.775
+              0.783–0.831    0.383–0.424    1.525–1.630    0.759–0.807
+  512 B             0.783          0.380          1.350          0.749
+              0.779–0.806    0.379–0.391    1.305–1.392    0.747–0.782
+  1 KiB             0.780          0.378          1.264          0.735
+              0.733–0.803    0.370–0.385    1.211–1.285    0.731–0.764
+  2 KiB             0.802          0.376          1.231          0.508
+              0.774–0.833    0.341–0.384    1.188–1.354    0.477–0.540
+  3 KiB             0.811          0.373          1.249          0.360
+              0.809–0.831    0.372–0.386    1.199–1.277    0.357–0.373
+  4 KiB             0.450          0.373          1.229          0.341
+              0.447–0.461    0.364–0.380    1.185–1.260    0.335–0.354
+  8 KiB             0.440          0.373          1.254          0.313
+              0.428–0.465    0.371–0.399    1.202–1.328    0.307–0.321
+  16 KiB            0.437          0.372          1.241          0.236
+              0.436–0.467    0.365–0.381    1.194–1.313    0.232–0.244
+  32 KiB            0.436          0.372          1.267          0.217
+              0.432–0.448    0.371–0.409    1.248–1.333    0.216–0.227
+  64 KiB            0.435          0.372          1.273          0.207
+              0.433–0.468    0.368–0.402    1.257–1.370    0.205–0.211
+  128 KiB           0.435          0.372          1.300          0.204
+              0.424–0.465    0.372–0.401    1.287–1.419    0.199–0.206
+  256 KiB           0.436          0.373          1.323          0.183
+              0.434–0.465    0.369–0.382    1.297–1.422    0.181–0.187
+  512 KiB           0.435          0.374          1.358          0.172
+              0.392–0.446    0.372–0.407    1.324–1.383    0.170–0.177
+  1 MiB             0.436          0.374          1.374          0.166
+              0.433–0.452    0.360–0.382    1.357–1.653    0.165–0.180
 
-On this machine: SHA-256 is 1.16× to 2.18× faster than BLAKE3; BLAKE3 is 1.54× to 3.86× faster than SHA-1DC; BLAKE3 SME2 matches BLAKE3 below 1 KiB and is up to 2.46× faster from there
+On this machine: SHA-256 is 1.16× to 2.17× faster than BLAKE3; BLAKE3 is 1.53× to 3.58× faster than SHA-1DC; BLAKE3 SME2 matches BLAKE3 below 1 KiB and is up to 2.62× faster from there
 
