@@ -243,7 +243,7 @@ wide, and the text report marks wide cells with `!` and counts them.
 
 The SVG shows median lines with min–max bands on a log-log grid.
 
-Two pills above the y axis switch the graph between ns/B (the default;
+A switch above the y axis flips the graph between ns/B (the default;
 lower is better) and GB/s (higher is better). GB/s is the reciprocal of
 ns/B, so on the log axis the plot mirrors through its middle: the
 switch animates each point along a straight line to its mirrored

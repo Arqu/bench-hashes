@@ -2273,12 +2273,12 @@ fn generate_svg(
     .series[data-on="false"] .series-prov { display: none; }
     .series[data-on="false"] .series-swatch { fill: #fdfdfc; }
     .series-swatch { stroke-width: 2; transition: fill 0.3s ease; }
-    .unit-pill { cursor: pointer; }
-    .unit-pill rect { fill: #fdfdfc; stroke: #b8b8b4; stroke-width: 1; }
-    .unit-pill text { font-size: 10px; font-weight: 600; fill: #777777; }
-    .unit-pill:hover rect { stroke: #55555a; }
-    .unit-pill.unit-on rect { fill: #55555a; stroke: #55555a; }
-    .unit-pill.unit-on text { fill: #fdfdfc; }
+    #unit-switch { cursor: pointer; }
+    .unit-track { fill: #e8e8e6; stroke: #c8c8c4; stroke-width: 1; }
+    #unit-switch:hover .unit-track { stroke: #55555a; }
+    .unit-knob { fill: #55555a; transition: cy 0.35s ease; }
+    .unit-label { font-size: 10px; font-weight: 600; fill: #b0b0b0; transition: fill 0.35s ease; }
+    .unit-label.unit-on { fill: #333333; }
     .dot { cursor: crosshair; }
     .dot-ring { stroke-width: 1.5; stroke-opacity: 0.55; }
     .dot:hover .dot-ring { stroke-opacity: 1; }
@@ -2346,19 +2346,25 @@ fn generate_svg(
         .unwrap();
 
     /*
-     * Unit toggle, above the y axis: two pills, the active one filled. The
-     * script redraws everything in the chosen unit; without script the
-     * graph stays in ns/B and the pills are inert.
+     * Unit switch, above the y axis: a vertical track with a knob that
+     * slides between GB/s (top) and ns/B (bottom). Clicking anywhere on
+     * the switch flips it. The knob's position is the state; the label
+     * beside it reads darker. Without script the graph stays in ns/B and
+     * the switch is inert.
      */
     writeln!(
         svg,
-        r##"  <g id="unit-toggle" transform="translate({:.1} {:.1})">"##,
-        PLOT_LEFT - 56.0,
-        PLOT_TOP - 52.0,
+        r##"  <g id="unit-switch" transform="translate({:.1} {:.1})" onclick="flipUnit()">"##,
+        PLOT_LEFT - 60.0,
+        PLOT_TOP - 50.0,
     )
         .unwrap();
-    writeln!(svg, r##"    <g class="unit-pill" data-unit="gbps" onclick="setUnit('gbps')"><rect x="0" y="0" width="44" height="18" rx="9"/><text x="22" y="13" text-anchor="middle">GB/s</text></g>"##).unwrap();
-    writeln!(svg, r##"    <g class="unit-pill unit-on" data-unit="ns" onclick="setUnit('ns')"><rect x="0" y="22" width="44" height="18" rx="9"/><text x="22" y="35" text-anchor="middle">ns/B</text></g>"##).unwrap();
+    writeln!(svg, r##"    <title>Switch between nanoseconds per byte and gigabytes per second</title>"##).unwrap();
+    writeln!(svg, r##"    <rect class="unit-hit" x="-4" y="-4" width="60" height="42" fill="transparent"/>"##).unwrap();
+    writeln!(svg, r##"    <rect class="unit-track" x="0" y="0" width="14" height="34" rx="7"/>"##).unwrap();
+    writeln!(svg, r##"    <circle id="unit-knob" class="unit-knob" cx="7" cy="27" r="5"/>"##).unwrap();
+    writeln!(svg, r##"    <text class="unit-label" data-unit="gbps" x="20" y="11">GB/s</text>"##).unwrap();
+    writeln!(svg, r##"    <text class="unit-label unit-on" data-unit="ns" x="20" y="31">ns/B</text>"##).unwrap();
     writeln!(svg, "  </g>").unwrap();
 
     /*
@@ -3111,11 +3117,15 @@ const otherUnitLabel = () => unit === "ns" ? "GB/s" : "ns/B";
 const fmtOther = ns => unit === "ns" ? gbps(ns) : ns.toFixed(3) + " ns/B";
 
 let animation = null;
+let chosen = "ns";
+function flipUnit() { setUnit(chosen === "ns" ? "gbps" : "ns"); }
 function setUnit(u) {
+  chosen = u;
   const target = u === "ns" ? 0 : 1;
   if (animation) cancelAnimationFrame(animation);
-  const pills = document.getElementById("unit-toggle").querySelectorAll(".unit-pill");
-  pills.forEach(p => p.setAttribute("class", "unit-pill" + (p.getAttribute("data-unit") === u ? " unit-on" : "")));
+  document.getElementById("unit-knob").setAttribute("cy", u === "ns" ? 27 : 7);
+  document.getElementById("unit-switch").querySelectorAll(".unit-label")
+    .forEach(l => l.setAttribute("class", "unit-label" + (l.getAttribute("data-unit") === u ? " unit-on" : "")));
 
   const start = blend, startTime = performance.now(), DURATION = 700;
   const ease = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
@@ -3464,6 +3474,7 @@ window.toggleSeries = toggleSeries;
 window.showHover = showHover;
 window.hideHover = hideHover;
 window.setUnit = setUnit;
+window.flipUnit = flipUnit;
 relayout();
 "##;
 
