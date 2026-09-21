@@ -2353,12 +2353,12 @@ fn generate_svg(
     writeln!(
         svg,
         r##"  <g id="unit-toggle" transform="translate({:.1} {:.1})">"##,
-        PLOT_LEFT - 96.0,
-        PLOT_TOP - 30.0,
+        PLOT_LEFT - 56.0,
+        PLOT_TOP - 52.0,
     )
         .unwrap();
-    writeln!(svg, r##"    <g class="unit-pill unit-on" data-unit="ns" onclick="setUnit('ns')"><rect x="0" y="0" width="44" height="18" rx="9"/><text x="22" y="13" text-anchor="middle">ns/B</text></g>"##).unwrap();
-    writeln!(svg, r##"    <g class="unit-pill" data-unit="gbps" onclick="setUnit('gbps')"><rect x="46" y="0" width="44" height="18" rx="9"/><text x="68" y="13" text-anchor="middle">GB/s</text></g>"##).unwrap();
+    writeln!(svg, r##"    <g class="unit-pill" data-unit="gbps" onclick="setUnit('gbps')"><rect x="0" y="0" width="44" height="18" rx="9"/><text x="22" y="13" text-anchor="middle">GB/s</text></g>"##).unwrap();
+    writeln!(svg, r##"    <g class="unit-pill unit-on" data-unit="ns" onclick="setUnit('ns')"><rect x="0" y="22" width="44" height="18" rx="9"/><text x="22" y="35" text-anchor="middle">ns/B</text></g>"##).unwrap();
     writeln!(svg, "  </g>").unwrap();
 
     /*
