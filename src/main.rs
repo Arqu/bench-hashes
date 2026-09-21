@@ -2,6 +2,7 @@ use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 use std::fs;
 use std::hint::black_box;
+use std::io::{IsTerminal, Write as _};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use sysinfo::System;
 
@@ -250,6 +251,9 @@ fn measure_all() -> Results {
      * Each algorithm/input combination gets its own calibrated iteration
      * count so that timed blocks have approximately equal durations.
      */
+    let mut progress = Progress::new();
+    progress.phase("calibrating");
+
     let mut batch_iterations =
         [[1usize; ALGORITHM_COUNT]; INPUT_COUNT];
 
@@ -262,6 +266,8 @@ fn measure_all() -> Results {
                 );
         }
     }
+
+    progress.phase("warming up");
 
     /*
      * Warm every algorithm in every possible ordering position. The input
@@ -294,7 +300,11 @@ fn measure_all() -> Results {
      * order rotates independently. This distributes ordering, thermal, and
      * system-load effects across the algorithms.
      */
+    progress.phase("measuring");
+
     for round in 0..SAMPLE_ROUNDS {
+        progress.round(round, &samples);
+
         let algorithm_order =
             ALGORITHM_ORDERS[round % ALGORITHM_ORDERS.len()];
 
@@ -333,6 +343,8 @@ fn measure_all() -> Results {
         }
     }
 
+    progress.finish(&samples);
+
     let mut results =
         [[Statistics::ZERO; ALGORITHM_COUNT]; INPUT_COUNT];
 
@@ -344,6 +356,112 @@ fn measure_all() -> Results {
     }
 
     results
+}
+
+/*
+ * Live progress on stderr, so stdout stays a clean report. Shows the phase,
+ * a bar over the sample rounds, the elapsed and estimated remaining time,
+ * and the running median for every contender at the largest input size.
+ * The line redraws in place on a terminal; elsewhere each update is its
+ * own line, so a log still shows the run advancing.
+ */
+struct Progress {
+    started: Instant,
+    measuring_started: Option<Instant>,
+    interactive: bool,
+    last_width: usize,
+}
+
+impl Progress {
+    const BAR_WIDTH: usize = 30;
+
+    fn new() -> Self {
+        let interactive = std::io::stderr().is_terminal();
+        Self {
+            started: Instant::now(),
+            measuring_started: None,
+            interactive,
+            last_width: 0,
+        }
+    }
+
+    fn phase(&mut self, name: &str) {
+        if name == "measuring" {
+            self.measuring_started = Some(Instant::now());
+        }
+        self.draw(&format!(
+            "[{:>5.1}s] {name}…",
+            self.started.elapsed().as_secs_f64(),
+        ));
+    }
+
+    /* Called at the start of each round; `samples` holds every round so far. */
+    fn round(&mut self, round: usize, samples: &[[Vec<f64>; ALGORITHM_COUNT]; INPUT_COUNT]) {
+        let measuring_started = self
+            .measuring_started
+            .expect("round() runs inside the measuring phase");
+
+        let done = round as f64 / SAMPLE_ROUNDS as f64;
+        let filled = (done * Self::BAR_WIDTH as f64).round() as usize;
+        let bar: String = "█".repeat(filled) + &"░".repeat(Self::BAR_WIDTH - filled);
+
+        let elapsed = measuring_started.elapsed().as_secs_f64();
+        let remaining = if round > 0 {
+            format!("{:>3.0}s left", elapsed / done * (1.0 - done))
+        } else {
+            " estimating".to_owned()
+        };
+
+        self.draw(&format!(
+            "[{:>5.1}s] measuring {bar} {:>3}/{SAMPLE_ROUNDS} rounds · {remaining} · {}",
+            self.started.elapsed().as_secs_f64(),
+            round,
+            running_medians(samples, INPUT_COUNT - 1),
+        ));
+    }
+
+    fn finish(&mut self, samples: &[[Vec<f64>; ALGORITHM_COUNT]; INPUT_COUNT]) {
+        let bar = "█".repeat(Self::BAR_WIDTH);
+        self.draw(&format!(
+            "[{:>5.1}s] measured  {bar} {SAMPLE_ROUNDS}/{SAMPLE_ROUNDS} rounds · {}",
+            self.started.elapsed().as_secs_f64(),
+            running_medians(samples, INPUT_COUNT - 1),
+        ));
+        eprintln!();
+    }
+
+    fn draw(&mut self, line: &str) {
+        let mut stderr = std::io::stderr().lock();
+        if self.interactive {
+            /* Return to column 0, overwrite, blank any leftover from a longer line. */
+            let padding = self.last_width.saturating_sub(line.chars().count());
+            let _ = write!(stderr, "\r{line}{}", " ".repeat(padding));
+        } else {
+            let _ = writeln!(stderr, "{line}");
+        }
+        let _ = stderr.flush();
+        self.last_width = line.chars().count();
+    }
+}
+
+/*
+ * "BLAKE3 0.39 · SHA-256 0.33 · … ns/B at 1 MiB" from the samples collected
+ * so far, or a placeholder before the first round completes.
+ */
+fn running_medians(samples: &[[Vec<f64>; ALGORITHM_COUNT]; INPUT_COUNT], size_index: usize) -> String {
+    if samples[size_index][0].is_empty() {
+        return format!("medians at {} pending", INPUT_SIZES[size_index].label);
+    }
+
+    let parts: Vec<String> = (0..ALGORITHM_COUNT)
+        .map(|algorithm_index| {
+            let mut sorted = samples[size_index][algorithm_index].clone();
+            sorted.sort_by(f64::total_cmp);
+            format!("{} {:.3}", ALGORITHMS[algorithm_index].name(), median_of_sorted(&sorted))
+        })
+        .collect();
+
+    format!("{} ns/B at {}", parts.join(" · "), INPUT_SIZES[size_index].label)
 }
 
 fn make_input(size: usize) -> Vec<u8> {
@@ -459,6 +577,19 @@ fn calibrate_batch(
     }
 }
 
+/* Requires a non-empty, ascending slice. */
+fn median_of_sorted(sorted: &[f64]) -> f64 {
+    assert!(!sorted.is_empty(), "median requires at least one sample");
+    debug_assert!(sorted.windows(2).all(|pair| pair[0] <= pair[1]));
+
+    let middle = sorted.len() / 2;
+    if sorted.len() % 2 == 0 {
+        (sorted[middle - 1] + sorted[middle]) / 2.0
+    } else {
+        sorted[middle]
+    }
+}
+
 fn summarize(samples: &mut [f64]) -> Statistics {
     assert_eq!(
         samples.len(),
@@ -475,13 +606,7 @@ fn summarize(samples: &mut [f64]) -> Statistics {
 
     samples.sort_by(f64::total_cmp);
 
-    let middle = samples.len() / 2;
-
-    let median = if samples.len() % 2 == 0 {
-        (samples[middle - 1] + samples[middle]) / 2.0
-    } else {
-        samples[middle]
-    };
+    let median = median_of_sorted(samples);
 
     Statistics {
         minimum: samples[0],
@@ -1259,7 +1384,7 @@ fn generate_svg(
      * line, dots, value labels, the clickable label at right, and its
      * provenance line. Toggling flips one attribute on the group.
      */
-    let provenance_shared = shared_provenance_lines(machine, implementation);
+    let provenance_shared = shared_provenance_lines(machine);
     let shared_count = provenance_shared.len();
     let mut provenance_slot = shared_count;
 
@@ -1439,7 +1564,7 @@ fn generate_svg(
         writeln!(svg, "    </g>").unwrap();
 
         /* This contender's provenance lines, hidden along with it. */
-        for line in contender_provenance_lines(algorithm) {
+        for line in contender_provenance_lines(algorithm, implementation) {
             writeln!(
                 svg,
                 r##"    <text class="prov series-prov" x="{PLOT_LEFT:.1}" y="{:.1}">{}</text>"##,
@@ -1584,10 +1709,7 @@ fn provenance_line_y(slot: usize) -> f64 {
 }
 
 /* Provenance that describes the run as a whole. */
-fn shared_provenance_lines(
-    machine: &MachineMetadata,
-    implementation: Blake3Implementation,
-) -> Vec<String> {
+fn shared_provenance_lines(machine: &MachineMetadata) -> Vec<String> {
     vec![
         format!(
             "Run: {} · bench-hashes {BENCH_VERSION}",
@@ -1600,21 +1722,22 @@ fn shared_provenance_lines(
         format!("Toolchain: {RUSTC_VERSION} · {BUILD_TARGET}"),
         format!("Source: {GIT_SOURCE} @ {GIT_COMMIT}"),
         format!("Tag: {GIT_TAG} · Working tree: {GIT_CLEAN_STATUS}"),
-        format!(
-            "crates.io BLAKE3 platform: {} · full crate checksums are in this file's metadata element",
-            implementation.platform,
-        ),
+        "Full crate checksums are in this file's metadata element".to_owned(),
     ]
 }
 
 /* Provenance that belongs to one contender and hides with it. */
-fn contender_provenance_lines(algorithm: Algorithm) -> Vec<String> {
+fn contender_provenance_lines(
+    algorithm: Algorithm,
+    implementation: Blake3Implementation,
+) -> Vec<String> {
     let name = algorithm.name();
     match algorithm {
         Algorithm::Blake3 => vec![format!(
-            "{name}: {} · {}",
+            "{name}: {} · {} · platform {}",
             package_name_and_version(BLAKE3_SOURCE_INFO),
             algorithm.mode(),
+            implementation.platform,
         )],
         Algorithm::Sha256 => vec![format!(
             "{name}: {} (+{}) · {}",
