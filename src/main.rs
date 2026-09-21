@@ -701,7 +701,7 @@ fn measure_all(roster: &Roster) -> Results {
                 let iterations =
                     batch_iterations[algorithm_index][size_index];
 
-                let started = sample_clock::now_ns();
+                let started = sample_clock::now();
 
                 run_batch(algorithm, input, iterations);
 
@@ -972,69 +972,43 @@ mod common_crypto {
 }
 
 /*
- * The clock for timed samples. Samples read the calling thread's CPU time,
- * so time the thread spends descheduled (preemption, another process on
- * the core) does not land in the sample. measure-clocks3 on an M4 Max
- * measured the same medians as wall clocks with a 4–8× smaller spread and
- * a 20× smaller worst case. Wall-clock Instant stays in use for progress
- * and the ETA, where wall time is the point.
+ * The clock for timed samples: the platform's raw hardware counter, read
+ * through std::time::Instant. On Darwin that is CLOCK_UPTIME_RAW
+ * (mach_absolute_time in nanoseconds); on Linux, CLOCK_MONOTONIC; on
+ * Windows, QueryPerformanceCounter. Each is a counter read with no NTP
+ * slew, and the Darwin and Linux clocks stop while the machine sleeps, so
+ * a suspend mid-run stays out of the samples.
  *
- * Thread CPU time still counts kernel work the thread does for itself
- * (page faults on the input, say) and still slows if the scheduler moves
- * the thread to an efficiency core; both are real costs of the work, and
- * the interleaving spreads the second across contenders equally.
+ * A counter read can only over-count when the thread is interrupted, and
+ * the median absorbs that while the band reports it. Thread CPU time
+ * (CLOCK_THREAD_CPUTIME_ID) is scheduler accounting instead: an
+ * interruption mid-sample can leave the slice under-counted, so the sample
+ * reports a hash faster than the hardware allows. On an M4 Max three
+ * unrelated SHA-256 implementations shared one minimum 12% under their
+ * own steady medians. The measure-clocks3 repository demonstrates this.
  */
 mod sample_clock {
-    #[cfg(target_vendor = "apple")]
-    pub const NAME: &str = "clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID): thread CPU time";
-    #[cfg(all(unix, not(target_vendor = "apple")))]
-    pub const NAME: &str = "clock_gettime(CLOCK_THREAD_CPUTIME_ID): thread CPU time";
-    #[cfg(not(unix))]
-    pub const NAME: &str = "std::time::Instant: wall clock";
+    use std::time::Instant;
 
-    /// Nanoseconds on the sample clock. Only differences are meaningful.
+    #[cfg(target_vendor = "apple")]
+    pub const NAME: &str = "std::time::Instant → CLOCK_UPTIME_RAW (mach_absolute_time; stops during sleep, no NTP slew)";
+    #[cfg(all(unix, not(target_vendor = "apple")))]
+    pub const NAME: &str = "std::time::Instant → CLOCK_MONOTONIC (stops during suspend, NTP slew only)";
+    #[cfg(windows)]
+    pub const NAME: &str = "std::time::Instant → QueryPerformanceCounter";
+    #[cfg(not(any(unix, windows)))]
+    pub const NAME: &str = "std::time::Instant";
+
+    /// A point on the sample clock. Only differences are meaningful.
     #[inline(always)]
-    pub fn now_ns() -> u64 {
-        #[cfg(target_vendor = "apple")]
-        {
-            unsafe extern "C" {
-                fn clock_gettime_nsec_np(clock_id: u32) -> u64;
-            }
-            const CLOCK_THREAD_CPUTIME_ID: u32 = 16;
-            let ns = unsafe { clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) };
-            assert!(ns != 0, "clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) failed");
-            ns
-        }
-        #[cfg(all(unix, not(target_vendor = "apple")))]
-        {
-            #[repr(C)]
-            struct Timespec {
-                tv_sec: i64,
-                tv_nsec: i64,
-            }
-            unsafe extern "C" {
-                fn clock_gettime(clock_id: i32, tp: *mut Timespec) -> i32;
-            }
-            const CLOCK_THREAD_CPUTIME_ID: i32 = 3;
-            let mut ts = Timespec { tv_sec: 0, tv_nsec: 0 };
-            let rc = unsafe { clock_gettime(CLOCK_THREAD_CPUTIME_ID, &mut ts) };
-            assert_eq!(rc, 0, "clock_gettime(CLOCK_THREAD_CPUTIME_ID) failed");
-            ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64
-        }
-        #[cfg(not(unix))]
-        {
-            use std::sync::OnceLock;
-            static EPOCH: OnceLock<std::time::Instant> = OnceLock::new();
-            EPOCH.get_or_init(std::time::Instant::now).elapsed().as_nanos() as u64
-        }
+    pub fn now() -> Instant {
+        Instant::now()
     }
 
-    /// Elapsed nanoseconds since `start`, on the sample clock.
+    /// Elapsed nanoseconds since `start`.
     #[inline(always)]
-    pub fn since_ns(start: u64) -> u64 {
-        let now = now_ns();
-        assert!(now >= start, "the sample clock ran backwards: {start} → {now}");
-        now - start
+    pub fn since_ns(start: Instant) -> u64 {
+        u64::try_from(start.elapsed().as_nanos()).expect("a sample lasts well under 584 years")
     }
 }
 
@@ -1045,7 +1019,7 @@ fn calibrate_batch(
     let mut iterations = 1usize;
 
     loop {
-        let started = sample_clock::now_ns();
+        let started = sample_clock::now();
         run_batch(algorithm, input, iterations);
         let elapsed_ns = u128::from(sample_clock::since_ns(started));
 
@@ -2069,7 +2043,7 @@ fn generate_svg(
 
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="108" class="method">Line and dot: median · shaded band: minimum–maximum across {} interleaved samples of thread CPU time; a deeper tint or dashed outline marks a wide spread, meaning lower precision · single-threaded · lower is better</text>"##,
+        r##"  <text x="{PLOT_LEFT:.0}" y="108" class="method">Line and dot: median · shaded band: minimum–maximum across {} interleaved samples; a deeper tint or dashed outline marks a wide spread, meaning lower precision · single-threaded · lower is better</text>"##,
         roster.rounds,
     )
         .unwrap();

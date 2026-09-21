@@ -16,9 +16,18 @@ bulk rate settles. 3 KiB is where the SME2 fork's integer + NEON hybrid
 kernels first overtake hardware SHA-256.
 
 It reports median, minimum, and maximum time per byte in integer
-picoseconds, measured on the calling thread's CPU-time clock
-(`CLOCK_THREAD_CPUTIME_ID`) so time spent descheduled stays out of the
-samples. Lower is better. The clock is named in the report's provenance.
+picoseconds. Samples are timed on the platform's raw hardware counter
+(`CLOCK_UPTIME_RAW` on Darwin, `CLOCK_MONOTONIC` on Linux, via
+`std::time::Instant`): a counter read with no NTP slew that stops while
+the machine sleeps. Lower is better. The clock is named in the report's
+provenance.
+
+Thread CPU time was tried and rejected: it is scheduler accounting, and
+an interruption mid-sample can leave a slice under-counted, so the
+sample reports an impossibly fast hash. The min–max bands widened
+downward by 12% on an M4 Max under that clock, identically across
+three unrelated SHA-256 implementations. A hardware counter can only
+over-count, which the median absorbs and the band reports honestly.
 
 ## Build and run
 
