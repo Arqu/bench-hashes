@@ -24,7 +24,7 @@ compile_error!("bench-hashes currently supports native targets only");
  *
  * So the runtime budget goes to rounds first. 1 ms is long enough that the
  * clock's own resolution (tens of nanoseconds) is under 0.01% of a sample.
- * Rounds are a multiple of the sixteen sizes and of the order count.
+ * Rounds are a multiple of the size count and of the order count.
  */
 const SAMPLE_ROUNDS_TARGET: usize = 80;
 /// --thorough multiplies the rounds; the median's interval narrows as 1/√n.
@@ -32,7 +32,7 @@ const THOROUGH_MULTIPLIER: usize = 3;
 const CALIBRATION_PROBE_NS: u128 = 500_000;
 const TARGET_SAMPLE_NS: u128 = 1_000_000;
 
-const INPUT_COUNT: usize = 16;
+const INPUT_COUNT: usize = 20;
 
 const BENCH_VERSION: &str = env!("CARGO_PKG_VERSION");
 const GIT_SOURCE: &str = env!("BENCH_GIT_SOURCE");
@@ -51,13 +51,26 @@ const SHA1_CHECKED_SOURCE_INFO: &str = env!("SHA1_CHECKED_SOURCE_INFO");
 const BLAKE3_SME2_SOURCE_INFO: &str = env!("BLAKE3_SME2_SOURCE_INFO");
 
 /*
- * Every power of two from 64 B to 1 MiB, plus 3 KiB. Between 64 B and 1 KiB
+ * Every power of two from 64 B to 8 MiB, plus 3 KiB and 3 MiB. Between 64 B and 1 KiB
  * BLAKE3 is inside one chunk; from 2 KiB to 16 KiB its SIMD paths fill up
  * (4-way NEON at 4 KiB, a sixteen-lane SME2 group at 16 KiB); above that
  * the bulk rate settles. 3 KiB is where the fork's integer + NEON hybrid
  * kernels first overtake hardware SHA-256: one chunk on the integer ALUs
  * beside a NEON pair costs the same as the pair alone. SHA-1DC and SHA-256
  * are block-serial and have only the per-message overhead to show.
+ *
+ * The sizes past 1 MiB are there to show the plateau: a contender whose
+ * 2, 4, and 8 MiB medians agree has levelled out, and a larger input would
+ * tell nothing new. They matter most for the multithreaded contenders,
+ * whose per-call overhead (a pool hand-off, a subtree merge) takes longer
+ * to amortise than one kernel's; 8 MiB is also past the last-level cache
+ * on every machine this benchmark targets, so the plateau it shows is the
+ * memory-resident one. 3 MiB is to the plateau what 3 KiB is to the SIMD
+ * ramp: a tree that is no power of two, whose left subtree is 2 MiB and
+ * right 1 MiB, so a splitter that cuts at subtree boundaries hands its
+ * lanes unequal work there. Twenty sizes also keep the round count small:
+ * rounds are a common multiple of the size count and the order count, and
+ * twenty shares factors with every order count from two to eight.
  */
 const INPUT_SIZES: [InputSize; INPUT_COUNT] = [
     InputSize { label: "64 B", bytes: 64 },
@@ -76,6 +89,10 @@ const INPUT_SIZES: [InputSize; INPUT_COUNT] = [
     InputSize { label: "256 KiB", bytes: 256 * 1024 },
     InputSize { label: "512 KiB", bytes: 512 * 1024 },
     InputSize { label: "1 MiB", bytes: 1024 * 1024 },
+    InputSize { label: "2 MiB", bytes: 2 * 1024 * 1024 },
+    InputSize { label: "3 MiB", bytes: 3 * 1024 * 1024 },
+    InputSize { label: "4 MiB", bytes: 4 * 1024 * 1024 },
+    InputSize { label: "8 MiB", bytes: 8 * 1024 * 1024 },
 ];
 
 /// results[contender_index][size_index], contenders in the roster's order.
@@ -1491,7 +1508,7 @@ mod common_crypto {
     unsafe extern "C" {
         fn CC_SHA256_Init(ctx: *mut Context) -> i32;
         /// CC_LONG is uint32_t, so one Update takes at most 4 GiB; every
-        /// input here is at most 1 MiB.
+        /// input here is at most 8 MiB.
         fn CC_SHA256_Update(ctx: *mut Context, data: *const u8, len: u32) -> i32;
         fn CC_SHA256_Final(md: *mut u8, ctx: *mut Context) -> i32;
     }
@@ -3060,14 +3077,15 @@ fn generate_svg(
             dots.push_str("    </g>\n");
 
             /*
-             * With sixteen columns, a value at every dot would overprint.
-             * Label the ends and every fourth size; hovering a dot shows
-             * the rest. Edge columns anchor inward so labels stay clear of
-             * the y-axis gutter and the series labels at right.
+             * With twenty columns, a value at every dot would overprint.
+             * Label the ends and every fourth size counted from the last,
+             * so the plateau's 8 MiB end and the sizes four apart below it
+             * carry values; hovering a dot shows the rest. Edge columns
+             * anchor inward so labels stay clear of the y-axis gutter and
+             * the series labels at right.
              */
             let labeled = size_index == 0
-                || size_index == INPUT_COUNT - 1
-                || size_index % 4 == 0;
+                || (INPUT_COUNT - 1 - size_index) % 4 == 0;
 
             if !labeled {
                 continue;

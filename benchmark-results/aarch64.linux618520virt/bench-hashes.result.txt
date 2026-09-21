@@ -1,8 +1,8 @@
-TIMESTAMP: 2026-09-21 21:44:23 UTC
+TIMESTAMP: 2026-09-21 21:55:05 UTC
 git source: https://github.com/johnservil/bench-hashes
-git commit: 7fc92a9ce612a761f5dd02cf8fbca34b13cbcef8
-git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+43 commits)
-git clean status: dirty-035c9b1ee10c637fa9971d74ad1c39bf17260fe213e7b4b1f0fd6d04fb915d3f
+git commit: 1740eb9f4606273c9a1360b8e0e1e1a428b38f38
+git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+44 commits)
+git clean status: dirty-8e1c217ae0565d7de92a234507a2435ffcc7e4840349e5506debccce58f4336b
 bench-hashes version: 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f
 CPU type: aarch64
 CPU count: 2
@@ -12,17 +12,17 @@ Build target: aarch64-unknown-linux-gnu
 Target features: aes,crc,lse,neon,sha2,sha3
 Sample clock: std::time::Instant → CLOCK_MONOTONIC (stops during suspend, NTP slew only)
 Reported time: measured elapsed time on the hardware counter
-Contenders: every contender available on this machine
+Contenders: contenders chosen on the command line
 BLAKE3 source: blake3 1.8.7; crate archive SHA-256 6d9e454fc11f76977dc803893aff6304ed33d6a26efae8696573bea74baa27ae; source registry+https://github.com/rust-lang/crates.io-index
-SHA-256 source: sha2 0.11.0; crate archive SHA-256 446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4; source registry+https://github.com/rust-lang/crates.io-index
-SHA-1DC source: sha1-checked 0.10.0; crate archive SHA-256 89f599ac0c323ebb1c6082821a54962b839832b03984598375bff3975b804423; source registry+https://github.com/rust-lang/crates.io-index
-BLAKE3 servil source: blake3_sme2 (path dependency ../BLAKE3); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit 9a97d45a721dd93b7a6a19e744f44d5019b88566; clean
-SHA-256 ring source: ring 0.17.14; crate archive SHA-256 a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7; source registry+https://github.com/rust-lang/crates.io-index
+BLAKE3 mt source: blake3 1.8.7; crate archive SHA-256 6d9e454fc11f76977dc803893aff6304ed33d6a26efae8696573bea74baa27ae; source registry+https://github.com/rust-lang/crates.io-index
+BLAKE3 servil source: blake3_sme2 (path dependency ../BLAKE3); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit c1f3e9809b9038347ac396e512a2788e3deec133; clean
+BLAKE3 servil mt source: blake3_sme2 (path dependency ../BLAKE3); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit c1f3e9809b9038347ac396e512a2788e3deec133; clean
 BLAKE3 mode: single-threaded; Rayon not enabled
-SHA-256 mode: RustCrypto sha2 with its built-in hardware backends (ARMv8 SHA-256 instructions on AArch64, SHA-NI on x86), selected at runtime
-SHA-1DC mode: SHA-1 with collision detection, pure Rust (the construction git uses)
+BLAKE3 mt mode: multithreaded; Hasher::update_rayon on a Rayon pool with one thread per logical CPU (the crate's own multithreading, which splits the tree recursively over the pool; inputs under a few chunks stay on the caller's thread)
 BLAKE3 servil mode: single-threaded; SME2 kernel for groups of sixteen chunks, integer + NEON hybrid kernels below that; needs a CPU with SME2
-SHA-256 ring mode: ring::digest::digest, BoringSSL's sha256_block_data_order_hw assembly (ARMv8 SHA-256 instructions; SHA-NI on x86), selected at runtime
+BLAKE3 servil mt mode: multithreaded; blake3_sme2::lanes::hash: inputs of 128 KiB and up split into subtrees over the machine's execution lanes (one per core cluster, which is one SME unit), each lane hashed by a resident worker thread with the SME2 kernel; a call takes only the lanes free at that moment, so concurrent callers share the machine (cooperative admission); below 128 KiB the caller's thread alone
+BLAKE3 mt threads: Rayon pool: 2 threads (one per logical CPU)
+BLAKE3 servil mt threads: Lanes: 2 lanes: one per CPU when two threads measured at full speed side by side, else one per CPU cluster (sysfs topology/cluster_cpus_list)
 
 BLAKE3 implementation selection:
   selected platform: NEON
@@ -42,6 +42,33 @@ BLAKE3 implementation selection:
   256 KiB: NEON hash_many (4-way)
   512 KiB: NEON hash_many (4-way)
     1 MiB: NEON hash_many (4-way)
+    2 MiB: NEON hash_many (4-way)
+    3 MiB: NEON hash_many (4-way)
+    4 MiB: NEON hash_many (4-way)
+    8 MiB: NEON hash_many (4-way)
+
+BLAKE3 mt implementation selection:
+  selected platform: NEON
+     64 B: caller's thread (below one SIMD width of chunks)
+    128 B: caller's thread (below one SIMD width of chunks)
+    256 B: caller's thread (below one SIMD width of chunks)
+    512 B: caller's thread (below one SIMD width of chunks)
+    1 KiB: caller's thread (below one SIMD width of chunks)
+    2 KiB: caller's thread (below one SIMD width of chunks)
+    3 KiB: caller's thread (below one SIMD width of chunks)
+    4 KiB: caller's thread (below one SIMD width of chunks)
+    8 KiB: rayon::join over the pool  ← new path from here
+   16 KiB: rayon::join over the pool
+   32 KiB: rayon::join over the pool
+   64 KiB: rayon::join over the pool
+  128 KiB: rayon::join over the pool
+  256 KiB: rayon::join over the pool
+  512 KiB: rayon::join over the pool
+    1 MiB: rayon::join over the pool
+    2 MiB: rayon::join over the pool
+    3 MiB: rayon::join over the pool
+    4 MiB: rayon::join over the pool
+    8 MiB: rayon::join over the pool
 
 BLAKE3 servil implementation selection:
   selected platform: SME2 (512-bit streaming vectors, sixteen-lane groups, hash_many degree 128)
@@ -61,6 +88,33 @@ BLAKE3 servil implementation selection:
   256 KiB: SME2 hash16_chunks kernel
   512 KiB: SME2 hash16_chunks kernel
     1 MiB: SME2 hash16_chunks kernel
+    2 MiB: SME2 hash16_chunks kernel
+    3 MiB: SME2 hash16_chunks kernel
+    4 MiB: SME2 hash16_chunks kernel
+    8 MiB: SME2 hash16_chunks kernel
+
+BLAKE3 servil mt implementation selection:
+  selected platform: SME2
+     64 B: scalar kernel c1, one call
+    128 B: scalar kernel c1, one call
+    256 B: scalar kernel c1, one call
+    512 B: scalar kernel c1, one call
+    1 KiB: scalar kernel c1, one call
+    2 KiB: integer + NEON hybrid kernels  ← new path from here
+    3 KiB: integer + NEON hybrid kernels
+    4 KiB: integer + NEON hybrid kernels
+    8 KiB: integer + NEON hybrid kernels
+   16 KiB: SME2 hash16_chunks kernel  ← new path from here
+   32 KiB: SME2 hash16_chunks kernel
+   64 KiB: SME2 hash16_chunks kernel
+  128 KiB: subtrees over free lanes  ← new path from here
+  256 KiB: subtrees over free lanes
+  512 KiB: subtrees over free lanes
+    1 MiB: subtrees over free lanes
+    2 MiB: subtrees over free lanes
+    3 MiB: subtrees over free lanes
+    4 MiB: subtrees over free lanes
+    8 MiB: subtrees over free lanes
 
 ============================================================
 BENCHMARK SUMMARY
@@ -68,39 +122,47 @@ BENCHMARK SUMMARY
 
 Time per byte in ns/B: median, with minimum–maximum beneath; lower is better. Bands in the graph are the 95% interval of each median.
 
-  size             BLAKE3        SHA-256        SHA-1DC  BLAKE3 servil   SHA-256 ring
-  64 B              0.787          0.554          2.819          0.750          0.697
-             0.780–0.820    0.543–0.602    2.770–3.009    0.741–0.792    0.687–0.744 
-  128 B             0.802          0.413          1.924          0.732          0.482
-             0.789–0.871    0.407–0.445    1.893–2.036    0.726–0.769    0.470–0.509 
-  256 B             0.793          0.379          1.596          0.729          0.380
-             0.783–0.842    0.372–0.413    1.571–1.694    0.721–0.779    0.371–0.403 
-  512 B             0.786          0.367          1.351          0.727          0.354
-             0.778–0.854    0.362–0.415    1.316–1.415    0.722–0.780    0.350–0.372 
-  1 KiB             0.785          0.365          1.262          0.727          0.342
-             0.775–0.828    0.361–0.385    1.210–1.332    0.721–0.777    0.337–0.359 
-  2 KiB             0.807          0.362          1.232          0.537          0.334
-             0.798–0.858    0.359–0.408    1.195–1.329    0.522–0.564    0.331–0.358 
-  3 KiB             0.817          0.362          1.251          0.383          0.332
-             0.810–0.857    0.358–0.378    1.200–1.333    0.372–0.410    0.329–0.347 
-  4 KiB             0.456          0.364          1.235          0.351          0.332
-             0.450–0.486    0.357–0.385    1.164–1.347    0.341–0.373    0.325–0.350 
-  8 KiB             0.447          0.362          1.256          0.321          0.330
-             0.442–0.482    0.359–0.386    1.193–1.327    0.313–0.336    0.327–0.347 
-  16 KiB            0.443          0.363          1.251          0.241          0.329
-             0.438–0.474    0.356–0.391    1.200–1.323    0.235–0.248    0.327–0.350 
-  32 KiB            0.443          0.363          1.274          0.223          0.329
-             0.435–0.467    0.359–0.386    1.250–1.334    0.220–0.236    0.325–0.347 
-  64 KiB            0.441          0.363          1.285          0.212          0.328
-             0.437–0.469    0.359–0.424    1.266–1.359    0.210–0.219    0.326–0.344 
-  128 KiB           0.441          0.362          1.332          0.204          0.328
-             0.435–0.483    0.359–0.383    1.303–1.394    0.200–0.207    0.326–0.347 
-  256 KiB           0.441          0.362          1.345          0.184          0.328
-             0.437–0.460    0.359–0.387    1.306–1.441    0.182–0.194    0.326–0.348 
-  512 KiB           0.441          0.363          1.379          0.172          0.328
-             0.434–0.472    0.358–0.389    1.350–1.477    0.170–0.179    0.326–0.347 
-  1 MiB             0.442          0.362          1.373          0.167          0.328
-             0.435–0.477    0.359–0.382    1.346–1.450    0.165–0.176    0.326–0.341 
+  size             BLAKE3      BLAKE3 mt  BLAKE3 servil   B3 servil mt
+  64 B              0.789        189.605          0.746          0.744
+             0.772–0.812   126.623–221.086    0.733–0.770    0.730–0.771 
+  128 B             0.800        104.375          0.730          0.730
+             0.783–0.840   66.708–125.151    0.715–0.763    0.715–0.766 
+  256 B             0.787         58.881          0.727          0.727
+             0.774–0.847   32.541–71.583    0.712–0.778    0.712–0.762 
+  512 B             0.785         32.332          0.726          0.726
+             0.768–0.819   15.233–41.476!   0.711–0.791    0.711–0.754 
+  1 KiB             0.783         11.585          0.725          0.725
+             0.767–0.821   8.539–28.563!   0.710–0.765    0.710–0.746 
+  2 KiB             0.805          6.335          0.520          0.520
+             0.789–0.845   5.197–12.429    0.509–0.543    0.508–0.539 
+  3 KiB             0.817          5.220          0.369          0.369
+             0.802–0.859    4.332–8.743    0.358–0.383    0.356–0.400 
+  4 KiB             0.455          3.314          0.340          0.341
+             0.442–0.468    1.599–6.916    0.332–0.369    0.332–0.360 
+  8 KiB             0.443          1.616          0.313          0.315
+             0.434–0.470    0.966–4.459    0.303–0.330    0.303–0.333 
+  16 KiB            0.439          0.959          0.236          0.237
+             0.430–0.462    0.617–1.997    0.232–0.249    0.232–0.248 
+  32 KiB            0.438          0.517          0.220          0.220
+             0.428–0.460    0.434–1.327!   0.215–0.228    0.214–0.236 
+  64 KiB            0.437          0.398          0.212          0.212
+             0.427–0.452    0.339–1.084!   0.207–0.220    0.207–0.218 
+  128 KiB           0.437          0.324          0.204          0.128
+             0.429–0.453    0.302–0.654!   0.199–0.210    0.120–0.336 
+  256 KiB           0.438          0.277          0.185          0.116
+             0.429–0.464    0.259–0.555    0.182–0.191    0.111–0.136 
+  512 KiB           0.437          0.254          0.174          0.099
+             0.427–0.466    0.237–0.656    0.169–0.181    0.097–0.189 
+  1 MiB             0.437          0.244          0.179          0.091
+             0.427–0.466    0.228–0.528!   0.170–0.188    0.088–0.170 
+  2 MiB             0.438          0.301          0.182          0.090
+             0.428–0.474    0.222–0.488!   0.175–0.195    0.087–0.169 
+  3 MiB             0.437          0.294          0.182          0.089
+             0.429–0.457    0.222–0.513!   0.178–0.194    0.088–0.165 
+  4 MiB             0.437          0.266          0.182          0.089
+             0.429–0.460    0.218–0.458!   0.176–0.194    0.087–0.211 
+  8 MiB             0.437          0.251          0.172          0.087
+             0.429–0.451    0.219–0.454!   0.167–0.182    0.083–0.200 
 
-Every cell's median is known to within 5% (95% bootstrap interval).
+!  marks a cell whose 95% median interval is at least 5% of its median: 10 of 80 cells; those medians are poorly determined.
 

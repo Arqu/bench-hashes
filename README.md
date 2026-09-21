@@ -10,13 +10,22 @@ system's CommonCrypto SHA-256. Two multithreaded contenders, BLAKE3 mt
 over the machine's execution lanes), join with `--duo`, which measures
 every contender under contention: see "The duo measurement" below.
 
-The benchmark tests every power-of-two input size from 64 B to 1 MiB,
-plus 3 KiB: 64 B, 128 B, 256 B, 512 B, 1 KiB, 2 KiB, 3 KiB, 4 KiB, 8 KiB,
-16 KiB, 32 KiB, 64 KiB, 128 KiB, 256 KiB, 512 KiB, and 1 MiB. Below 1 KiB
-a BLAKE3 input is one chunk; from 2 KiB to 16 KiB its SIMD paths fill
-(4-way NEON at 4 KiB, a sixteen-lane SME2 group at 16 KiB); above that the
-bulk rate settles. 3 KiB is where the SME2 fork's integer + NEON hybrid
-kernels first overtake hardware SHA-256.
+The benchmark tests every power-of-two input size from 64 B to 8 MiB,
+plus 3 KiB and 3 MiB: 64 B, 128 B, 256 B, 512 B, 1 KiB, 2 KiB, 3 KiB,
+4 KiB, 8 KiB, 16 KiB, 32 KiB, 64 KiB, 128 KiB, 256 KiB, 512 KiB, 1 MiB,
+2 MiB, 3 MiB, 4 MiB, and 8 MiB. Below 1 KiB a BLAKE3 input is one chunk; from 2 KiB to 16 KiB
+its SIMD paths fill (4-way NEON at 4 KiB, a sixteen-lane SME2 group at
+16 KiB); above that the bulk rate settles. 3 KiB is where the SME2 fork's
+integer + NEON hybrid kernels first overtake hardware SHA-256. The three
+sizes past 1 MiB show the plateau: a contender whose 2, 4, and 8 MiB
+medians agree has levelled out, and a larger input would tell nothing
+new. The multithreaded contenders take longest to get there, since a
+pool hand-off or a subtree merge amortises more slowly than one kernel
+call, and 8 MiB is past the last-level cache on every machine this
+benchmark targets. 3 MiB is to the plateau what 3 KiB is to the SIMD
+ramp: a tree that is no power of two (a 2 MiB left subtree beside a
+1 MiB right one), so a splitter that cuts at subtree boundaries hands
+its lanes unequal work there.
 
 It reports median, minimum, and maximum time per byte in integer
 picoseconds. Lower is better.
