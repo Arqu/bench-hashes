@@ -366,8 +366,10 @@ bench-hashes: single-threaded hash throughput by input size
 Keys: blake3, blake3-sme2, sha256, sha256-ring, sha256-cc, sha1dc
 
   --trace-clocks PATH              also write one CSV line per sample with
-                                   wall, thread-CPU, and mach_absolute_time
-                                   readings, for clock diagnosis
+                                   wall, thread-CPU, mach_absolute_time, and
+                                   (on Apple) per-core-kind cycles and
+                                   instructions, for clock and frequency
+                                   diagnosis
 ";
 
 fn parse_arguments() -> (Selection, Vec<Algorithm>, Option<std::path::PathBuf>) {
@@ -728,10 +730,15 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> Results {
                     batch_iterations[algorithm_index][size_index];
 
                 /* Trace reads bracket the sample; the sample clock sits innermost. */
-                let (trace_cpu0, trace_proc0, trace_mach0) = if trace.is_some() {
-                    (trace_clocks::thread_cpu_ns(), trace_clocks::process_cpu_ns(), trace_clocks::mach_ticks())
+                let (trace_cpu0, trace_proc0, trace_mach0, trace_perf0) = if trace.is_some() {
+                    (
+                        trace_clocks::thread_cpu_ns(),
+                        trace_clocks::process_cpu_ns(),
+                        trace_clocks::mach_ticks(),
+                        trace_clocks::perf_counters(),
+                    )
                 } else {
-                    (0, 0, 0)
+                    (0, 0, 0, PerfCounters::default())
                 };
 
                 let started = sample_clock::now();
@@ -741,17 +748,25 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> Results {
                 let elapsed_ns = sample_clock::since_ns(started);
 
                 if let Some(trace) = trace.as_deref_mut() {
+                    let perf1 = trace_clocks::perf_counters();
                     let mach1 = trace_clocks::mach_ticks();
                     let proc1 = trace_clocks::process_cpu_ns();
                     let cpu1 = trace_clocks::thread_cpu_ns();
+                    let perf = perf1.since(trace_perf0);
                     trace.lines.push(format!(
-                        "{round},{},{},{},{iterations},{elapsed_ns},{},{},{}",
+                        "{round},{},{},{},{iterations},{elapsed_ns},{},{},{},{},{},{},{},{},{}",
                         size_offset * algorithm_order.len() + position,
                         algorithm.key(),
                         input.len(),
                         cpu1 - trace_cpu0,
                         mach1 - trace_mach0,
                         proc1 - trace_proc0,
+                        perf.p_cycles,
+                        perf.p_instructions,
+                        perf.p_time_ns,
+                        perf.e_cycles,
+                        perf.e_instructions,
+                        perf.e_time_ns,
                     ));
                 }
 
@@ -1035,7 +1050,7 @@ struct ClockTrace {
 impl ClockTrace {
     fn new(path: std::path::PathBuf) -> Self {
         let mut lines = Vec::with_capacity(8192);
-        lines.push("round,position,contender,size_bytes,iterations,wall_ns,thread_cpu_ns,mach_ticks,process_cpu_ns".to_owned());
+        lines.push("round,position,contender,size_bytes,iterations,wall_ns,thread_cpu_ns,mach_ticks,process_cpu_ns,p_cycles,p_instructions,p_time_ns,e_cycles,e_instructions,e_time_ns".to_owned());
         Self { lines, path }
     }
 
@@ -1048,8 +1063,113 @@ impl ClockTrace {
     }
 }
 
+/*
+ * Per-thread cycle and instruction counts, split by CPU performance level,
+ * from Apple's thread_selfcounts(THSC_TIME_CPI_PER_PERF_LEVEL). Cycles
+ * over time is the clock frequency the thread actually ran at; the split
+ * says which cluster ran it. Zero everywhere off Apple, or when the call is
+ * unsupported.
+ */
+#[derive(Clone, Copy, Default)]
+struct PerfCounters {
+    p_cycles: u64,
+    p_instructions: u64,
+    p_time_ns: u64,
+    e_cycles: u64,
+    e_instructions: u64,
+    e_time_ns: u64,
+}
+
+impl PerfCounters {
+    fn since(self, earlier: PerfCounters) -> PerfCounters {
+        PerfCounters {
+            p_cycles: self.p_cycles - earlier.p_cycles,
+            p_instructions: self.p_instructions - earlier.p_instructions,
+            p_time_ns: self.p_time_ns - earlier.p_time_ns,
+            e_cycles: self.e_cycles - earlier.e_cycles,
+            e_instructions: self.e_instructions - earlier.e_instructions,
+            e_time_ns: self.e_time_ns - earlier.e_time_ns,
+        }
+    }
+}
+
 /// Reads for the trace; each is a syscall-free counter or accounting read.
 mod trace_clocks {
+    use super::PerfCounters;
+
+    #[cfg(target_vendor = "apple")]
+    pub fn perf_counters() -> PerfCounters {
+        use std::sync::OnceLock;
+
+        #[repr(C)]
+        #[derive(Clone, Copy, Default)]
+        struct ThscTimeCpi {
+            instructions: u64,
+            cycles: u64,
+            user_time_mach: u64,
+            system_time_mach: u64,
+        }
+        #[repr(C)]
+        struct MachTimebaseInfo {
+            numer: u32,
+            denom: u32,
+        }
+        unsafe extern "C" {
+            fn thread_selfcounts(kind: u32, dst: *mut std::ffi::c_void, size: usize) -> i32;
+            fn mach_timebase_info(info: *mut MachTimebaseInfo) -> i32;
+        }
+        const THSC_TIME_CPI_PER_PERF_LEVEL: u32 = 4;
+
+        /* (numer, denom) for mach ticks → ns, and whether the call works here. */
+        static SETUP: OnceLock<Option<(u64, u64)>> = OnceLock::new();
+        let Some((numer, denom)) = *SETUP.get_or_init(|| {
+            let mut info = MachTimebaseInfo { numer: 0, denom: 0 };
+            if unsafe { mach_timebase_info(&mut info) } != 0 || info.denom == 0 {
+                return None;
+            }
+            let mut probe = [ThscTimeCpi::default(); 2];
+            let rc = unsafe {
+                thread_selfcounts(
+                    THSC_TIME_CPI_PER_PERF_LEVEL,
+                    probe.as_mut_ptr().cast(),
+                    std::mem::size_of_val(&probe),
+                )
+            };
+            if rc != 0 {
+                eprintln!("thread_selfcounts(THSC_TIME_CPI_PER_PERF_LEVEL) unavailable (rc {rc}); cycle columns stay 0");
+                return None;
+            }
+            Some((u64::from(info.numer), u64::from(info.denom)))
+        }) else {
+            return PerfCounters::default();
+        };
+
+        /* hw.nperflevels is 2 on every Apple silicon Mac: index 0 = P, 1 = E. */
+        let mut levels = [ThscTimeCpi::default(); 2];
+        let rc = unsafe {
+            thread_selfcounts(
+                THSC_TIME_CPI_PER_PERF_LEVEL,
+                levels.as_mut_ptr().cast(),
+                std::mem::size_of_val(&levels),
+            )
+        };
+        assert_eq!(rc, 0, "thread_selfcounts failed after succeeding at setup");
+        let to_ns = |mach: u64| mach * numer / denom;
+        PerfCounters {
+            p_cycles: levels[0].cycles,
+            p_instructions: levels[0].instructions,
+            p_time_ns: to_ns(levels[0].user_time_mach + levels[0].system_time_mach),
+            e_cycles: levels[1].cycles,
+            e_instructions: levels[1].instructions,
+            e_time_ns: to_ns(levels[1].user_time_mach + levels[1].system_time_mach),
+        }
+    }
+
+    #[cfg(not(target_vendor = "apple"))]
+    pub fn perf_counters() -> PerfCounters {
+        PerfCounters::default()
+    }
+
     #[cfg(unix)]
     fn clock_ns(clock_id: i32) -> u64 {
         #[repr(C)]
