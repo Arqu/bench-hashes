@@ -193,7 +193,10 @@ would give (n orders for an even count of contenders, 2n for odd). Input-size or
 rotates independently. Each contender/size combination is calibrated
 separately so its timed samples last about 1 ms each.
 
-Each combination collects 80 samples. The runtime budget favours sample
+Each combination collects about 80 samples: the exact count is the
+smallest multiple of both the size count and the order count at or
+above 80, so every order and every size position recurs equally often
+(80 for two, four, or five contenders; 96 for three or six). The runtime budget favours sample
 count over sample length: fewer samples thin the evidence behind the
 min–max band and let it look tight while the true spread is wider,
 whereas shorter samples keep the count and let any disturbance widen

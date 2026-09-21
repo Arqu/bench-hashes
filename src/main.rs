@@ -10,8 +10,10 @@ use sysinfo::System;
 compile_error!("bench-hashes currently supports native targets only");
 
 /*
- * Every (contender, size) cell collects SAMPLE_ROUNDS samples of about
- * TARGET_SAMPLE_NS each. The two knobs trade off differently:
+ * Every (contender, size) cell collects about SAMPLE_ROUNDS_TARGET samples
+ * of about TARGET_SAMPLE_NS each; Roster::rounds() settles the exact count
+ * as the smallest multiple of both the size count and the order count at
+ * or above the target. The two knobs trade off differently:
  *
  * - Fewer rounds thin the evidence behind the min–max band, so the band can
  *   look tight while the true spread is wider: false precision.
@@ -24,7 +26,7 @@ compile_error!("bench-hashes currently supports native targets only");
  * clock's own resolution (tens of nanoseconds) is under 0.01% of a sample.
  * Rounds are a multiple of the sixteen sizes and of the order count.
  */
-const SAMPLE_ROUNDS: usize = 80;
+const SAMPLE_ROUNDS_TARGET: usize = 80;
 const CALIBRATION_PROBE_NS: u128 = 500_000;
 const TARGET_SAMPLE_NS: u128 = 1_000_000;
 
@@ -270,6 +272,8 @@ struct Roster {
     algorithms: Vec<Algorithm>,
     orders: Vec<Vec<usize>>,
     baseline: usize,
+    /// Sample rounds: a multiple of INPUT_COUNT and of orders.len().
+    rounds: usize,
 }
 
 impl Roster {
@@ -290,22 +294,26 @@ impl Roster {
             }
         }
         let orders = williams_orders(algorithms.len());
-        assert_eq!(
-            SAMPLE_ROUNDS % orders.len(),
-            0,
-            "SAMPLE_ROUNDS ({SAMPLE_ROUNDS}) must be a multiple of the order count ({})",
-            orders.len()
-        );
+        let step = lcm(INPUT_COUNT, orders.len());
+        let rounds = SAMPLE_ROUNDS_TARGET.div_ceil(step) * step;
         let baseline = algorithms
             .iter()
             .position(|algorithm| algorithm.family() == Family::Blake3)
             .unwrap_or(0);
-        Self { algorithms, orders, baseline }
+        Self { algorithms, orders, baseline, rounds }
     }
 
     fn len(&self) -> usize {
         self.algorithms.len()
     }
+}
+
+fn gcd(a: usize, b: usize) -> usize {
+    if b == 0 { a } else { gcd(b, a % b) }
+}
+
+fn lcm(a: usize, b: usize) -> usize {
+    a / gcd(a, b) * b
 }
 
 /*
@@ -400,12 +408,6 @@ fn parse_arguments() -> (Selection, Vec<Algorithm>) {
 }
 
 fn main() {
-    assert_eq!(
-        SAMPLE_ROUNDS % INPUT_SIZES.len(),
-        0,
-        "SAMPLE_ROUNDS must use every input-size position equally"
-    );
-
     let (selection, explicit) = parse_arguments();
     let available: Vec<Algorithm> = Algorithm::ALL
         .into_iter()
@@ -673,7 +675,7 @@ fn measure_all(roster: &Roster) -> Results {
     }
 
     let mut samples: Samples = (0..roster.len())
-        .map(|_| std::array::from_fn(|_| Vec::with_capacity(SAMPLE_ROUNDS)))
+        .map(|_| std::array::from_fn(|_| Vec::with_capacity(roster.rounds)))
         .collect();
 
     /*
@@ -683,7 +685,7 @@ fn measure_all(roster: &Roster) -> Results {
      */
     progress.phase("measuring");
 
-    for round in 0..SAMPLE_ROUNDS {
+    for round in 0..roster.rounds {
         progress.round(round, &samples);
 
         let algorithm_order = &roster.orders[round % roster.orders.len()];
@@ -730,7 +732,7 @@ fn measure_all(roster: &Roster) -> Results {
     for algorithm_index in 0..roster.len() {
         for size_index in 0..INPUT_COUNT {
             results[algorithm_index][size_index] =
-                summarize(&mut samples[algorithm_index][size_index]);
+                summarize(&mut samples[algorithm_index][size_index], roster.rounds);
         }
     }
 
@@ -782,7 +784,8 @@ impl<'a> Progress<'a> {
             .measuring_started
             .expect("round() runs inside the measuring phase");
 
-        let done = round as f64 / SAMPLE_ROUNDS as f64;
+        let rounds = self.roster.rounds;
+        let done = round as f64 / rounds as f64;
         let filled = (done * Self::BAR_WIDTH as f64).round() as usize;
         let bar: String = "█".repeat(filled) + &"░".repeat(Self::BAR_WIDTH - filled);
 
@@ -794,7 +797,7 @@ impl<'a> Progress<'a> {
         };
 
         self.draw(&format!(
-            "[{:>5.1}s] measuring {bar} {:>3}/{SAMPLE_ROUNDS} rounds · {remaining} · {}",
+            "[{:>5.1}s] measuring {bar} {:>3}/{rounds} rounds · {remaining} · {}",
             self.started.elapsed().as_secs_f64(),
             round,
             running_medians(self.roster, samples, INPUT_COUNT - 1),
@@ -803,8 +806,9 @@ impl<'a> Progress<'a> {
 
     fn finish(&mut self, samples: &Samples) {
         let bar = "█".repeat(Self::BAR_WIDTH);
+        let rounds = self.roster.rounds;
         self.draw(&format!(
-            "[{:>5.1}s] measured  {bar} {SAMPLE_ROUNDS}/{SAMPLE_ROUNDS} rounds · {}",
+            "[{:>5.1}s] measured  {bar} {rounds}/{rounds} rounds · {}",
             self.started.elapsed().as_secs_f64(),
             running_medians(self.roster, samples, INPUT_COUNT - 1),
         ));
@@ -1106,11 +1110,11 @@ fn median_of_sorted(sorted: &[PsPerByte]) -> PsPerByte {
     }
 }
 
-fn summarize(samples: &mut [PsPerByte]) -> Statistics {
+fn summarize(samples: &mut [PsPerByte], rounds: usize) -> Statistics {
     assert_eq!(
         samples.len(),
-        SAMPLE_ROUNDS,
-        "every result must contain exactly SAMPLE_ROUNDS samples"
+        rounds,
+        "every result must contain exactly one sample per round"
     );
 
     assert!(
@@ -2065,7 +2069,8 @@ fn generate_svg(
 
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="108" class="method">Line and dot: median · shaded band: minimum–maximum across {SAMPLE_ROUNDS} interleaved samples of thread CPU time; a deeper tint or dashed outline marks a wide spread, meaning lower precision · single-threaded · lower is better</text>"##
+        r##"  <text x="{PLOT_LEFT:.0}" y="108" class="method">Line and dot: median · shaded band: minimum–maximum across {} interleaved samples of thread CPU time; a deeper tint or dashed outline marks a wide spread, meaning lower precision · single-threaded · lower is better</text>"##,
+        roster.rounds,
     )
         .unwrap();
     writeln!(
