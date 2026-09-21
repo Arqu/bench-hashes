@@ -55,10 +55,11 @@ fn main() {
         &lock,
         "ring",
     );
-    emit_git_package(
+    emit_path_package(
         "BLAKE3_SME2_SOURCE_INFO",
-        &lock,
+        &manifest_dir,
         "blake3_sme2",
+        BLAKE3_SME2_PATH,
     );
 
     emit_git_metadata(&manifest_dir);
@@ -140,7 +141,24 @@ fn git_text_allow_failure(
     )
 }
 
-fn emit_git_metadata(repository: &Path) {
+/// Where Cargo.toml points the `blake3_sme2` path dependency, relative to
+/// this crate's manifest directory. Cargo.toml and this constant agree.
+const BLAKE3_SME2_PATH: &str = "../BLAKE3";
+
+/// What `git` reports about a checkout: its origin URL, HEAD commit,
+/// nearest release tag, current branch, and whether the tree is clean.
+struct GitState {
+    source: String,
+    commit: String,
+    tag: String,
+    branch: String,
+    clean_status: String,
+}
+
+/// Registers every file git tracks in `repository` (and the refs that
+/// name HEAD) as build-script inputs, so the embedded provenance follows
+/// each commit and each edit.
+fn watch_repository(repository: &Path) {
     let git_directory = git_text(
         repository,
         &["rev-parse", "--git-dir"],
@@ -190,7 +208,11 @@ fn emit_git_metadata(repository: &Path) {
             repository.join(path).display()
         );
     }
+}
 
+/// Reads the git state of `repository`. A dirty tree is fingerprinted by
+/// hashing its status, its diff against HEAD, and every untracked file.
+fn git_state(repository: &Path) -> GitState {
     let source = normalize_git_source(&git_text(
         repository,
         &["remote", "get-url", "origin"],
@@ -199,6 +221,11 @@ fn emit_git_metadata(repository: &Path) {
     let commit = git_text(
         repository,
         &["rev-parse", "HEAD"],
+    );
+
+    let branch = git_text(
+        repository,
+        &["rev-parse", "--abbrev-ref", "HEAD"],
     );
 
     let tags = match git_text_allow_failure(
@@ -301,10 +328,24 @@ fn emit_git_metadata(repository: &Path) {
         format!("dirty-{}", hasher.finalize().to_hex())
     };
 
-    emit_env("BENCH_GIT_SOURCE", &source);
-    emit_env("BENCH_GIT_COMMIT", &commit);
-    emit_env("BENCH_GIT_TAG", &tags);
-    emit_env("BENCH_GIT_CLEAN_STATUS", &clean_status);
+    GitState {
+        source,
+        commit,
+        tag: tags,
+        branch,
+        clean_status,
+    }
+}
+
+fn emit_git_metadata(repository: &Path) {
+    watch_repository(repository);
+
+    let state = git_state(repository);
+
+    emit_env("BENCH_GIT_SOURCE", &state.source);
+    emit_env("BENCH_GIT_COMMIT", &state.commit);
+    emit_env("BENCH_GIT_TAG", &state.tag);
+    emit_env("BENCH_GIT_CLEAN_STATUS", &state.clean_status);
 }
 
 fn git_text(repository: &Path, arguments: &[&str]) -> String {
@@ -338,48 +379,37 @@ fn git_output(repository: &Path, arguments: &[&str]) -> Output {
 }
 
 /*
- * A git dependency has no registry checksum; Cargo.lock identifies it by
- * its source URL, the branch it was resolved from, and the exact commit,
- * as `git+https://host/repo?branch=B#COMMIT`. Emit those three pieces in
- * the same shape this repository uses to identify itself.
+ * A path dependency has no registry checksum and no Cargo.lock source;
+ * the checkout's own git state identifies it: origin URL, branch, exact
+ * commit, and a clean flag or a hash of the uncommitted changes. Emit
+ * those in the same shape this repository uses to identify itself. The
+ * checkout must be a git repository with an `origin` remote.
  */
-fn emit_git_package(
+fn emit_path_package(
     environment_variable: &str,
-    lock: &str,
+    manifest_dir: &Path,
     package_name: &str,
+    relative_path: &str,
 ) {
-    let source = package_source(lock, package_name)
-        .unwrap_or_else(|| {
-            panic!("{package_name} must be present in Cargo.lock with a source")
-        });
+    let repository = manifest_dir.join(relative_path);
 
-    let locator = source.strip_prefix("git+").unwrap_or_else(|| {
-        panic!("{package_name} must be a git dependency; Cargo.lock has source {source:?}")
-    });
+    assert!(
+        repository.join("Cargo.toml").is_file(),
+        "{package_name} must be checked out at {} (a sibling of this repository); clone github.com/johnservil/BLAKE3 there and check out its sme2-bench branch",
+        repository.display()
+    );
 
-    let (url_and_query, commit) = locator
-        .split_once('#')
-        .expect("a git source in Cargo.lock ends with #COMMIT");
-    let (url, query) = url_and_query
-        .split_once('?')
-        .unwrap_or((url_and_query, ""));
+    watch_repository(&repository);
 
-    let branch = query
-        .split('&')
-        .find_map(|pair| pair.strip_prefix("branch="))
-        .unwrap_or("(default branch)");
+    let state = git_state(&repository);
 
     emit_env(
         environment_variable,
-        &format!("{package_name} (git dependency); source {url}; branch {branch}; commit {commit}"),
+        &format!(
+            "{package_name} (path dependency {relative_path}); source {}; branch {}; commit {}; {}",
+            state.source, state.branch, state.commit, state.clean_status
+        ),
     );
-}
-
-fn package_source(lock: &str, requested_name: &str) -> Option<String> {
-    lock.split("[[package]]")
-        .skip(1)
-        .find(|package| quoted_field(package, "name").as_deref() == Some(requested_name))
-        .and_then(|package| quoted_field(package, "source"))
 }
 
 fn emit_required_package(

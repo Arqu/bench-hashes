@@ -1,8 +1,8 @@
-TIMESTAMP: 2026-09-21 17:21:41 UTC
+TIMESTAMP: 2026-09-21 20:40:18 UTC
 git source: https://github.com/johnservil/bench-hashes
-git commit: 2fdd9fbb900ad90115cb359817ca5108f75a894b
-git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+41 commits)
-git clean status: dirty-e1e9f252b306b3f3f6ecb2a8ea7b742d54363a1bce9dbb035dead1f10af3b681
+git commit: f5cebbcf890272714425041c8c7d213a98fd3b40
+git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+42 commits)
+git clean status: dirty-9b2b4c025006a8b5b4b722687583e01fd4481d68988f0b0b6d754fff8c609d9c
 bench-hashes version: 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f
 CPU type: Apple M4 Max
 CPU count: 16
@@ -11,12 +11,12 @@ Rust compiler: rustc 1.98.0-nightly (f428d123a 2026-06-19)
 Build target: aarch64-apple-darwin
 Target features: aes,bf16,bti,crc,dit,dotprod,dpb,dpb2,ecv,fcma,fhm,flagm,flagm2,fp16,frintts,i8mm,jsconv,lor,lse,lse2,neon,paca,pacg,pan,pmuv3,ras,rcpc,rcpc2,rdm,sb,sha2,sha3,sme,sme-f64f64,sme-i16i64,sme2,ssbs,v8.1a,v8.2a,v8.3a,v8.4a,v8.5a,v8.6a,v8.7a,vh,wfxt
 Sample clock: std::time::Instant → CLOCK_UPTIME_RAW (mach_absolute_time; stops during sleep, no NTP slew)
-Reported time: per-thread cycles at the run's sustained clock, 3.994 GHz (median of cycles ÷ elapsed time over every sample); 1683 of 19200 samples whose cycle count fell short of that rate (work the counter does not see, such as SME2 streaming mode) keep their measured time
+Reported time: per-thread cycles at the run's sustained clock, 4.150 GHz (median of cycles ÷ elapsed time over every sample); 1688 of 19200 samples whose cycle count fell short of that rate (work the counter does not see, such as SME2 streaming mode) keep their measured time
 Contenders: every contender available on this machine
 BLAKE3 source: blake3 1.8.7; crate archive SHA-256 6d9e454fc11f76977dc803893aff6304ed33d6a26efae8696573bea74baa27ae; source registry+https://github.com/rust-lang/crates.io-index
 SHA-256 source: sha2 0.11.0; crate archive SHA-256 446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4; source registry+https://github.com/rust-lang/crates.io-index
 SHA-1DC source: sha1-checked 0.10.0; crate archive SHA-256 89f599ac0c323ebb1c6082821a54962b839832b03984598375bff3975b804423; source registry+https://github.com/rust-lang/crates.io-index
-BLAKE3 servil source: blake3_sme2 (git dependency); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit 4ca9952c8522d04470e3efdc21fb172c75817050
+BLAKE3 servil source: blake3_sme2 (path dependency ../BLAKE3); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit 220bed63eeb488d191c01667e35e4b4bd6785b6d; clean
 SHA-256 ring source: ring 0.17.14; crate archive SHA-256 a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7; source registry+https://github.com/rust-lang/crates.io-index
 BLAKE3 mode: single-threaded; Rayon not enabled
 SHA-256 mode: RustCrypto sha2 with its built-in hardware backends (ARMv8 SHA-256 instructions on AArch64, SHA-NI on x86), selected at runtime
@@ -45,11 +45,11 @@ BLAKE3 implementation selection:
 
 BLAKE3 servil implementation selection:
   selected platform: SME2 (512-bit streaming vectors, sixteen-lane groups, hash_many degree 128)
-     64 B: scalar kernel k1
-    128 B: scalar kernel k1
-    256 B: scalar kernel k1
-    512 B: scalar kernel k1
-    1 KiB: scalar kernel k1
+     64 B: scalar kernel c1, one call
+    128 B: scalar kernel c1, one call
+    256 B: scalar kernel c1, one call
+    512 B: scalar kernel c1, one call
+    1 KiB: scalar kernel c1, one call
     2 KiB: integer + NEON hybrid kernels  ← new path from here
     3 KiB: integer + NEON hybrid kernels
     4 KiB: integer + NEON hybrid kernels
@@ -69,38 +69,38 @@ BENCHMARK SUMMARY
 Time per byte in ns/B: median, with minimum–maximum beneath; lower is better. Bands in the graph are the 95% interval of each median.
 
   size             BLAKE3        SHA-256        SHA-1DC  BLAKE3 servil   SHA-256 ring
-  64 B              0.776          0.581          2.928          0.822          0.776
-             0.771–0.903    0.567–0.615    2.894–3.132    0.814–0.907    0.686–0.902!
-  128 B             0.779          0.436          2.001          0.833          0.464
-             0.777–0.827    0.425–0.493    1.984–2.108    0.827–0.851    0.448–0.618 
-  256 B             0.771          0.391          1.620          0.777          0.370
-             0.769–0.821    0.385–0.410    1.608–1.668    0.774–0.808    0.365–0.445 
-  512 B             0.767          0.386          1.382          0.748          0.348
-             0.765–0.801    0.383–0.399    1.375–1.463    0.746–0.807    0.345–0.396 
-  1 KiB             0.765          0.384          1.278          0.734          0.337
-             0.763–0.809    0.382–0.402    1.266–1.483    0.732–0.781    0.335–0.361 
-  2 KiB             0.783          0.382          1.245          0.520          0.331
-             0.782–0.846    0.381–0.406    1.237–1.313    0.517–0.554    0.330–0.346 
-  3 KiB             0.794          0.382          1.269          0.376          0.329
-             0.792–0.839    0.381–0.406    1.256–1.315    0.370–0.387    0.328–0.348 
-  4 KiB             0.437          0.382          1.248          0.346          0.328
-             0.431–0.456    0.381–0.394    1.230–1.328    0.343–0.367    0.327–0.348 
-  8 KiB             0.427          0.382          1.245          0.314          0.327
-             0.425–0.447    0.381–0.404    1.232–1.286    0.310–0.345    0.326–0.342 
-  16 KiB            0.424          0.381          1.237          0.230          0.326
-             0.422–0.443    0.380–0.401    1.223–1.445    0.229–0.252    0.325–0.338 
-  32 KiB            0.422          0.381          1.272          0.214          0.326
-             0.421–0.443    0.380–0.399    1.252–1.307    0.212–0.225    0.325–0.341 
-  64 KiB            0.422          0.381          1.281          0.205          0.326
-             0.420–0.433    0.380–0.395    1.263–1.350    0.203–0.214    0.325–0.342 
-  128 KiB           0.422          0.381          1.328          0.200          0.326
-             0.420–0.446    0.380–0.403    1.301–1.425    0.198–0.207    0.325–0.343 
-  256 KiB           0.422          0.381          1.360          0.179          0.325
-             0.421–0.442    0.380–0.408    1.321–1.454    0.177–0.208    0.325–0.342 
-  512 KiB           0.422          0.381          1.410          0.178          0.326
-             0.420–0.442    0.380–0.393    1.376–1.547    0.176–0.192    0.325–0.355 
-  1 MiB             0.421          0.381          1.402          0.177          0.325
-             0.420–0.449    0.380–0.435    1.382–1.447    0.175–0.204    0.325–0.345 
+  64 B              0.753          0.569          2.803          0.721          0.770
+             0.745–0.890    0.554–0.629    2.772–3.117    0.716–0.820    0.659–0.877!
+  128 B             0.752          0.423          1.917          0.702          0.463
+             0.749–0.862    0.411–0.468    1.905–2.182    0.699–0.783    0.444–0.634!
+  256 B             0.744          0.378          1.557          0.698          0.356
+             0.740–0.830    0.373–0.430    1.542–1.756    0.695–0.776    0.351–0.472 
+  512 B             0.738          0.372          1.327          0.696          0.335
+             0.736–0.810    0.368–0.415    1.318–1.487    0.694–0.777    0.331–0.384 
+  1 KiB             0.737          0.370          1.226          0.695          0.324
+             0.734–0.816    0.368–0.423    1.217–1.402    0.693–0.785    0.323–0.361 
+  2 KiB             0.756          0.368          1.196          0.499          0.319
+             0.753–0.861    0.366–0.419    1.189–1.342    0.495–0.561    0.318–0.355 
+  3 KiB             0.765          0.368          1.214          0.358          0.318
+             0.763–0.849    0.366–0.414    1.205–1.347    0.354–0.391    0.316–0.360 
+  4 KiB             0.421          0.367          1.200          0.327          0.317
+             0.415–0.472    0.366–0.409    1.195–1.331    0.324–0.361    0.315–0.370 
+  8 KiB             0.411          0.367          1.198          0.302          0.315
+             0.409–0.457    0.366–0.400    1.187–1.395    0.298–0.347    0.314–0.345 
+  16 KiB            0.408          0.367          1.188          0.227          0.314
+             0.406–0.441    0.366–0.406    1.177–1.331    0.225–0.257    0.313–0.348 
+  32 KiB            0.406          0.367          1.223          0.212          0.314
+             0.405–0.448    0.366–0.408    1.210–1.393    0.211–0.231    0.313–0.344 
+  64 KiB            0.406          0.367          1.229          0.204          0.314
+             0.405–0.441    0.366–0.405    1.211–1.335    0.203–0.222    0.313–0.342 
+  128 KiB           0.406          0.367          1.270          0.200          0.313
+             0.405–0.450    0.366–0.406    1.247–1.394    0.196–0.221    0.313–0.344 
+  256 KiB           0.406          0.367          1.289          0.192          0.313
+             0.405–0.444    0.366–0.402    1.264–1.453    0.178–0.209    0.313–0.347 
+  512 KiB           0.406          0.367          1.338          0.181          0.313
+             0.405–0.453    0.366–0.412    1.312–1.504    0.176–0.223    0.313–0.346 
+  1 MiB             0.406          0.367          1.335          0.178          0.313
+             0.405–0.452    0.366–0.407    1.316–1.430    0.174–0.218    0.313–0.354 
 
-!  marks a cell whose 95% median interval is at least 5% of its median: 1 of 80 cells; those medians are poorly determined.
+!  marks a cell whose 95% median interval is at least 5% of its median: 2 of 80 cells; those medians are poorly determined.
 

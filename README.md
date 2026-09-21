@@ -77,11 +77,17 @@ disagree and says what shape the disagreement has.
 
 ### Requirements
 
-The BLAKE3 servil contender is a git dependency on the `sme2-bench`
-branch of github.com/johnservil/BLAKE3. Cargo fetches it on the first
-build, and `Cargo.lock` pins the exact commit, so a fresh clone builds
-with network access and nothing else. `cargo update -p blake3_sme2`
-moves the pin to the branch tip.
+The BLAKE3 servil contender is a path dependency on a local checkout of
+github.com/johnservil/BLAKE3 at `../BLAKE3`, a sibling of this
+repository, with its `sme2-bench` branch checked out:
+
+```sh
+git clone --branch sme2-bench https://github.com/johnservil/BLAKE3 ../BLAKE3
+```
+
+Edits to that checkout take effect on the next build, and the build
+script records the checkout's branch, commit, and clean or dirty state
+in the provenance.
 
 The fork's SME2 kernels are assembly, so building them needs a C
 toolchain whose assembler understands `-march=armv9-a+sme2`: Clang/LLVM
@@ -159,14 +165,15 @@ blocks. The two kernels are the two sides of one design trade-off, so
 the crossover near 128–256 B is structural.
 
 BLAKE3 servil is the same crate from the `sme2-bench` branch of
-github.com/johnservil/BLAKE3, built as a git dependency under the crate
-name `blake3_sme2` so it links beside the crates.io crate. It selects
+github.com/johnservil/BLAKE3, built from the local checkout at
+`../BLAKE3` under the crate name `blake3_sme2` so it links beside the
+crates.io crate. It selects
 its SME2 kernels at runtime and requires a CPU that reports SME2 with a
 512-bit streaming vector length; the build requires a toolchain that
 assembles SME2 (see Requirements above). Both requirements fail stop,
 so this column measures the SME2 kernel on every machine where the
-benchmark runs. Its provenance line gives the branch and commit instead
-of a registry checksum.
+benchmark runs. Its provenance line gives the checkout's branch, commit,
+and clean or dirty state instead of a registry checksum.
 
 SHA-256 CommonCrypto, on Apple platforms only, calls the system's
 libSystem through FFI using `CC_SHA256_Init`, `CC_SHA256_Update`, and
@@ -198,9 +205,10 @@ divides input into 1024-byte chunks; the crates.io crate runs a single
 chunk through its one-chunk compressor and batches whole chunks into
 the widest SIMD `hash_many` it can fill (four-way NEON on AArch64, so
 four chunks at 4 KiB; AVX-512, AVX2, SSE4.1, or SSE2 on x86). The SME2
-fork runs one chunk on a scalar kernel, two to fifteen on integer + NEON
-hybrid kernels, and groups of sixteen on the SME2 kernel (16 KiB and
-above). SHA-256 and SHA-1DC run one path at every size.
+fork runs an input of one chunk or less through one call of its scalar
+kernel (every block including the root compression, with the state in
+registers throughout), two to fifteen chunks on integer + NEON hybrid
+kernels, and groups of sixteen on the SME2 kernel (16 KiB and above). SHA-256 and SHA-1DC run one path at every size.
 
 The text report lists the path at each size for both BLAKE3s and marks
 where a new one begins. In the graph, dot shape carries the same

@@ -29,14 +29,13 @@ default-features = false
 version = "0.17"
 default-features = false
 
-# BLAKE3 with the SME2 kernels (Apple M4 and later), from the sme2-bench
-# branch of the fork. Same single-threaded blake3::hash API; the crate
-# requires SME2 at build time and run time and fails stop otherwise.
-# Cargo.lock pins the exact commit; `cargo update -p blake3_sme2` moves to
-# the branch tip.
+# BLAKE3 with the SME2 kernels (Apple M4 and later), from the local
+# checkout of the fork's sme2-bench branch (sibling directory ../BLAKE3).
+# Same single-threaded blake3::hash API; the crate requires SME2 at build
+# time and run time and fails stop otherwise. Edits to ../BLAKE3 take
+# effect on the next build.
 [dependencies.blake3_sme2]
-git = "https://github.com/johnservil/BLAKE3"
-branch = "sme2-bench"
+path = "../BLAKE3"
 default-features = false
 features = ["std"]
 

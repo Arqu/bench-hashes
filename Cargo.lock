@@ -36,7 +36,6 @@ dependencies = [
 [[package]]
 name = "blake3_sme2"
 version = "1.8.7"
-source = "git+https://github.com/johnservil/BLAKE3?branch=sme2-bench#4ca9952c8522d04470e3efdc21fb172c75817050"
 dependencies = [
  "arrayvec",
  "cc",

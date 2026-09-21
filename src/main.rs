@@ -1795,8 +1795,8 @@ fn detect_blake3_sme2_implementation() -> Implementation {
         vec![
             Regime {
                 first: 0,
-                name: "scalar kernel k1",
-                why: "One chunk runs on the integer ALUs alone.",
+                name: "scalar kernel c1, one call",
+                why: "One chunk runs on the integer ALUs alone: every block including the root compression in a single kernel call, with the state in registers throughout.",
                 mark: Mark::Circle,
             },
             Regime {
