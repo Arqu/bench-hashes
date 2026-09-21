@@ -4,8 +4,8 @@ Written by GPT-5.6 Sol and Claude Fable 5 to my (Zooko's) specifications.
 
 A small single-threaded benchmark comparing BLAKE3, SHA-256, SHA-1DC
 (SHA-1 with collision detection, the construction git uses), BLAKE3
-with SME2 kernels (Apple M4 and later), and on Apple platforms the
-system's CommonCrypto SHA-256.
+servil (a fork with SME2 kernels for Apple M4 and later), and on Apple
+platforms the system's CommonCrypto SHA-256.
 
 The benchmark tests every power-of-two input size from 64 B to 1 MiB,
 plus 3 KiB: 64 B, 128 B, 256 B, 512 B, 1 KiB, 2 KiB, 3 KiB, 4 KiB, 8 KiB,
@@ -62,7 +62,7 @@ cargo run --release -- --contenders sha256,sha256-cc # exactly these, in this co
 cargo run --release -- --list                        # keys and availability here
 ```
 
-Keys: `blake3`, `blake3-sme2`, `sha256`, `sha256-ring`, `sha1dc`; and
+Keys: `blake3`, `blake3-servil`, `sha256`, `sha256-ring`, `sha1dc`; and
 `sha256-cc`, which runs only when named with `--contenders`. It stays
 available for direct comparison; on Apple silicon the ring and sha2
 crates are each faster than CommonCrypto at every size, so the default
@@ -76,7 +76,7 @@ disagree and says what shape the disagreement has.
 
 ### Requirements
 
-The BLAKE3 SME2 contender is a git dependency on the `sme2-bench`
+The BLAKE3 servil contender is a git dependency on the `sme2-bench`
 branch of github.com/johnservil/BLAKE3. Cargo fetches it on the first
 build, and `Cargo.lock` pins the exact commit, so a fresh clone builds
 with network access and nothing else. `cargo update -p blake3_sme2`
@@ -100,7 +100,7 @@ Apple's clang from Xcode 15 or later works out of the box.
 At run time the fork's `Platform::detect()` requires a CPU that reports
 SME2 with a 512-bit streaming vector length (Apple M4 and later, or a
 Linux 6.4+ kernel exposing `HWCAP2_SME2`) and panics otherwise, and the
-benchmark asserts that selection at startup. The BLAKE3 SME2 column
+benchmark asserts that selection at startup. The BLAKE3 servil column
 therefore always measures the SME2 kernel; on other hardware the
 benchmark stops with a message instead of timing NEON under that
 heading.
@@ -157,7 +157,7 @@ nanoseconds of setup that sha2 wins back on inputs of one or two
 blocks. The two kernels are the two sides of one design trade-off, so
 the crossover near 128–256 B is structural.
 
-BLAKE3 SME2 is the same crate from the `sme2-bench` branch of
+BLAKE3 servil is the same crate from the `sme2-bench` branch of
 github.com/johnservil/BLAKE3, built as a git dependency under the crate
 name `blake3_sme2` so it links beside the crates.io crate. It selects
 its SME2 kernels at runtime and requires a CPU that reports SME2 with a

@@ -36,7 +36,7 @@ We never write "defensive code" — code that complicates a contract to ease the
 
 # This repository
 
-`bench-hashes` is a single-crate Rust benchmark (`src/main.rs`, `build.rs`) comparing BLAKE3, SHA-256, SHA-1DC, and BLAKE3 with SME2 kernels. The `BLAKE3` column measures the crates.io `blake3` crate maintained by the BLAKE3 authors. The `BLAKE3 SME2` column measures the `sme2-bench` branch of github.com/johnservil/BLAKE3, built as a git dependency named `blake3_sme2` and pinned to a commit in `Cargo.lock`. `cargo update -p blake3_sme2` moves the pin to the branch tip after a push to the fork.
+`bench-hashes` is a single-crate Rust benchmark (`src/main.rs`, `build.rs`) comparing BLAKE3, SHA-256, SHA-1DC, and BLAKE3 servil (the fork with SME2 kernels). The `BLAKE3` column measures the crates.io `blake3` crate maintained by the BLAKE3 authors. The `BLAKE3 servil` column measures the `sme2-bench` branch of github.com/johnservil/BLAKE3, built as a git dependency named `blake3_sme2` and pinned to a commit in `Cargo.lock`. `cargo update -p blake3_sme2` moves the pin to the branch tip after a push to the fork.
 
 Results land in `benchmark-results/{CPU}.{OS}/` as a text report and an SVG. Every run overwrites them. The fork fails stop at build time (assembler lacks SME2) and at run time (CPU lacks SME2), and `main()` asserts the SME2 platform, so any report that exists measured the SME2 kernel.
 

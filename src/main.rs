@@ -139,7 +139,7 @@ impl Algorithm {
             Self::Blake3 => "blake3",
             Self::Sha256 => "sha256",
             Self::Sha1Dc => "sha1dc",
-            Self::Blake3Sme2 => "blake3-sme2",
+            Self::Blake3Sme2 => "blake3-servil",
             Self::Sha256CommonCrypto => "sha256-cc",
             Self::Sha256Ring => "sha256-ring",
         }
@@ -173,7 +173,7 @@ impl Algorithm {
                     Ok(())
                 } else {
                     Err(format!(
-                        "the blake3_sme2 crate selected {platform:?} on this machine; BLAKE3 SME2 needs a CPU with SME2 and 512-bit streaming vectors (Apple M4 and later)"
+                        "the blake3_sme2 crate selected {platform:?} on this machine; BLAKE3 servil needs a CPU with SME2 and 512-bit streaming vectors (Apple M4 and later)"
                     ))
                 }
             }
@@ -192,7 +192,7 @@ impl Algorithm {
             Self::Blake3 => "BLAKE3",
             Self::Sha256 => "SHA-256",
             Self::Sha1Dc => "SHA-1DC",
-            Self::Blake3Sme2 => "BLAKE3 SME2",
+            Self::Blake3Sme2 => "BLAKE3 servil",
             Self::Sha256CommonCrypto => "SHA-256 CommonCrypto",
             Self::Sha256Ring => "SHA-256 ring",
         }
@@ -461,7 +461,7 @@ bench-hashes: single-threaded hash throughput by input size
   bench-hashes --contenders K,...  exactly these, in this column order
   bench-hashes --list              contenders and their availability here
 
-Keys: blake3, blake3-sme2, sha256, sha256-ring, sha1dc; sha256-cc on request
+Keys: blake3, blake3-servil, sha256, sha256-ring, sha1dc; sha256-cc on request
 
   --trace-clocks PATH              also write one CSV line per sample with
                                    wall, thread-CPU, mach_absolute_time, and
@@ -738,7 +738,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
         assert_eq!(
             blake3::hash(input).as_bytes(),
             blake3_sme2::hash(input).as_bytes(),
-            "BLAKE3 SME2 must agree with crates.io blake3 on a {}-byte input",
+            "BLAKE3 servil must agree with crates.io blake3 on a {}-byte input",
             input.len(),
         );
         if roster.algorithms.contains(&Algorithm::Sha256CommonCrypto) {
@@ -2782,7 +2782,7 @@ fn generate_svg(
         ("SHA-256 source", SHA2_SOURCE_INFO),
         ("SHA-1DC source", SHA1_CHECKED_SOURCE_INFO),
         ("SHA-256 ring source", RING_SOURCE_INFO),
-        ("BLAKE3 SME2 source", BLAKE3_SME2_SOURCE_INFO),
+        ("BLAKE3 servil source", BLAKE3_SME2_SOURCE_INFO),
     ] {
         writeln!(
             svg,
