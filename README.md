@@ -139,8 +139,10 @@ sixteen-lane group, and 16 KiB and above run the SME2 chunk kernel.
 
 ## Interleaving
 
-The contenders are benchmarked in every permutation equally often, and
-input-size order rotates independently. This distributes ordering effects,
+The contenders run in four orders that together place every contender
+in every position exactly once and realise every "Y right after X"
+adjacency exactly once, the same balance all 24 permutations give.
+Input-size order rotates independently. This distributes ordering effects,
 thermal throttling, and competing system activity evenly. Each
 algorithm/input-size combination is calibrated separately so its timed
 blocks have approximately equal durations.

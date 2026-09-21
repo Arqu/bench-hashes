@@ -9,9 +9,16 @@ use sysinfo::System;
 #[cfg(target_arch = "wasm32")]
 compile_error!("bench-hashes currently supports native targets only");
 
-const SAMPLE_ROUNDS: usize = 240;
+/*
+ * 128 rounds: a multiple of the sixteen input sizes and the four cyclic
+ * orders, and enough that the running medians settle well before the end
+ * (they are stable to three decimals by round 30 on every machine measured
+ * so far). Each sample runs a contender for about 2 ms; timing noise on
+ * this scale is well under 1%.
+ */
+const SAMPLE_ROUNDS: usize = 128;
 const CALIBRATION_PROBE_NS: u128 = 1_000_000;
-const TARGET_SAMPLE_NS: u128 = 4_000_000;
+const TARGET_SAMPLE_NS: u128 = 2_000_000;
 
 const INPUT_COUNT: usize = 16;
 const ALGORITHM_COUNT: usize = 4;
@@ -74,14 +81,18 @@ const ALGORITHMS: [Algorithm; ALGORITHM_COUNT] = [
 ];
 
 /*
- * Every permutation of the contenders. SAMPLE_ROUNDS is divisible by the
- * permutation count, so each contender runs in each position equally often.
+ * The interleaving spreads one contender's lingering effects (cache state,
+ * clock, thermal drift) evenly over the others. These four orders do that
+ * with the same balance as all 24 permutations: every contender takes
+ * every position exactly once, and every ordered pair "Y runs right after
+ * X" occurs exactly once across the set. SAMPLE_ROUNDS is a multiple of
+ * four, so each order runs equally often.
  */
-const ALGORITHM_ORDERS: [[usize; ALGORITHM_COUNT]; 24] = [
-    [0, 1, 2, 3], [0, 1, 3, 2], [0, 2, 1, 3], [0, 2, 3, 1], [0, 3, 1, 2], [0, 3, 2, 1],
-    [1, 0, 2, 3], [1, 0, 3, 2], [1, 2, 0, 3], [1, 2, 3, 0], [1, 3, 0, 2], [1, 3, 2, 0],
-    [2, 0, 1, 3], [2, 0, 3, 1], [2, 1, 0, 3], [2, 1, 3, 0], [2, 3, 0, 1], [2, 3, 1, 0],
-    [3, 0, 1, 2], [3, 0, 2, 1], [3, 1, 0, 2], [3, 1, 2, 0], [3, 2, 0, 1], [3, 2, 1, 0],
+const ALGORITHM_ORDERS: [[usize; ALGORITHM_COUNT]; 4] = [
+    [0, 1, 2, 3],
+    [1, 3, 0, 2],
+    [2, 0, 3, 1],
+    [3, 2, 1, 0],
 ];
 
 type Results = [[Statistics; ALGORITHM_COUNT]; INPUT_COUNT];
@@ -180,6 +191,8 @@ fn main() {
         "SAMPLE_ROUNDS must use every input-size position equally"
     );
 
+    assert_orders_balanced();
+
     /*
      * The BLAKE3 SME2 column measures the fork with its SME2 kernel
      * selected. The fork falls back to its NEON backend on a CPU without
@@ -233,6 +246,41 @@ fn main() {
     );
 }
 
+/*
+ * ALGORITHM_ORDERS must place every contender in every position exactly
+ * once and realise every ordered adjacency exactly once. This is what
+ * lets four orders stand in for all permutations.
+ */
+fn assert_orders_balanced() {
+    let mut positions = [[0usize; ALGORITHM_COUNT]; ALGORITHM_COUNT];
+    let mut adjacencies = [[0usize; ALGORITHM_COUNT]; ALGORITHM_COUNT];
+
+    for order in ALGORITHM_ORDERS {
+        for (position, &algorithm) in order.iter().enumerate() {
+            positions[algorithm][position] += 1;
+            if position > 0 {
+                adjacencies[order[position - 1]][algorithm] += 1;
+            }
+        }
+    }
+
+    for algorithm in 0..ALGORITHM_COUNT {
+        for position in 0..ALGORITHM_COUNT {
+            assert_eq!(
+                positions[algorithm][position], 1,
+                "contender {algorithm} must take position {position} exactly once across ALGORITHM_ORDERS"
+            );
+        }
+        for follower in 0..ALGORITHM_COUNT {
+            let expected = usize::from(follower != algorithm);
+            assert_eq!(
+                adjacencies[algorithm][follower], expected,
+                "contender {follower} must run right after {algorithm} exactly {expected} time(s) across ALGORITHM_ORDERS"
+            );
+        }
+    }
+}
+
 fn measure_all() -> Results {
     let inputs: [Vec<u8>; INPUT_COUNT] =
         std::array::from_fn(|index| make_input(INPUT_SIZES[index].bytes));
@@ -273,8 +321,8 @@ fn measure_all() -> Results {
     progress.phase("warming up");
 
     /*
-     * Warm every algorithm in every possible ordering position. The input
-     * size that runs first is rotated as well.
+     * Warm every algorithm in every ordering position, on every input size.
+     * The input size that runs first is rotated as well.
      */
     for warmup_round in 0..ALGORITHM_ORDERS.len() {
         let order = ALGORITHM_ORDERS[warmup_round];
