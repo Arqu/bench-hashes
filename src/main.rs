@@ -98,6 +98,8 @@ const INPUT_SIZES: [InputSize; INPUT_COUNT] = [
 /// results[contender_index][size_index], contenders in the roster's order.
 type Results = Vec<[Cell; INPUT_COUNT]>;
 type Samples = Vec<[Vec<Sample>; INPUT_COUNT]>;
+/// Duo samples, in the same shape; empty vectors in a solo run.
+type DuoSamples = Vec<[Vec<u64>; INPUT_COUNT]>;
 
 #[derive(Clone, Copy)]
 struct InputSize {
@@ -301,7 +303,7 @@ impl Algorithm {
             Self::Sha256CommonCrypto => "Apple CommonCrypto CC_SHA256_Init/Update/Final via FFI, the fastest route into the system's own SHA-256 (corecrypto, ARMv8 SHA-256 instructions on Apple silicon)",
             Self::Sha256Ring => "ring::digest::digest, BoringSSL's sha256_block_data_order_hw assembly (ARMv8 SHA-256 instructions; SHA-NI on x86), selected at runtime",
             Self::Blake3Rayon => "multithreaded; Hasher::update_rayon on a Rayon pool with one thread per logical CPU (the crate's own multithreading, which splits the tree recursively over the pool; inputs under a few chunks stay on the caller's thread)",
-            Self::Blake3Sme2Lanes => "multithreaded; blake3_sme2::lanes::hash: inputs of 128 KiB and up split into subtrees over the machine's execution lanes (one per core cluster, which is one SME unit), each lane hashed by a resident worker thread with the SME2 kernel; a call takes only the lanes free at that moment, so concurrent callers share the machine (cooperative admission); below 128 KiB the caller's thread alone",
+            Self::Blake3Sme2Lanes => "multithreaded; blake3_sme2::lanes::hash: inputs of 128 KiB and up split into subtrees over the machine's execution lanes (one per core cluster, which is one SME unit), each lane's share hashed by a resident worker thread with the SME2 kernel; a call takes a fair share of the lanes (ceil(lanes / active callers), and only free ones), so concurrent callers share the machine (cooperative admission); below 128 KiB the caller's thread alone",
         }
     }
 
@@ -388,14 +390,18 @@ const BOOTSTRAP_RESAMPLES: usize = 400;
 const MODE_GAP_PERMILLE: u64 = 40;
 const MODE_MIN_SHARE_PERMILLE: usize = 100;
 
-/// One (contender, size) cell: the reported time per byte (see TimeBasis).
+/// One (contender, size) cell: the reported time per byte (see TimeBasis),
+/// and in a duo run the duo time per byte beside it.
 #[derive(Clone, Copy)]
 struct Cell {
     time: Statistics,
+    /// Time to the later finish of two copies, per byte of one copy;
+    /// present in duo runs.
+    duo: Option<Statistics>,
 }
 
 impl Cell {
-    const ZERO: Self = Self { time: Statistics::ZERO };
+    const ZERO: Self = Self { time: Statistics::ZERO, duo: None };
 }
 
 /// One timed run of a contender over an input.
@@ -737,7 +743,7 @@ fn main() {
     }
 
     let selection_note = if duo {
-        format!("{selection_note}; duo measurement (two copies at once, later finish)")
+        format!("{selection_note}; solo and duo (two copies at once, later finish) side by side")
     } else {
         selection_note
     };
@@ -966,7 +972,6 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                 calibrate_batch(
                     roster.algorithms[algorithm_index],
                     &inputs[size_index],
-                    duo.map(|duo| (duo, duo_inputs[size_index].as_slice())),
                 );
         }
     }
@@ -987,11 +992,9 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
             for &algorithm_index in order {
                 let algorithm = roster.algorithms[algorithm_index];
                 let iterations = batch_iterations[algorithm_index][size_index];
-                match duo {
-                    Some(duo) => {
-                        duo.run(algorithm, &inputs[size_index], &duo_inputs[size_index], iterations);
-                    }
-                    None => run_batch(algorithm, &inputs[size_index], iterations),
+                run_batch(algorithm, &inputs[size_index], iterations);
+                if let Some(duo) = duo {
+                    duo.run(algorithm, &inputs[size_index], &duo_inputs[size_index], iterations);
                 }
             }
         }
@@ -999,6 +1002,9 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
 
     let mut samples: Samples = (0..roster.len())
         .map(|_| std::array::from_fn(|_| Vec::with_capacity(roster.rounds)))
+        .collect();
+    let mut duo_samples: DuoSamples = (0..roster.len())
+        .map(|_| std::array::from_fn(|_| Vec::with_capacity(if roster.duo { roster.rounds } else { 0 })))
         .collect();
 
     /*
@@ -1037,23 +1043,28 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                 };
 
                 /*
-                 * Solo: this thread runs the batch and its own cycle counter
-                 * describes the work. Duo: two threads run a batch each and
-                 * the sample is the time to the later finish; the copies'
-                 * cycle counts describe two threads and cannot normalise one
-                 * time, so duo samples carry zero cycles and the run reports
-                 * measured time (see TimeBasis).
+                 * The solo sample: this thread runs the batch and its own
+                 * cycle counter describes the work.
                  */
-                let (elapsed_ns, cycles) = match duo {
-                    Some(duo) => (duo.run(algorithm, input, &duo_inputs[size_index], iterations), 0),
-                    None => {
-                        let cycles0 = trace_clocks::thread_cycles();
-                        let started = sample_clock::now();
-                        run_batch(algorithm, input, iterations);
-                        let elapsed_ns = sample_clock::since_ns(started);
-                        (elapsed_ns, trace_clocks::thread_cycles() - cycles0)
-                    }
-                };
+                let cycles0 = trace_clocks::thread_cycles();
+                let started = sample_clock::now();
+                run_batch(algorithm, input, iterations);
+                let elapsed_ns = sample_clock::since_ns(started);
+                let cycles = trace_clocks::thread_cycles() - cycles0;
+
+                /*
+                 * The duo sample, right after it in a duo run: two threads run
+                 * a batch each and the sample is the time to the later
+                 * finish. Taken beside the solo sample, under the same
+                 * conditions, so the two columns compare. The copies' cycle
+                 * counts describe two threads, so duo times are measured time.
+                 */
+                if let Some(duo) = duo {
+                    let later_ns = duo.run(algorithm, input, &duo_inputs[size_index], iterations);
+                    let total_bytes = input.len() as u64 * iterations as u64;
+                    let later_ps = later_ns.checked_mul(PS_PER_NS).expect("a sample of under a second fits in picoseconds");
+                    duo_samples[algorithm_index][size_index].push((later_ps + total_bytes / 2) / total_bytes);
+                }
 
                 if let Some(trace) = trace.as_deref_mut() {
                     let perf1 = trace_clocks::perf_counters();
@@ -1105,8 +1116,13 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
 
     for algorithm_index in 0..roster.len() {
         for size_index in 0..INPUT_COUNT {
-            results[algorithm_index][size_index] =
-                summarize_cell(&samples[algorithm_index][size_index], roster.rounds, basis);
+            let mut cell = summarize_cell(&samples[algorithm_index][size_index], roster.rounds, basis);
+            if roster.duo {
+                let duo = &mut duo_samples[algorithm_index][size_index];
+                assert_eq!(duo.len(), roster.rounds, "one duo sample per round");
+                cell.duo = Some(summarize(duo));
+            }
+            results[algorithm_index][size_index] = cell;
         }
     }
 
@@ -1380,24 +1396,45 @@ mod rayon_pool {
  * from a shared release to the later finish. A hash that takes the whole
  * machine to go faster alone runs beside a copy of itself here and shows
  * what that costs; a hash that leaves room finishes at its solo speed.
- * Every contender, single- or multithreaded, is measured the same way, so
- * the columns compare.
+ * In a duo run every sample interval takes a solo sample and then a duo
+ * sample of the same batch, so each cell reports both, side by side, from
+ * the same moment of the run.
  *
- * The two threads persist for the run: a job (contender, input,
- * iterations) is posted, both threads take it and wait at a barrier so
- * they start together, and the caller reads the later finish. The clock
- * starts when the barrier releases and each thread stops its own; the
- * later stop is the sample. Reported per byte per copy: a duo sample over
- * N bytes per copy is divided by N, so the number reads as "the time one
- * hash costs when another runs beside it".
+ * The two copy threads persist for the run. The caller posts a job, and
+ * each copy takes it and polls a generation counter (yielding between
+ * polls) until the caller has seen both arrive and flips it. Both copies
+ * are then on a CPU, in the instruction stream, when the release happens,
+ * and each reads the sample clock as its own first act; the later finish
+ * is the later of the two finish times, each measured from that copy's
+ * own start. A release through a barrier or condition variable would
+ * instead need the operating system to wake a sleeping thread, which on a
+ * busy machine can take hundreds of microseconds (a two-CPU virtual
+ * machine measured 300 µs when the caller's own thread had just finished
+ * a batch on that CPU); a copy that starts late finishes late through no
+ * fault of the contender, and the pair's later finish would carry the
+ * wake, not the hash. A polling copy needs no wake.
+ *
+ * The caller then sleeps on a condition variable until both copies have
+ * finished. The finishes are sample-clock reads the copies take
+ * themselves, so the caller's own wake, however slow, enters no sample;
+ * and a sleeping caller holds no CPU, which matters on a machine with as
+ * many CPUs as copies. Between jobs the copies sleep the same way, so an
+ * idle run holds no CPU either.
+ *
+ * Reported per byte per copy: a duo sample over N bytes per copy is
+ * divided by N, so the number reads as "the time one hash costs when
+ * another runs beside it".
  */
 struct Duo {
     /// A job for both threads, or None between jobs.
     job: std::sync::Mutex<Option<DuoJob>>,
     posted: std::sync::Condvar,
-    /// Both workers and the caller: releases together once both hold the job.
-    start: std::sync::Barrier,
-    /// Each worker's finish, in sample-clock nanoseconds since the release.
+    /// Copies that hold the job and are spinning, ready to start.
+    ready: std::sync::atomic::AtomicUsize,
+    /// Advances once both copies are ready: the release.
+    generation: std::sync::atomic::AtomicU64,
+    /// Each copy's elapsed nanoseconds from its own start to its finish;
+    /// None while a copy is still running.
     finished: std::sync::Mutex<[Option<u64>; 2]>,
     done: std::sync::Condvar,
 }
@@ -1417,10 +1454,12 @@ unsafe impl Send for DuoJob {}
 
 impl Duo {
     fn new() -> &'static Self {
+        use std::sync::atomic::{AtomicU64, AtomicUsize};
         let duo: &'static Self = Box::leak(Box::new(Self {
             job: std::sync::Mutex::new(None),
             posted: std::sync::Condvar::new(),
-            start: std::sync::Barrier::new(3),
+            ready: AtomicUsize::new(0),
+            generation: AtomicU64::new(0),
             finished: std::sync::Mutex::new([None, None]),
             done: std::sync::Condvar::new(),
         }));
@@ -1435,8 +1474,9 @@ impl Duo {
 
     /// Run `iterations` of `algorithm` on both threads at once, copy 0 over
     /// `input` and copy 1 over `other`; returns the later finish in
-    /// nanoseconds after the shared release.
+    /// nanoseconds, each copy timed from its own start.
     fn run(&self, algorithm: Algorithm, input: &[u8], other: &[u8], iterations: usize) -> u64 {
+        use std::sync::atomic::Ordering;
         assert_eq!(input.len(), other.len(), "the two copies hash inputs of one size");
         {
             let mut job = self.job.lock().unwrap();
@@ -1444,7 +1484,17 @@ impl Duo {
             *job = Some(DuoJob { algorithm, inputs: [input, other], iterations, taken: 0 });
             self.posted.notify_all();
         }
-        self.start.wait();
+        /*
+         * Both copies spinning: release. The caller yields between polls
+         * so that on a machine with as many CPUs as copies the copies get
+         * theirs; a copy is spinning within microseconds of the post.
+         */
+        while self.ready.load(Ordering::Acquire) < 2 {
+            std::thread::yield_now();
+        }
+        self.ready.store(0, Ordering::Release);
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        /* Sleep until both copies have finished. */
         let mut finished = self.finished.lock().unwrap();
         while finished.iter().any(Option::is_none) {
             finished = self.done.wait(finished).unwrap();
@@ -1455,6 +1505,8 @@ impl Duo {
     }
 
     fn worker(&self, copy: usize) {
+        use std::sync::atomic::Ordering;
+        let mut seen = self.generation.load(Ordering::Acquire);
         loop {
             let job = {
                 let mut job = self.job.lock().unwrap();
@@ -1472,7 +1524,22 @@ impl Duo {
                     job = self.posted.wait(job).unwrap();
                 }
             };
-            self.start.wait();
+            /*
+             * Arrive, then poll until the caller releases, yielding between
+             * polls. A copy that spun without yielding would hold its CPU
+             * for a scheduler quantum, and on a machine with as many CPUs
+             * as copies the other copy's worker threads (a multithreaded
+             * contender's) would wait that quantum to start: measured, a
+             * 128 KiB lanes hash beside two hard spinners took 2 ms in
+             * place of 29 µs. A yielding poll still has the copy in the
+             * instruction stream when the release comes, within a
+             * microsecond of it.
+             */
+            self.ready.fetch_add(1, Ordering::AcqRel);
+            while self.generation.load(Ordering::Acquire) == seen {
+                std::thread::yield_now();
+            }
+            seen = self.generation.load(Ordering::Acquire);
             let started = sample_clock::now();
             // Sound: run() holds the borrows until both finishes are read.
             run_batch(job.algorithm, unsafe { &*job.inputs[copy] }, job.iterations);
@@ -1768,19 +1835,13 @@ mod sample_clock {
 fn calibrate_batch(
     algorithm: Algorithm,
     input: &[u8],
-    duo: Option<(&Duo, &[u8])>,
 ) -> usize {
     let mut iterations = 1usize;
 
     loop {
-        let elapsed_ns = match duo {
-            Some((duo, other)) => u128::from(duo.run(algorithm, input, other, iterations)),
-            None => {
-                let started = sample_clock::now();
-                run_batch(algorithm, input, iterations);
-                u128::from(sample_clock::since_ns(started))
-            }
-        };
+        let started = sample_clock::now();
+        run_batch(algorithm, input, iterations);
+        let elapsed_ns = u128::from(sample_clock::since_ns(started));
 
         /*
          * A sufficiently short interval can be below a platform timer's
@@ -1871,7 +1932,7 @@ fn summarize_cell(samples: &[Sample], rounds: usize, basis: TimeBasis) -> Cell {
         .collect();
     assert!(times.iter().all(|&t| t > 0), "all timing samples must be positive");
 
-    Cell { time: summarize(&mut times) }
+    Cell { time: summarize(&mut times), duo: None }
 }
 
 /// Requires a non-empty slice; sorts it. Zeros summarise to zeros.
@@ -2329,7 +2390,7 @@ fn generate_text(
     if roster.duo {
         writeln!(
             output,
-            "Measurement: duo. Every sample ran two independent copies of the contender at once, on two threads over two inputs of the size, released together; the sample is the time to the later finish, per byte of one copy. A contender that takes the whole machine to go faster alone runs beside a copy of itself here and shows what that costs."
+            "Measurement: solo and duo. Every sample interval took a solo sample (one copy, one thread) and then a duo sample: two independent copies of the contender at once, on two threads over two inputs of the size, released together, timed to the later finish, per byte of one copy. A contender that takes the whole machine to go faster alone runs beside a copy of itself in the duo sample and shows what that costs. Duo times are measured time; solo times follow the reported-time rule above."
         )
         .unwrap();
     }
@@ -2356,50 +2417,76 @@ fn generate_text(
 
     writeln!(
         output,
-        "Time per byte in ns/B{}: median, with minimum–maximum beneath; lower is better. Bands in the graph are the 95% interval of each median.",
-        if roster.duo { " (duo: two copies at once, time to the later finish, per byte of one copy)" } else { "" },
+        "Time per byte in ns/B: median, with minimum–maximum beneath; lower is better. Bands in the graph are the 95% interval of each median."
     )
         .unwrap();
-    writeln!(output).unwrap();
-
-    /* Header row: one column per contender; wide names get a short form. */
-    write!(output, "  {:<8}", "size").unwrap();
-    for algorithm in &roster.algorithms {
-        write!(output, "  {:>13}", column_heading(*algorithm)).unwrap();
+    if roster.duo {
+        writeln!(
+            output,
+            "Each contender has two columns. solo: one copy on one thread, the machine otherwise idle. duo: two independent copies at once on two threads, the time to the later finish, per byte of one copy. A contender that takes the whole machine to go faster alone shows the difference between the two."
+        )
+        .unwrap();
     }
     writeln!(output).unwrap();
+
+    /*
+     * Header rows: one column per contender, or a solo and a duo column
+     * per contender in a duo run; wide names get a short form.
+     */
+    write!(output, "  {:<8}", "size").unwrap();
+    for algorithm in &roster.algorithms {
+        if roster.duo {
+            write!(output, "  {:>27}", column_heading(*algorithm)).unwrap();
+        } else {
+            write!(output, "  {:>13}", column_heading(*algorithm)).unwrap();
+        }
+    }
+    writeln!(output).unwrap();
+    if roster.duo {
+        write!(output, "  {:<8}", "").unwrap();
+        for _ in &roster.algorithms {
+            write!(output, "  {:>13}{:>14}", "solo", "duo").unwrap();
+        }
+        writeln!(output).unwrap();
+    }
+
+    let columns = |cell: &Cell| -> Vec<Statistics> {
+        let mut columns = vec![cell.time];
+        if let Some(duo) = cell.duo {
+            columns.push(duo);
+        }
+        columns
+    };
 
     for size_index in 0..INPUT_COUNT {
         write!(output, "  {:<8}", INPUT_SIZES[size_index].label).unwrap();
         for algorithm_index in 0..roster.len() {
-            write!(
-                output,
-                "  {:>13}",
-                format_ps(results[algorithm_index][size_index].time.median),
-            )
-                .unwrap();
+            for statistics in columns(&results[algorithm_index][size_index]) {
+                write!(output, "  {:>13}", format_ps(statistics.median)).unwrap();
+            }
         }
         writeln!(output).unwrap();
 
         write!(output, "  {:<8}", "").unwrap();
         for algorithm_index in 0..roster.len() {
-            let statistics = results[algorithm_index][size_index].time;
-            /* A trailing mark flags a wide spread; the legend below explains it. */
-            let flag = if spread_permille(statistics) >= SPREAD_WIDE_PERMILLE { "!" } else { " " };
-            write!(
-                output,
-                "  {:>12}{flag}",
-                format!("{}–{}", format_ps(statistics.minimum), format_ps(statistics.maximum)),
-            )
-                .unwrap();
+            for statistics in columns(&results[algorithm_index][size_index]) {
+                /* A trailing mark flags a wide spread; the legend below explains it. */
+                let flag = if spread_permille(statistics) >= SPREAD_WIDE_PERMILLE { "!" } else { " " };
+                write!(
+                    output,
+                    "  {:>12}{flag}",
+                    format!("{}–{}", format_ps(statistics.minimum), format_ps(statistics.maximum)),
+                )
+                    .unwrap();
+            }
         }
         writeln!(output).unwrap();
     }
 
-    let wide_cells = results
+    let all_statistics: Vec<Statistics> = results.iter().flatten().flat_map(|cell| columns(cell)).collect();
+    let wide_cells = all_statistics
         .iter()
-        .flatten()
-        .filter(|cell| spread_permille(cell.time) >= SPREAD_WIDE_PERMILLE)
+        .filter(|statistics| spread_permille(**statistics) >= SPREAD_WIDE_PERMILLE)
         .count();
     writeln!(output).unwrap();
     if wide_cells > 0 {
@@ -2407,7 +2494,7 @@ fn generate_text(
             output,
             "!  marks a cell whose 95% median interval is at least {}% of its median: {wide_cells} of {} cells; those medians are poorly determined.",
             SPREAD_WIDE_PERMILLE / 10,
-            INPUT_COUNT * roster.len(),
+            all_statistics.len(),
         )
             .unwrap();
     } else {
@@ -2661,14 +2748,14 @@ fn generate_svg(
     let observed_max = results
         .iter()
         .flatten()
-        .map(|cell| cell.time.high)
+        .map(|cell| cell.time.high.max(cell.duo.map_or(0, |duo| duo.high)))
         .max()
         .expect("there are results");
 
     let observed_min = results
         .iter()
         .flatten()
-        .map(|cell| cell.time.low)
+        .map(|cell| cell.time.low.min(cell.duo.map_or(u64::MAX, |duo| duo.low)))
         .min()
         .expect("there are results");
 
@@ -3046,6 +3133,41 @@ fn generate_svg(
         )
             .unwrap();
 
+        /*
+         * In a duo run the contender's duo medians draw as a dashed line of
+         * the same colour with hollow dots, inside the same group so the
+         * toggle hides both. Where duo and solo agree the dashed line lies
+         * on the solid one; where a contender pays for sharing the machine
+         * the dashed line rises above it, and the gap is the price.
+         */
+        if roster.duo {
+            let mut duo_path = String::new();
+            for size_index in 0..INPUT_COUNT {
+                let x = x_positions[size_index];
+                let y = map_y(results[algorithm_index][size_index].duo.expect("duo run has duo statistics").median);
+                if size_index == 0 {
+                    write!(duo_path, "M {x:.2} {y:.2}").unwrap();
+                } else {
+                    write!(duo_path, " L {x:.2} {y:.2}").unwrap();
+                }
+            }
+            writeln!(
+                svg,
+                r##"      <path class="median duo" d="{duo_path}" fill="none" stroke="{color}" stroke-width="2" stroke-dasharray="6,4" stroke-linejoin="round" stroke-linecap="round"/>"##
+            )
+                .unwrap();
+            let dots = &mut dot_layers[algorithm_index];
+            for size_index in 0..INPUT_COUNT {
+                let x = x_positions[size_index];
+                let y = map_y(results[algorithm_index][size_index].duo.unwrap().median);
+                writeln!(
+                    dots,
+                    r##"    <g class="dot dot-duo" data-size="{size_index}" transform="translate({x:.2} {y:.2})" onmouseenter="showHover({algorithm_index},{size_index})" onmouseleave="hideHover()"><circle r="4" fill="#fdfdfc" stroke="{color}" stroke-width="2"/></g>"##
+                )
+                    .unwrap();
+            }
+        }
+
         for size_index in 0..INPUT_COUNT {
             let x = x_positions[size_index];
             let statistics = results[algorithm_index][size_index].time;
@@ -3241,6 +3363,25 @@ fn generate_svg(
             legend_y,
         )
             .unwrap();
+        /* In a duo run: the dashed line and hollow dot, on the left of the row. */
+        if roster.duo {
+            let x = PLOT_LEFT;
+            writeln!(
+                svg,
+                r##"  <path d="M {x:.1} {y:.1} L {:.1} {y:.1}" stroke="#8a8a8a" stroke-width="2" stroke-dasharray="6,4"/><circle cx="{:.1}" cy="{y:.1}" r="3" fill="#fdfdfc" stroke="#8a8a8a" stroke-width="1.5"/>"##,
+                x + 30.0,
+                x + 15.0,
+                y = legend_y - 3.5,
+            )
+                .unwrap();
+            writeln!(
+                svg,
+                r##"  <text x="{:.1}" y="{:.1}" class="legend">duo: two copies at once, later finish, per byte of one copy · solid line: solo</text>"##,
+                x + 38.0,
+                legend_y,
+            )
+                .unwrap();
+        }
     }
 
     /*
@@ -3568,6 +3709,19 @@ fn write_interaction_script(
                 write!(data, "{}", format_ps(pick(results[algorithm_index][size_index].time))).unwrap();
             }
         }
+        if roster.duo {
+            for (key, pick) in [
+                ("duoLow", (|t: Statistics| t.low) as fn(Statistics) -> u64),
+                ("duoMed", |t| t.median),
+                ("duoHigh", |t| t.high),
+            ] {
+                write!(data, "],\"{key}\":[").unwrap();
+                for size_index in 0..INPUT_COUNT {
+                    if size_index > 0 { data.push(','); }
+                    write!(data, "{}", format_ps(pick(results[algorithm_index][size_index].duo.unwrap()))).unwrap();
+                }
+            }
+        }
         data.push_str("],\"modes\":[");
         for size_index in 0..INPUT_COUNT {
             if size_index > 0 { data.push(','); }
@@ -3727,6 +3881,10 @@ function relayout() {
   for (const i of visible) {
     lo = Math.min(lo, ...DATA.series[i].low);
     hi = Math.max(hi, ...DATA.series[i].high);
+    if (DATA.series[i].duoMed) {
+      lo = Math.min(lo, ...DATA.series[i].duoLow);
+      hi = Math.max(hi, ...DATA.series[i].duoHigh);
+    }
   }
   if (visible.length === 0) { lo = 0.1; hi = 1; }
   /*
@@ -3790,10 +3948,16 @@ function relayout() {
     g.querySelector(".band").setAttribute("d", band + " Z");
     let med = "";
     X.forEach((x, k) => { med += (k ? " L " : "M ") + x + " " + mapY(s.med[k]).toFixed(2); });
-    g.querySelector(".median").setAttribute("d", med);
+    g.querySelector(".median:not(.duo)").setAttribute("d", med);
+    if (s.duoMed) {
+      let duo = "";
+      X.forEach((x, k) => { duo += (k ? " L " : "M ") + x + " " + mapY(s.duoMed[k]).toFixed(2); });
+      g.querySelector(".median.duo").setAttribute("d", duo);
+    }
     dots.querySelectorAll(".dot").forEach(dot => {
       const k = +dot.getAttribute("data-size");
-      dot.setAttribute("transform", `translate(${X[k]} ${mapY(s.med[k]).toFixed(2)})`);
+      const series = dot.classList.contains("dot-duo") ? s.duoMed : s.med;
+      dot.setAttribute("transform", `translate(${X[k]} ${mapY(series[k]).toFixed(2)})`);
     });
   });
 
@@ -3925,6 +4089,17 @@ function showHover(focus, k) {
   if (spread >= DATA.spreadWide) rangeRow.setAttribute("fill", "#b45309");
   body.appendChild(rangeRow);
   y += 13;
+  if (f.duoMed) {
+    const [dLo, dHi] = asc(f.duoLow[k], f.duoHigh[k]);
+    const ratio = f.duoMed[k] / f.med[k];
+    const note = ratio > 1.05 ? ` · ${((ratio - 1) * 100).toFixed(0)}% slower beside a copy of itself`
+      : ratio < 0.95 ? ` · ${((1 - ratio) * 100).toFixed(0)}% faster beside a copy of itself` : " · unchanged beside a copy of itself";
+    const duoRow = textEl(PAD, y, "hover-sub",
+      `duo ${fmt(f.duoMed[k])} ${unitLabel()} (${fmtOther(f.duoMed[k])}) · 95% interval ${fmt(dLo)}–${fmt(dHi)}${note}`);
+    if (ratio > 1.05) duoRow.setAttribute("fill", "#b45309");
+    body.appendChild(duoRow);
+    y += 13;
+  }
   const modes = f.modes[k];
   if (modes) {
     const [mLo, mHi] = asc(modes[0], modes[2]);

@@ -8,7 +8,8 @@ with SME2 kernels for Apple M4 and later), and on Apple platforms the
 system's CommonCrypto SHA-256. Two multithreaded contenders, BLAKE3 mt
 (the crates.io crate on a Rayon pool) and BLAKE3 servil mt (the fork
 over the machine's execution lanes), join with `--duo`, which measures
-every contender under contention: see "The duo measurement" below.
+every contender under contention and reports solo and duo side by side:
+see "The duo measurement" below.
 
 The benchmark tests every power-of-two input size from 64 B to 8 MiB,
 plus 3 KiB and 3 MiB: 64 B, 128 B, 256 B, 512 B, 1 KiB, 2 KiB, 3 KiB,
@@ -93,22 +94,27 @@ A hash tuned to take every core finishes sooner on an idle machine and
 later on a busy one: when the cores it counted on are running something
 else, its threads queue behind that work, and the pair finishes after
 two single-threaded hashes would have. Solo timing shows the first
-case alone. `--duo` shows the second: every sample runs two independent
-copies of the contender at the same time, each on its own thread over
-its own input of the size, released together, and records the time to
-the later finish, per byte of one copy. Every contender is measured
-this way in a duo run, single-threaded ones included, so the columns
-compare; a single-threaded hash costs about what it costs solo (the
-two copies share memory bandwidth and, under a hypervisor, a scheduler),
-and a multithreaded one shows what its threads cost when the machine is
-shared. The two multithreaded contenders are the reason for the mode
-and join `--all` and default runs only under it: their solo numbers
-describe an idle machine, which is the one case a multithreaded hash
-is built for, and the duo numbers describe the rest.
+case alone. `--duo` shows both: every sample interval takes a solo
+sample and then a duo sample of the same batch, in which two
+independent copies of the contender run at the same time, each on its
+own thread over its own input of the size, released together, timed to
+the later finish, per byte of one copy. The text report gives every
+contender a `solo` and a `duo` column; the graph draws the duo medians
+as a dashed line with hollow dots in the contender's colour, beside the
+solid solo line, and the hover panel gives both with the ratio. Every
+contender is measured this way in a duo run, single-threaded ones
+included, so the columns compare; a single-threaded hash costs about
+the same either way (the two copies share memory bandwidth and, under
+a hypervisor, a scheduler), and a multithreaded one shows what its
+threads cost when the machine is shared. The two multithreaded
+contenders are the reason for the mode and join `--all` and default
+runs only under it: their solo numbers describe an idle machine, which
+is the one case a multithreaded hash is built for, and the duo numbers
+describe the rest.
 
-Duo samples report measured time (the cycle-count normalisation described at the top applies to solo runs): the
-copies' cycle counters describe two threads, and no one rate normalises
-the later finish.
+Duo samples report measured time: the copies' cycle counters describe
+two threads, and no one rate normalises the later finish. Solo samples
+in the same run follow the reported-time rule described at the top.
 
 `--trace-clocks PATH` writes one CSV line per sample with the wall
 (`Instant`), thread-CPU, process-CPU, and `mach_absolute_time` readings
@@ -237,14 +243,15 @@ a cluster adds nothing, and lanes are clusters (from
 `hw.perflevelN.physicalcpu / cpusperl2`). On Linux the module measures
 once whether two threads keep their speed side by side and takes CPUs
 or CPU clusters accordingly; `BLAKE3_LANES=n` overrides. Inputs of 128
-KiB and up split at subtree boundaries into one piece per lane, each
-hashed by a resident worker thread with `set_input_offset` and
-`finalize_non_root`, and the caller merges the chaining values with
-`merge_subtrees_*`. A call takes only the lanes that are free at that
-moment (a process-wide count) and stands down to the caller's thread
-for a while when its workers straggle, which is how two callers, or two
-processes, come to share the machine instead of each taking all of it.
-Below 128 KiB the call is `blake3_sme2::hash`.
+KiB and up split at subtree boundaries into pieces dealt evenly to the
+lanes, each lane's pieces hashed by a resident worker thread with
+`set_input_offset` and `finalize_non_root`, and the caller merges the
+chaining values with `merge_subtrees_*`. A call takes a fair share of
+the lanes: with `c` callers active and `L` lanes, at most `ceil(L / c)`,
+and never more than are free (two process-wide counts), which is how
+two callers come to share the machine instead of each taking all of
+it; across processes the operating system's scheduler shares the
+workers' CPUs. Below 128 KiB the call is `blake3_sme2::hash`.
 
 SHA-256 CommonCrypto, on Apple platforms only, calls the system's
 libSystem through FFI using `CC_SHA256_Init`, `CC_SHA256_Update`, and
