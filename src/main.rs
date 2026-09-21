@@ -9,11 +9,11 @@ use sysinfo::System;
 #[cfg(target_arch = "wasm32")]
 compile_error!("bench-hashes currently supports native targets only");
 
-const SAMPLE_ROUNDS: usize = 120;
+const SAMPLE_ROUNDS: usize = 240;
 const CALIBRATION_PROBE_NS: u128 = 1_000_000;
 const TARGET_SAMPLE_NS: u128 = 4_000_000;
 
-const INPUT_COUNT: usize = 15;
+const INPUT_COUNT: usize = 16;
 const ALGORITHM_COUNT: usize = 4;
 
 /*
@@ -39,11 +39,13 @@ const SHA1_CHECKED_SOURCE_INFO: &str = env!("SHA1_CHECKED_SOURCE_INFO");
 const BLAKE3_SME2_SOURCE_INFO: &str = env!("BLAKE3_SME2_SOURCE_INFO");
 
 /*
- * Every power of two from 64 B to 1 MiB. Between 64 B and 1 KiB BLAKE3 is
- * inside one chunk; from 2 KiB to 16 KiB its SIMD paths fill up (4-way NEON
- * at 4 KiB, a sixteen-lane SME2 group at 16 KiB); above that the bulk rate
- * settles. SHA-1DC and SHA-256 are block-serial and have only the
- * per-message overhead to show.
+ * Every power of two from 64 B to 1 MiB, plus 3 KiB. Between 64 B and 1 KiB
+ * BLAKE3 is inside one chunk; from 2 KiB to 16 KiB its SIMD paths fill up
+ * (4-way NEON at 4 KiB, a sixteen-lane SME2 group at 16 KiB); above that
+ * the bulk rate settles. 3 KiB is where the fork's integer + NEON hybrid
+ * kernels first overtake hardware SHA-256: one chunk on the integer ALUs
+ * beside a NEON pair costs the same as the pair alone. SHA-1DC and SHA-256
+ * are block-serial and have only the per-message overhead to show.
  */
 const INPUT_SIZES: [InputSize; INPUT_COUNT] = [
     InputSize { label: "64 B", bytes: 64 },
@@ -52,6 +54,7 @@ const INPUT_SIZES: [InputSize; INPUT_COUNT] = [
     InputSize { label: "512 B", bytes: 512 },
     InputSize { label: "1 KiB", bytes: 1024 },
     InputSize { label: "2 KiB", bytes: 2 * 1024 },
+    InputSize { label: "3 KiB", bytes: 3 * 1024 },
     InputSize { label: "4 KiB", bytes: 4 * 1024 },
     InputSize { label: "8 KiB", bytes: 8 * 1024 },
     InputSize { label: "16 KiB", bytes: 16 * 1024 },
@@ -684,7 +687,8 @@ fn detect_blake3_implementation() -> Blake3Implementation {
             platform: "NEON",
             one_chunk:
             "portable compression (one chunk; NEON bulk path not used)",
-            four_chunks: "NEON hash_many (4-way SIMD)",
+            four_chunks:
+            "NEON hash_many (4-way SIMD; leftover chunks below four use portable compression, so 2 KiB and 3 KiB are all portable)",
             bulk: "NEON hash_many (4-way SIMD)",
         };
     }
@@ -1480,7 +1484,7 @@ fn generate_svg(
             svg.push_str("      </circle>\n");
 
             /*
-             * With fifteen columns, a value at every dot would overprint.
+             * With sixteen columns, a value at every dot would overprint.
              * Label the ends and every fourth size; hovering a dot shows
              * the rest. Edge columns anchor inward so labels stay clear of
              * the y-axis gutter and the series labels at right.
