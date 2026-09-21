@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 755" width="1200" height="755">
-  <rect width="1200" height="755" fill="#fdfdfc"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 798" width="1200" height="798">
+  <rect width="1200" height="798" fill="#fdfdfc"/>
   <style>
     text { font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
     .title { font-size: 22px; font-weight: 700; fill: #1a1a1a; }
-    .takeaway { font-size: 14px; font-weight: 600; fill: #3a3a3a; }
     .method { font-size: 11px; fill: #8a8a8a; }
     .axis-title { font-size: 12px; fill: #666666; }
     .tick-label { font-size: 11px; fill: #777777; }
@@ -33,6 +32,12 @@
     .series[data-on="false"] .series-prov { display: none; }
     .series[data-on="false"] .series-swatch { fill: #fdfdfc; }
     .series-swatch { stroke-width: 2; transition: fill 0.3s ease; }
+    #unit-switch { cursor: pointer; }
+    .unit-track { fill: #e8e8e6; stroke: #c8c8c4; stroke-width: 1; }
+    #unit-switch:hover .unit-track { stroke: #55555a; }
+    .unit-knob { fill: #55555a; transition: cy 0.35s ease; }
+    .unit-label { font-size: 10px; font-weight: 600; fill: #b0b0b0; transition: fill 0.35s ease; }
+    .unit-label.unit-on { fill: #333333; }
     .dot { cursor: crosshair; }
     .dot-ring { stroke-width: 1.5; stroke-opacity: 0.55; }
     .dot:hover .dot-ring { stroke-opacity: 1; }
@@ -49,85 +54,89 @@
     .hover-path { font-weight: 700; fill: #333333; }
     .hover-why { font-size: 10px; fill: #555555; }
   </style>
-  <text x="110" y="44" class="title">Cryptographic Hash Time per Byte</text>
-  <text id="takeaway" x="110" y="70" class="takeaway">
-    <tspan x="110" dy="0">On this machine: SHA-256 is 1.11× to 2.08× faster than BLAKE3; BLAKE3 is 1.92× to 4.13× faster than SHA-1DC</tspan>
-    <tspan x="110" dy="18">BLAKE3 is faster at 64 B, BLAKE3 SME2 at 1 MiB; BLAKE3 is faster at 64 B, SHA-256 CommonCrypto at 1 MiB</tspan>
-  </text>
-  <text x="110" y="108" class="method">Line and dot: median · shaded band: minimum–maximum across 80 interleaved samples; a deeper tint or dashed outline marks a wide spread, meaning lower precision · single-threaded · lower is better</text>
-  <text x="110" y="123" class="method">Dot shape marks the code path a contender used at that size; a ringed dot is where a new path begins · hover any dot to compare contenders and see the path · click a name at right to hide or show that contender</text>
+  <text x="110" y="44" class="title">Cryptographic Hash Performance</text>
+  <text x="110" y="72" class="method">Line and dot: median of 240 interleaved samples · shaded band: 95% confidence interval of that median; a deeper tint or dashed outline marks a median that is less certain · single-threaded</text>
+  <text x="110" y="88" class="method">Dot shape marks the code path a contender used at that size; a ringed dot is where a new path begins · hover any dot to compare contenders and see the path · click a name at right to hide or show that contender</text>
   <g id="y-axis">
-    <line x1="110.0" y1="455.00" x2="1000.0" y2="455.00" class="grid"/>
-    <text x="100.0" y="458.50" class="tick-label" text-anchor="end">0.10</text>
-    <line x1="110.0" y1="423.39" x2="1000.0" y2="423.39" class="grid"/>
-    <text x="100.0" y="426.89" class="tick-label" text-anchor="end">0.15</text>
-    <line x1="110.0" y1="400.96" x2="1000.0" y2="400.96" class="grid"/>
-    <text x="100.0" y="404.46" class="tick-label" text-anchor="end">0.20</text>
-    <line x1="110.0" y1="369.35" x2="1000.0" y2="369.35" class="grid"/>
-    <text x="100.0" y="372.85" class="tick-label" text-anchor="end">0.30</text>
-    <line x1="110.0" y1="329.52" x2="1000.0" y2="329.52" class="grid"/>
-    <text x="100.0" y="333.02" class="tick-label" text-anchor="end">0.50</text>
-    <line x1="110.0" y1="303.29" x2="1000.0" y2="303.29" class="grid"/>
-    <text x="100.0" y="306.79" class="tick-label" text-anchor="end">0.70</text>
-    <line x1="110.0" y1="275.48" x2="1000.0" y2="275.48" class="grid"/>
-    <text x="100.0" y="278.98" class="tick-label" text-anchor="end">1.0</text>
-    <line x1="110.0" y1="243.87" x2="1000.0" y2="243.87" class="grid"/>
-    <text x="100.0" y="247.37" class="tick-label" text-anchor="end">1.5</text>
-    <line x1="110.0" y1="221.44" x2="1000.0" y2="221.44" class="grid"/>
-    <text x="100.0" y="224.94" class="tick-label" text-anchor="end">2.0</text>
-    <line x1="110.0" y1="189.83" x2="1000.0" y2="189.83" class="grid"/>
-    <text x="100.0" y="193.33" class="tick-label" text-anchor="end">3.0</text>
-    <line x1="110.0" y1="150.00" x2="1000.0" y2="150.00" class="grid"/>
-    <text x="100.0" y="153.50" class="tick-label" text-anchor="end">5.0</text>
+    <line x1="110.0" y1="455.00" x2="1000.0" y2="455.00" class="grid" data-ns="0.1"/>
+    <text x="100.0" y="458.50" class="tick-label" text-anchor="end" data-ns="0.1">0.10</text>
+    <line x1="110.0" y1="419.76" x2="1000.0" y2="419.76" class="grid" data-ns="0.15000000000000002"/>
+    <text x="100.0" y="423.26" class="tick-label" text-anchor="end" data-ns="0.15000000000000002">0.15</text>
+    <line x1="110.0" y1="394.76" x2="1000.0" y2="394.76" class="grid" data-ns="0.2"/>
+    <text x="100.0" y="398.26" class="tick-label" text-anchor="end" data-ns="0.2">0.20</text>
+    <line x1="110.0" y1="359.52" x2="1000.0" y2="359.52" class="grid" data-ns="0.30000000000000004"/>
+    <text x="100.0" y="363.02" class="tick-label" text-anchor="end" data-ns="0.30000000000000004">0.30</text>
+    <line x1="110.0" y1="315.12" x2="1000.0" y2="315.12" class="grid" data-ns="0.5"/>
+    <text x="100.0" y="318.62" class="tick-label" text-anchor="end" data-ns="0.5">0.50</text>
+    <line x1="110.0" y1="285.88" x2="1000.0" y2="285.88" class="grid" data-ns="0.7000000000000001"/>
+    <text x="100.0" y="289.38" class="tick-label" text-anchor="end" data-ns="0.7000000000000001">0.70</text>
+    <line x1="110.0" y1="254.88" x2="1000.0" y2="254.88" class="grid" data-ns="1"/>
+    <text x="100.0" y="258.38" class="tick-label" text-anchor="end" data-ns="1">1.0</text>
+    <line x1="110.0" y1="219.64" x2="1000.0" y2="219.64" class="grid" data-ns="1.5"/>
+    <text x="100.0" y="223.14" class="tick-label" text-anchor="end" data-ns="1.5">1.5</text>
+    <line x1="110.0" y1="194.64" x2="1000.0" y2="194.64" class="grid" data-ns="2"/>
+    <text x="100.0" y="198.14" class="tick-label" text-anchor="end" data-ns="2">2.0</text>
+    <line x1="110.0" y1="159.40" x2="1000.0" y2="159.40" class="grid" data-ns="3"/>
+    <text x="100.0" y="162.90" class="tick-label" text-anchor="end" data-ns="3">3.0</text>
+    <line x1="110.0" y1="115.00" x2="1000.0" y2="115.00" class="grid" data-ns="5"/>
+    <text x="100.0" y="118.50" class="tick-label" text-anchor="end" data-ns="5">5.0</text>
   </g>
-  <text x="30" y="302.5" class="axis-title" text-anchor="middle" transform="rotate(-90 30 302.5)">Nanoseconds per byte</text>
-  <line x1="150.00" y1="150.0" x2="150.00" y2="455.0" class="grid-x"/>
+  <text id="y-title" x="30" y="285.0" class="axis-title" text-anchor="middle" transform="rotate(-90 30 285.0)">Nanoseconds per byte · lower is better</text>
+  <g id="unit-switch" transform="translate(50.0 65.0)" onclick="flipUnit()">
+    <title>Switch between nanoseconds per byte and gigabytes per second</title>
+    <rect class="unit-hit" x="-4" y="-4" width="60" height="42" fill="transparent"/>
+    <rect class="unit-track" x="0" y="0" width="14" height="34" rx="7"/>
+    <circle id="unit-knob" class="unit-knob" cx="7" cy="27" r="5"/>
+    <text class="unit-label" data-unit="gbps" x="20" y="11">GB/s</text>
+    <text class="unit-label unit-on" data-unit="ns" x="20" y="31">ns/B</text>
+  </g>
+  <line x1="150.00" y1="115.0" x2="150.00" y2="455.0" class="grid-x"/>
   <text x="150.00" y="479.0" class="size-label" text-anchor="middle">64 B</text>
-  <line x1="207.86" y1="150.0" x2="207.86" y2="455.0" class="grid-x"/>
+  <line x1="207.86" y1="115.0" x2="207.86" y2="455.0" class="grid-x"/>
   <text x="207.86" y="479.0" class="size-label" text-anchor="middle">128 B</text>
-  <line x1="265.71" y1="150.0" x2="265.71" y2="455.0" class="grid-x"/>
+  <line x1="265.71" y1="115.0" x2="265.71" y2="455.0" class="grid-x"/>
   <text x="265.71" y="479.0" class="size-label" text-anchor="middle">256 B</text>
-  <line x1="323.57" y1="150.0" x2="323.57" y2="455.0" class="grid-x"/>
+  <line x1="323.57" y1="115.0" x2="323.57" y2="455.0" class="grid-x"/>
   <text x="323.57" y="479.0" class="size-label" text-anchor="middle">512 B</text>
-  <line x1="381.43" y1="150.0" x2="381.43" y2="455.0" class="grid-x"/>
+  <line x1="381.43" y1="115.0" x2="381.43" y2="455.0" class="grid-x"/>
   <text x="381.43" y="479.0" class="size-label" text-anchor="middle">1 KiB</text>
-  <line x1="439.29" y1="150.0" x2="439.29" y2="455.0" class="grid-x"/>
+  <line x1="439.29" y1="115.0" x2="439.29" y2="455.0" class="grid-x"/>
   <text x="439.29" y="479.0" class="size-label" text-anchor="middle">2 KiB</text>
-  <line x1="473.13" y1="150.0" x2="473.13" y2="455.0" class="grid-x"/>
+  <line x1="473.13" y1="115.0" x2="473.13" y2="455.0" class="grid-x"/>
   <line x1="473.13" y1="459.0" x2="473.13" y2="482.0" class="size-tick"/>
   <text x="473.13" y="492.0" class="size-label" text-anchor="middle">3 KiB</text>
-  <line x1="497.14" y1="150.0" x2="497.14" y2="455.0" class="grid-x"/>
+  <line x1="497.14" y1="115.0" x2="497.14" y2="455.0" class="grid-x"/>
   <text x="497.14" y="479.0" class="size-label" text-anchor="middle">4 KiB</text>
-  <line x1="555.00" y1="150.0" x2="555.00" y2="455.0" class="grid-x"/>
+  <line x1="555.00" y1="115.0" x2="555.00" y2="455.0" class="grid-x"/>
   <text x="555.00" y="479.0" class="size-label" text-anchor="middle">8 KiB</text>
-  <line x1="612.86" y1="150.0" x2="612.86" y2="455.0" class="grid-x"/>
+  <line x1="612.86" y1="115.0" x2="612.86" y2="455.0" class="grid-x"/>
   <text x="612.86" y="479.0" class="size-label" text-anchor="middle">16 KiB</text>
-  <line x1="670.71" y1="150.0" x2="670.71" y2="455.0" class="grid-x"/>
+  <line x1="670.71" y1="115.0" x2="670.71" y2="455.0" class="grid-x"/>
   <text x="670.71" y="479.0" class="size-label" text-anchor="middle">32 KiB</text>
-  <line x1="728.57" y1="150.0" x2="728.57" y2="455.0" class="grid-x"/>
+  <line x1="728.57" y1="115.0" x2="728.57" y2="455.0" class="grid-x"/>
   <text x="728.57" y="479.0" class="size-label" text-anchor="middle">64 KiB</text>
-  <line x1="786.43" y1="150.0" x2="786.43" y2="455.0" class="grid-x"/>
+  <line x1="786.43" y1="115.0" x2="786.43" y2="455.0" class="grid-x"/>
   <text x="786.43" y="479.0" class="size-label" text-anchor="middle">128 KiB</text>
-  <line x1="844.29" y1="150.0" x2="844.29" y2="455.0" class="grid-x"/>
+  <line x1="844.29" y1="115.0" x2="844.29" y2="455.0" class="grid-x"/>
   <text x="844.29" y="479.0" class="size-label" text-anchor="middle">256 KiB</text>
-  <line x1="902.14" y1="150.0" x2="902.14" y2="455.0" class="grid-x"/>
+  <line x1="902.14" y1="115.0" x2="902.14" y2="455.0" class="grid-x"/>
   <text x="902.14" y="479.0" class="size-label" text-anchor="middle">512 KiB</text>
-  <line x1="960.00" y1="150.0" x2="960.00" y2="455.0" class="grid-x"/>
+  <line x1="960.00" y1="115.0" x2="960.00" y2="455.0" class="grid-x"/>
   <text x="960.00" y="479.0" class="size-label" text-anchor="middle">1 MiB</text>
   <text x="555.0" y="507.0" class="axis-title" text-anchor="middle">Input size (logarithmic spacing)</text>
-  <line x1="110.0" y1="150.0" x2="110.0" y2="455.0" class="axis"/>
+  <line x1="110.0" y1="115.0" x2="110.0" y2="455.0" class="axis"/>
   <line x1="110.0" y1="455.0" x2="1000.0" y2="455.0" class="axis"/>
   <g class="series" id="series-0" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 292.95 L 207.86 291.27 L 265.71 293.76 L 323.57 291.61 L 381.43 291.82 L 439.29 291.01 L 473.13 288.30 L 497.14 338.19 L 555.00 339.11 L 612.86 337.67 L 670.71 339.63 L 728.57 339.14 L 786.43 340.05 L 844.29 339.63 L 902.14 340.04 L 960.00 335.94 L 960.00 342.91 L 902.14 342.91 L 844.29 343.01 L 786.43 342.96 L 728.57 343.36 L 670.71 343.81 L 612.86 342.50 L 555.00 341.96 L 497.14 340.60 L 473.13 293.71 L 439.29 294.54 L 381.43 296.44 L 323.57 296.29 L 265.71 298.31 L 207.86 297.23 L 150.00 295.50 Z" fill="#3b82f6" fill-opacity="0.16" stroke="#3b82f6" stroke-opacity="0" stroke-width="1" stroke-dasharray="4,3"/>
-      <path class="median" d="M 150.00 294.89 L 207.86 294.46 L 265.71 295.62 L 323.57 295.97 L 381.43 296.05 L 439.29 294.23 L 473.13 293.26 L 497.14 339.80 L 555.00 341.58 L 612.86 341.97 L 670.71 342.34 L 728.57 342.41 L 786.43 342.23 L 844.29 342.41 L 902.14 342.46 L 960.00 342.25" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text class="value-label" data-size="0" data-offset="-11.0" x="159.00" y="283.89" fill="#3b82f6" text-anchor="start">0.78</text>
-      <text class="value-label" data-size="4" data-offset="-11.0" x="381.43" y="285.05" fill="#3b82f6" text-anchor="middle">0.77</text>
-      <text class="value-label" data-size="8" data-offset="-11.0" x="555.00" y="330.58" fill="#3b82f6" text-anchor="middle">0.43</text>
-      <text class="value-label" data-size="12" data-offset="-11.0" x="786.43" y="331.23" fill="#3b82f6" text-anchor="middle">0.42</text>
-      <text class="value-label" data-size="15" data-offset="-11.0" x="951.00" y="331.25" fill="#3b82f6" text-anchor="end">0.42</text>
+      <path class="band" d="M 150.00 276.81 L 207.86 276.58 L 265.71 277.37 L 323.57 277.93 L 381.43 278.16 L 439.29 275.92 L 473.13 274.93 L 497.14 326.83 L 555.00 328.84 L 612.86 329.45 L 670.71 329.86 L 728.57 329.86 L 786.43 329.86 L 844.29 329.86 L 902.14 329.86 L 960.00 329.86 L 960.00 330.07 L 902.14 330.07 L 844.29 329.86 L 786.43 330.07 L 728.57 330.07 L 670.71 329.86 L 612.86 329.66 L 555.00 328.84 L 497.14 326.83 L 473.13 274.93 L 439.29 276.14 L 381.43 278.16 L 323.57 278.05 L 265.71 277.48 L 207.86 276.58 L 150.00 276.92 Z" fill="#3b82f6" fill-opacity="0.16" stroke="#3b82f6" stroke-opacity="0" stroke-width="1" stroke-dasharray="4,3"/>
+      <path class="median" d="M 150.00 276.92 L 207.86 276.58 L 265.71 277.48 L 323.57 277.93 L 381.43 278.16 L 439.29 276.14 L 473.13 274.93 L 497.14 326.83 L 555.00 328.84 L 612.86 329.45 L 670.71 329.86 L 728.57 329.86 L 786.43 329.86 L 844.29 329.86 L 902.14 329.86 L 960.00 330.07" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="value-label" data-size="0" x="159.00" y="304.92" fill="#3b82f6" text-anchor="start">0.78</text>
+      <text class="value-label" data-size="4" x="381.43" y="295.16" fill="#3b82f6" text-anchor="middle">0.77</text>
+      <text class="value-label" data-size="8" x="555.00" y="356.84" fill="#3b82f6" text-anchor="middle">0.43</text>
+      <text class="value-label" data-size="12" x="786.43" y="357.86" fill="#3b82f6" text-anchor="middle">0.42</text>
+      <text class="value-label" data-size="15" x="951.00" y="358.07" fill="#3b82f6" text-anchor="end">0.42</text>
     </g>
-    <g class="series-label" transform="translate(0 342.25)" onclick="toggleSeries(0)">
+    <g class="series-label" transform="translate(0 330.07)" onclick="toggleSeries(0)">
       <title>Click to hide or show BLAKE3</title>
       <rect x="1010.0" y="-14" width="180.0" height="40" fill="transparent"/>
       <circle class="series-swatch" cx="1018.5" cy="0" r="4.5" fill="#3b82f6" stroke="#3b82f6"/>
@@ -135,19 +144,19 @@
       <text class="series-detail" x="1028.0" y="18">0.42 ns/B · 2.4 GB/s at 1 MiB</text>
       <text class="series-hint" x="1028.0" y="18">hidden · click to show</text>
     </g>
-    <text class="prov series-prov" x="110.0" y="664.0">BLAKE3: blake3 1.8.7 · single-threaded; Rayon not enabled · platform NEON</text>
+    <text class="prov series-prov" x="110.0" y="706.0">BLAKE3: blake3 1.8.7 · single-threaded; Rayon not enabled · platform NEON</text>
   </g>
   <g class="series" id="series-1" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 320.77 L 207.86 339.81 L 265.71 345.83 L 323.57 346.71 L 381.43 345.11 L 439.29 345.90 L 473.13 348.64 L 497.14 347.96 L 555.00 348.20 L 612.86 348.35 L 670.71 349.00 L 728.57 345.23 L 786.43 348.22 L 844.29 346.30 L 902.14 347.69 L 960.00 348.75 L 960.00 350.90 L 902.14 350.91 L 844.29 351.15 L 786.43 350.90 L 728.57 354.28 L 670.71 358.07 L 612.86 353.44 L 555.00 350.81 L 497.14 350.85 L 473.13 350.83 L 439.29 350.78 L 381.43 350.50 L 323.57 350.32 L 265.71 352.84 L 207.86 345.65 L 150.00 323.60 Z" fill="#e07a45" fill-opacity="0.18" stroke="#e07a45" stroke-opacity="0" stroke-width="1" stroke-dasharray="4,3"/>
-      <path class="median" d="M 150.00 323.11 L 207.86 341.91 L 265.71 348.68 L 323.57 349.34 L 381.43 349.90 L 439.29 350.27 L 473.13 350.43 L 497.14 350.43 L 555.00 350.50 L 612.86 350.39 L 670.71 350.46 L 728.57 350.45 L 786.43 350.43 L 844.29 350.58 L 902.14 350.48 L 960.00 350.50" fill="none" stroke="#e07a45" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text class="value-label" data-size="0" data-offset="17.0" x="159.00" y="340.11" fill="#e07a45" text-anchor="start">0.54</text>
-      <text class="value-label" data-size="4" data-offset="17.0" x="381.43" y="366.90" fill="#e07a45" text-anchor="middle">0.39</text>
-      <text class="value-label" data-size="8" data-offset="17.0" x="555.00" y="367.50" fill="#e07a45" text-anchor="middle">0.38</text>
-      <text class="value-label" data-size="12" data-offset="17.0" x="786.43" y="367.43" fill="#e07a45" text-anchor="middle">0.38</text>
-      <text class="value-label" data-size="15" data-offset="17.0" x="951.00" y="367.50" fill="#e07a45" text-anchor="end">0.38</text>
+      <path class="band" d="M 150.00 302.07 L 207.86 326.83 L 265.71 336.49 L 323.57 337.61 L 381.43 337.84 L 439.29 338.52 L 473.13 338.52 L 497.14 338.52 L 555.00 338.52 L 612.86 338.52 L 670.71 338.74 L 728.57 338.74 L 786.43 338.74 L 844.29 338.74 L 902.14 338.74 L 960.00 338.74 L 960.00 338.74 L 902.14 338.97 L 844.29 338.74 L 786.43 338.74 L 728.57 338.74 L 670.71 338.74 L 612.86 338.74 L 555.00 338.74 L 497.14 338.74 L 473.13 338.74 L 439.29 338.52 L 381.43 338.06 L 323.57 337.61 L 265.71 336.72 L 207.86 327.03 L 150.00 302.22 Z" fill="#e07a45" fill-opacity="0.16" stroke="#e07a45" stroke-opacity="0" stroke-width="1" stroke-dasharray="4,3"/>
+      <path class="median" d="M 150.00 302.07 L 207.86 327.03 L 265.71 336.49 L 323.57 337.61 L 381.43 338.06 L 439.29 338.52 L 473.13 338.52 L 497.14 338.52 L 555.00 338.52 L 612.86 338.74 L 670.71 338.74 L 728.57 338.74 L 786.43 338.74 L 844.29 338.74 L 902.14 338.74 L 960.00 338.74" fill="none" stroke="#e07a45" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="value-label" data-size="0" x="159.00" y="291.07" fill="#e07a45" text-anchor="start">0.58</text>
+      <text class="value-label" data-size="4" x="381.43" y="327.06" fill="#e07a45" text-anchor="middle">0.38</text>
+      <text class="value-label" data-size="8" x="555.00" y="327.52" fill="#e07a45" text-anchor="middle">0.38</text>
+      <text class="value-label" data-size="12" x="786.43" y="327.74" fill="#e07a45" text-anchor="middle">0.38</text>
+      <text class="value-label" data-size="15" x="951.00" y="327.74" fill="#e07a45" text-anchor="end">0.38</text>
     </g>
-    <g class="series-label" transform="translate(0 386.25)" onclick="toggleSeries(1)">
+    <g class="series-label" transform="translate(0 374.07)" onclick="toggleSeries(1)">
       <title>Click to hide or show SHA-256</title>
       <rect x="1010.0" y="-14" width="180.0" height="40" fill="transparent"/>
       <circle class="series-swatch" cx="1018.5" cy="0" r="4.5" fill="#e07a45" stroke="#e07a45"/>
@@ -155,320 +164,320 @@
       <text class="series-detail" x="1028.0" y="18">0.38 ns/B · 2.6 GB/s at 1 MiB</text>
       <text class="series-hint" x="1028.0" y="18">hidden · click to show</text>
     </g>
-    <text class="prov series-prov" x="110.0" y="678.0">SHA-256: sha2 0.10.9 (+sha2-asm 0.6.4) · assembly backends where available (ARMv8 SHA-256 instructions on AArch64)</text>
+    <text class="prov series-prov" x="110.0" y="720.0">SHA-256: sha2 0.11.0 · RustCrypto sha2 with its built-in hardware backends (ARMv8 SHA-256 instructions on AArch64, SHA-NI on x86), selected at runtime</text>
   </g>
   <g class="series" id="series-2" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 180.38 L 207.86 206.08 L 265.71 224.15 L 323.57 233.93 L 381.43 240.00 L 439.29 240.51 L 473.13 239.84 L 497.14 241.45 L 555.00 240.99 L 612.86 242.11 L 670.71 236.62 L 728.57 238.05 L 786.43 235.82 L 844.29 235.36 L 902.14 232.19 L 960.00 233.02 L 960.00 237.13 L 902.14 236.60 L 844.29 239.31 L 786.43 241.19 L 728.57 242.85 L 670.71 242.92 L 612.86 247.81 L 555.00 244.13 L 497.14 243.83 L 473.13 242.82 L 439.29 243.99 L 381.43 242.96 L 323.57 237.64 L 265.71 227.10 L 207.86 212.34 L 150.00 186.43 Z" fill="#8a7a1e" fill-opacity="0.16" stroke="#8a7a1e" stroke-opacity="0" stroke-width="1" stroke-dasharray="4,3"/>
-      <path class="median" d="M 150.00 184.39 L 207.86 211.38 L 265.71 226.07 L 323.57 237.01 L 381.43 241.85 L 439.29 243.27 L 473.13 242.21 L 497.14 243.35 L 555.00 243.51 L 612.86 243.95 L 670.71 241.89 L 728.57 241.58 L 786.43 239.11 L 844.29 237.40 L 902.14 235.42 L 960.00 235.68" fill="none" stroke="#8a7a1e" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text class="value-label" data-size="0" data-offset="-11.0" x="159.00" y="173.39" fill="#8a7a1e" text-anchor="start">3.22</text>
-      <text class="value-label" data-size="4" data-offset="-11.0" x="381.43" y="230.85" fill="#8a7a1e" text-anchor="middle">1.54</text>
-      <text class="value-label" data-size="8" data-offset="-11.0" x="555.00" y="232.51" fill="#8a7a1e" text-anchor="middle">1.51</text>
-      <text class="value-label" data-size="12" data-offset="-11.0" x="786.43" y="228.11" fill="#8a7a1e" text-anchor="middle">1.59</text>
-      <text class="value-label" data-size="15" data-offset="-11.0" x="951.00" y="224.68" fill="#8a7a1e" text-anchor="end">1.67</text>
+      <path class="band" d="M 150.00 161.45 L 207.86 194.55 L 265.71 212.90 L 323.57 226.76 L 381.43 233.49 L 439.29 235.83 L 473.13 234.11 L 497.14 235.62 L 555.00 235.76 L 612.86 236.32 L 670.71 233.90 L 728.57 233.29 L 786.43 229.83 L 844.29 227.45 L 902.14 224.96 L 960.00 225.45 L 960.00 225.57 L 902.14 225.14 L 844.29 228.54 L 786.43 230.55 L 728.57 233.49 L 670.71 234.04 L 612.86 236.46 L 555.00 235.90 L 497.14 235.69 L 473.13 234.17 L 439.29 235.90 L 381.43 233.63 L 323.57 226.82 L 265.71 213.00 L 207.86 194.64 L 150.00 161.60 Z" fill="#8a7a1e" fill-opacity="0.16" stroke="#8a7a1e" stroke-opacity="0" stroke-width="1" stroke-dasharray="4,3"/>
+      <path class="median" d="M 150.00 161.51 L 207.86 194.59 L 265.71 212.95 L 323.57 226.76 L 381.43 233.56 L 439.29 235.83 L 473.13 234.17 L 497.14 235.62 L 555.00 235.83 L 612.86 236.39 L 670.71 233.97 L 728.57 233.36 L 786.43 230.22 L 844.29 228.15 L 902.14 225.02 L 960.00 225.51" fill="none" stroke="#8a7a1e" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="value-label" data-size="0" x="159.00" y="150.51" fill="#8a7a1e" text-anchor="start">2.93</text>
+      <text class="value-label" data-size="4" x="381.43" y="222.56" fill="#8a7a1e" text-anchor="middle">1.28</text>
+      <text class="value-label" data-size="8" x="555.00" y="224.83" fill="#8a7a1e" text-anchor="middle">1.25</text>
+      <text class="value-label" data-size="12" x="786.43" y="219.22" fill="#8a7a1e" text-anchor="middle">1.33</text>
+      <text class="value-label" data-size="15" x="951.00" y="214.51" fill="#8a7a1e" text-anchor="end">1.40</text>
     </g>
-    <g class="series-label" transform="translate(0 235.68)" onclick="toggleSeries(2)">
+    <g class="series-label" transform="translate(0 225.51)" onclick="toggleSeries(2)">
       <title>Click to hide or show SHA-1DC</title>
       <rect x="1010.0" y="-14" width="180.0" height="40" fill="transparent"/>
       <circle class="series-swatch" cx="1018.5" cy="0" r="4.5" fill="#8a7a1e" stroke="#8a7a1e"/>
       <text class="series-name" x="1028.0" y="4" fill="#8a7a1e">SHA-1DC</text>
-      <text class="series-detail" x="1028.0" y="18">1.67 ns/B · 0.6 GB/s at 1 MiB</text>
+      <text class="series-detail" x="1028.0" y="18">1.40 ns/B · 0.7 GB/s at 1 MiB</text>
       <text class="series-hint" x="1028.0" y="18">hidden · click to show</text>
     </g>
-    <text class="prov series-prov" x="110.0" y="692.0">SHA-1DC: sha1-checked 0.10.0 · SHA-1 with collision detection, pure Rust (the construction git uses)</text>
+    <text class="prov series-prov" x="110.0" y="734.0">SHA-1DC: sha1-checked 0.10.0 · SHA-1 with collision detection, pure Rust (the construction git uses)</text>
   </g>
   <g class="series" id="series-3" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 287.80 L 207.86 287.96 L 265.71 291.75 L 323.57 296.04 L 381.43 297.32 L 439.29 324.30 L 473.13 347.25 L 497.14 356.59 L 555.00 363.27 L 612.86 388.10 L 670.71 394.37 L 728.57 397.75 L 786.43 398.34 L 844.29 406.91 L 902.14 406.36 L 960.00 408.41 L 960.00 411.14 L 902.14 410.77 L 844.29 410.14 L 786.43 401.86 L 728.57 399.77 L 670.71 396.70 L 612.86 390.50 L 555.00 366.66 L 497.14 358.84 L 473.13 352.21 L 439.29 326.74 L 381.43 299.91 L 323.57 298.53 L 265.71 295.75 L 207.86 290.41 L 150.00 295.21 Z" fill="#7c3aed" fill-opacity="0.16" stroke="#7c3aed" stroke-opacity="0" stroke-width="1" stroke-dasharray="4,3"/>
-      <path class="median" d="M 150.00 290.08 L 207.86 289.65 L 265.71 295.31 L 323.57 298.10 L 381.43 299.58 L 439.29 326.03 L 473.13 351.58 L 497.14 358.25 L 555.00 365.56 L 612.86 390.13 L 670.71 395.74 L 728.57 398.99 L 786.43 400.57 L 844.29 409.37 L 902.14 409.94 L 960.00 410.32" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text class="value-label" data-size="0" data-offset="27.0" x="159.00" y="317.08" fill="#7c3aed" text-anchor="start">0.83</text>
-      <text class="value-label" data-size="4" data-offset="27.0" x="381.43" y="326.58" fill="#7c3aed" text-anchor="middle">0.73</text>
-      <text class="value-label" data-size="8" data-offset="27.0" x="555.00" y="392.56" fill="#7c3aed" text-anchor="middle">0.31</text>
-      <text class="value-label" data-size="12" data-offset="27.0" x="786.43" y="427.57" fill="#7c3aed" text-anchor="middle">0.20</text>
-      <text class="value-label" data-size="15" data-offset="27.0" x="951.00" y="437.32" fill="#7c3aed" text-anchor="end">0.18</text>
+      <path class="band" d="M 150.00 271.91 L 207.86 270.76 L 265.71 276.81 L 323.57 280.11 L 381.43 281.76 L 439.29 311.55 L 473.13 339.89 L 497.14 347.12 L 555.00 355.28 L 612.86 382.61 L 670.71 388.88 L 728.57 392.61 L 786.43 394.76 L 844.29 404.40 L 902.14 404.89 L 960.00 405.38 L 960.00 405.38 L 902.14 404.89 L 844.29 404.40 L 786.43 394.76 L 728.57 392.61 L 670.71 388.88 L 612.86 382.61 L 555.00 355.55 L 497.14 347.12 L 473.13 339.89 L 439.29 311.88 L 381.43 281.76 L 323.57 280.23 L 265.71 276.81 L 207.86 270.86 L 150.00 272.02 Z" fill="#7c3aed" fill-opacity="0.16" stroke="#7c3aed" stroke-opacity="0" stroke-width="1" stroke-dasharray="4,3"/>
+      <path class="median" d="M 150.00 271.91 L 207.86 270.76 L 265.71 276.81 L 323.57 280.11 L 381.43 281.76 L 439.29 311.71 L 473.13 339.89 L 497.14 347.12 L 555.00 355.55 L 612.86 382.61 L 670.71 388.88 L 728.57 392.61 L 786.43 394.76 L 844.29 404.40 L 902.14 404.89 L 960.00 405.38" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="value-label" data-size="0" x="159.00" y="321.91" fill="#7c3aed" text-anchor="start">0.82</text>
+      <text class="value-label" data-size="4" x="381.43" y="270.76" fill="#7c3aed" text-anchor="middle">0.73</text>
+      <text class="value-label" data-size="8" x="555.00" y="344.55" fill="#7c3aed" text-anchor="middle">0.31</text>
+      <text class="value-label" data-size="12" x="786.43" y="383.76" fill="#7c3aed" text-anchor="middle">0.20</text>
+      <text class="value-label" data-size="15" x="951.00" y="394.38" fill="#7c3aed" text-anchor="end">0.18</text>
     </g>
-    <g class="series-label" transform="translate(0 474.25)" onclick="toggleSeries(3)">
-      <title>Click to hide or show BLAKE3 SME2</title>
+    <g class="series-label" transform="translate(0 462.07)" onclick="toggleSeries(3)">
+      <title>Click to hide or show BLAKE3 servil</title>
       <rect x="1010.0" y="-14" width="180.0" height="40" fill="transparent"/>
       <circle class="series-swatch" cx="1018.5" cy="0" r="4.5" fill="#7c3aed" stroke="#7c3aed"/>
-      <text class="series-name" x="1028.0" y="4" fill="#7c3aed">BLAKE3 SME2</text>
+      <text class="series-name" x="1028.0" y="4" fill="#7c3aed">BLAKE3 servil</text>
       <text class="series-detail" x="1028.0" y="18">0.18 ns/B · 5.6 GB/s at 1 MiB</text>
       <text class="series-hint" x="1028.0" y="18">hidden · click to show</text>
     </g>
-    <text class="prov series-prov" x="110.0" y="706.0">BLAKE3 SME2: source https://github.com/johnservil/BLAKE3 · branch sme2-bench · commit 4ca9952c8522</text>
-    <text class="prov series-prov" x="110.0" y="720.0">BLAKE3 SME2: single-threaded; SME2 kernel for groups of sixteen chunks, integer + NEON hybrid kernels below that; the benchmark stops on a CPU without SME2</text>
+    <text class="prov series-prov" x="110.0" y="748.0">BLAKE3 servil: source https://github.com/johnservil/BLAKE3 · branch sme2-bench · commit 4ca9952c8522</text>
+    <text class="prov series-prov" x="110.0" y="762.0">BLAKE3 servil: single-threaded; SME2 kernel for groups of sixteen chunks, integer + NEON hybrid kernels below that; needs a CPU with SME2</text>
   </g>
   <g class="series" id="series-4" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 189.66 L 207.86 240.85 L 265.71 281.89 L 323.57 312.35 L 381.43 332.42 L 439.29 345.39 L 473.13 350.19 L 497.14 349.68 L 555.00 355.00 L 612.86 347.53 L 670.71 357.57 L 728.57 359.45 L 786.43 358.38 L 844.29 360.71 L 902.14 360.64 L 960.00 360.59 L 960.00 363.18 L 902.14 363.14 L 844.29 364.67 L 786.43 362.95 L 728.57 363.65 L 670.71 362.18 L 612.86 361.21 L 555.00 359.19 L 497.14 355.48 L 473.13 353.16 L 439.29 348.57 L 381.43 336.18 L 323.57 316.22 L 265.71 286.35 L 207.86 244.72 L 150.00 202.96 Z" fill="#0e9aa7" fill-opacity="0.24" stroke="#0e9aa7" stroke-opacity="0" stroke-width="1" stroke-dasharray="4,3"/>
-      <path class="median" d="M 150.00 192.87 L 207.86 243.73 L 265.71 285.49 L 323.57 315.23 L 381.43 335.28 L 439.29 347.99 L 473.13 352.54 L 497.14 355.01 L 555.00 358.83 L 612.86 360.70 L 670.71 361.80 L 728.57 362.12 L 786.43 362.68 L 844.29 362.78 L 902.14 362.85 L 960.00 362.68" fill="none" stroke="#0e9aa7" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text class="value-label" data-size="0" data-offset="-21.0" x="159.00" y="171.87" fill="#0e9aa7" text-anchor="start">2.89</text>
-      <text class="value-label" data-size="4" data-offset="-21.0" x="381.43" y="314.28" fill="#0e9aa7" text-anchor="middle">0.46</text>
-      <text class="value-label" data-size="8" data-offset="-21.0" x="555.00" y="337.83" fill="#0e9aa7" text-anchor="middle">0.34</text>
-      <text class="value-label" data-size="12" data-offset="-21.0" x="786.43" y="341.68" fill="#0e9aa7" text-anchor="middle">0.33</text>
-      <text class="value-label" data-size="15" data-offset="-21.0" x="951.00" y="341.68" fill="#0e9aa7" text-anchor="end">0.33</text>
+      <path class="band" d="M 150.00 275.15 L 207.86 320.68 L 265.71 341.29 L 323.57 346.62 L 381.43 349.41 L 439.29 350.97 L 473.13 351.23 L 497.14 351.76 L 555.00 352.03 L 612.86 352.29 L 670.71 352.29 L 728.57 352.29 L 786.43 352.29 L 844.29 352.29 L 902.14 352.29 L 960.00 352.29 L 960.00 352.56 L 902.14 352.56 L 844.29 352.56 L 786.43 352.56 L 728.57 352.29 L 670.71 352.29 L 612.86 352.29 L 555.00 352.03 L 497.14 351.76 L 473.13 351.50 L 439.29 350.97 L 381.43 349.41 L 323.57 346.62 L 265.71 341.29 L 207.86 321.80 L 150.00 281.52 Z" fill="#c2410c" fill-opacity="0.30" stroke="#c2410c" stroke-opacity="0.6" stroke-width="1" stroke-dasharray="4,3"/>
+      <path class="median" d="M 150.00 276.92 L 207.86 321.62 L 265.71 341.29 L 323.57 346.62 L 381.43 349.41 L 439.29 350.97 L 473.13 351.50 L 497.14 351.76 L 555.00 352.03 L 612.86 352.29 L 670.71 352.29 L 728.57 352.29 L 786.43 352.29 L 844.29 352.56 L 902.14 352.29 L 960.00 352.56" fill="none" stroke="#c2410c" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="value-label" data-size="0" x="159.00" y="265.92" fill="#c2410c" text-anchor="start">0.78</text>
+      <text class="value-label" data-size="4" x="381.43" y="338.41" fill="#c2410c" text-anchor="middle">0.34</text>
+      <text class="value-label" data-size="8" x="555.00" y="369.03" fill="#c2410c" text-anchor="middle">0.33</text>
+      <text class="value-label" data-size="12" x="786.43" y="341.29" fill="#c2410c" text-anchor="middle">0.33</text>
+      <text class="value-label" data-size="15" x="951.00" y="341.56" fill="#c2410c" text-anchor="end">0.33</text>
     </g>
-    <g class="series-label" transform="translate(0 430.25)" onclick="toggleSeries(4)">
-      <title>Click to hide or show SHA-256 CommonCrypto</title>
+    <g class="series-label" transform="translate(0 418.07)" onclick="toggleSeries(4)">
+      <title>Click to hide or show SHA-256 ring</title>
       <rect x="1010.0" y="-14" width="180.0" height="40" fill="transparent"/>
-      <circle class="series-swatch" cx="1018.5" cy="0" r="4.5" fill="#0e9aa7" stroke="#0e9aa7"/>
-      <text class="series-name" x="1028.0" y="4" fill="#0e9aa7">SHA-256 CommonCrypto</text>
+      <circle class="series-swatch" cx="1018.5" cy="0" r="4.5" fill="#c2410c" stroke="#c2410c"/>
+      <text class="series-name" x="1028.0" y="4" fill="#c2410c">SHA-256 ring</text>
       <text class="series-detail" x="1028.0" y="18">0.33 ns/B · 3.1 GB/s at 1 MiB</text>
       <text class="series-hint" x="1028.0" y="18">hidden · click to show</text>
     </g>
-    <text class="prov series-prov" x="110.0" y="734.0">SHA-256 CommonCrypto: Apple CommonCrypto one-shot CC_SHA256 via FFI; the system&apos;s own SHA-256 (corecrypto, ARMv8 SHA-256 instructions on Apple silicon)</text>
+    <text class="prov series-prov" x="110.0" y="776.0">SHA-256 ring: ring 0.17.14 · ring::digest::digest, BoringSSL&apos;s sha256_block_data_order_hw assembly (ARMv8 SHA-256 instructions; SHA-NI on x86), selected at runtime</text>
   </g>
   <g class="dots" id="dots-0" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 294.89)" onmouseenter="showHover(0,0)" onmouseleave="hideHover()">
+    <g class="dot" data-size="0" transform="translate(150.00 276.92)" onmouseenter="showHover(0,0)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="1" transform="translate(207.86 294.46)" onmouseenter="showHover(0,1)" onmouseleave="hideHover()">
+    <g class="dot" data-size="1" transform="translate(207.86 276.58)" onmouseenter="showHover(0,1)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(265.71 295.62)" onmouseenter="showHover(0,2)" onmouseleave="hideHover()">
+    <g class="dot" data-size="2" transform="translate(265.71 277.48)" onmouseenter="showHover(0,2)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="3" transform="translate(323.57 295.97)" onmouseenter="showHover(0,3)" onmouseleave="hideHover()">
+    <g class="dot" data-size="3" transform="translate(323.57 277.93)" onmouseenter="showHover(0,3)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="4" transform="translate(381.43 296.05)" onmouseenter="showHover(0,4)" onmouseleave="hideHover()">
+    <g class="dot" data-size="4" transform="translate(381.43 278.16)" onmouseenter="showHover(0,4)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="5" transform="translate(439.29 294.23)" onmouseenter="showHover(0,5)" onmouseleave="hideHover()">
+    <g class="dot" data-size="5" transform="translate(439.29 276.14)" onmouseenter="showHover(0,5)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="6" transform="translate(473.13 293.26)" onmouseenter="showHover(0,6)" onmouseleave="hideHover()">
+    <g class="dot" data-size="6" transform="translate(473.13 274.93)" onmouseenter="showHover(0,6)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot dot-transition" data-size="7" transform="translate(497.14 339.80)" onmouseenter="showHover(0,7)" onmouseleave="hideHover()">
+    <g class="dot dot-transition" data-size="7" transform="translate(497.14 326.83)" onmouseenter="showHover(0,7)" onmouseleave="hideHover()">
       <circle class="dot-ring" r="9.5" fill="none" stroke="#3b82f6"/>
       <path d="M 0 -7.50 L 7.50 0 L 0 7.50 L -7.50 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="8" transform="translate(555.00 341.58)" onmouseenter="showHover(0,8)" onmouseleave="hideHover()">
+    <g class="dot" data-size="8" transform="translate(555.00 328.84)" onmouseenter="showHover(0,8)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="9" transform="translate(612.86 341.97)" onmouseenter="showHover(0,9)" onmouseleave="hideHover()">
+    <g class="dot" data-size="9" transform="translate(612.86 329.45)" onmouseenter="showHover(0,9)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="10" transform="translate(670.71 342.34)" onmouseenter="showHover(0,10)" onmouseleave="hideHover()">
+    <g class="dot" data-size="10" transform="translate(670.71 329.86)" onmouseenter="showHover(0,10)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(728.57 342.41)" onmouseenter="showHover(0,11)" onmouseleave="hideHover()">
+    <g class="dot" data-size="11" transform="translate(728.57 329.86)" onmouseenter="showHover(0,11)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="12" transform="translate(786.43 342.23)" onmouseenter="showHover(0,12)" onmouseleave="hideHover()">
+    <g class="dot" data-size="12" transform="translate(786.43 329.86)" onmouseenter="showHover(0,12)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="13" transform="translate(844.29 342.41)" onmouseenter="showHover(0,13)" onmouseleave="hideHover()">
+    <g class="dot" data-size="13" transform="translate(844.29 329.86)" onmouseenter="showHover(0,13)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(902.14 342.46)" onmouseenter="showHover(0,14)" onmouseleave="hideHover()">
+    <g class="dot" data-size="14" transform="translate(902.14 329.86)" onmouseenter="showHover(0,14)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(960.00 342.25)" onmouseenter="showHover(0,15)" onmouseleave="hideHover()">
+    <g class="dot" data-size="15" transform="translate(960.00 330.07)" onmouseenter="showHover(0,15)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
   <g class="dots" id="dots-1" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 323.11)" onmouseenter="showHover(1,0)" onmouseleave="hideHover()">
+    <g class="dot" data-size="0" transform="translate(150.00 302.07)" onmouseenter="showHover(1,0)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="1" transform="translate(207.86 341.91)" onmouseenter="showHover(1,1)" onmouseleave="hideHover()">
+    <g class="dot" data-size="1" transform="translate(207.86 327.03)" onmouseenter="showHover(1,1)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(265.71 348.68)" onmouseenter="showHover(1,2)" onmouseleave="hideHover()">
+    <g class="dot" data-size="2" transform="translate(265.71 336.49)" onmouseenter="showHover(1,2)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="3" transform="translate(323.57 349.34)" onmouseenter="showHover(1,3)" onmouseleave="hideHover()">
+    <g class="dot" data-size="3" transform="translate(323.57 337.61)" onmouseenter="showHover(1,3)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="4" transform="translate(381.43 349.90)" onmouseenter="showHover(1,4)" onmouseleave="hideHover()">
+    <g class="dot" data-size="4" transform="translate(381.43 338.06)" onmouseenter="showHover(1,4)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="5" transform="translate(439.29 350.27)" onmouseenter="showHover(1,5)" onmouseleave="hideHover()">
+    <g class="dot" data-size="5" transform="translate(439.29 338.52)" onmouseenter="showHover(1,5)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="6" transform="translate(473.13 350.43)" onmouseenter="showHover(1,6)" onmouseleave="hideHover()">
+    <g class="dot" data-size="6" transform="translate(473.13 338.52)" onmouseenter="showHover(1,6)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="7" transform="translate(497.14 350.43)" onmouseenter="showHover(1,7)" onmouseleave="hideHover()">
+    <g class="dot" data-size="7" transform="translate(497.14 338.52)" onmouseenter="showHover(1,7)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="8" transform="translate(555.00 350.50)" onmouseenter="showHover(1,8)" onmouseleave="hideHover()">
+    <g class="dot" data-size="8" transform="translate(555.00 338.52)" onmouseenter="showHover(1,8)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="9" transform="translate(612.86 350.39)" onmouseenter="showHover(1,9)" onmouseleave="hideHover()">
+    <g class="dot" data-size="9" transform="translate(612.86 338.74)" onmouseenter="showHover(1,9)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="10" transform="translate(670.71 350.46)" onmouseenter="showHover(1,10)" onmouseleave="hideHover()">
+    <g class="dot" data-size="10" transform="translate(670.71 338.74)" onmouseenter="showHover(1,10)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(728.57 350.45)" onmouseenter="showHover(1,11)" onmouseleave="hideHover()">
+    <g class="dot" data-size="11" transform="translate(728.57 338.74)" onmouseenter="showHover(1,11)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="12" transform="translate(786.43 350.43)" onmouseenter="showHover(1,12)" onmouseleave="hideHover()">
+    <g class="dot" data-size="12" transform="translate(786.43 338.74)" onmouseenter="showHover(1,12)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="13" transform="translate(844.29 350.58)" onmouseenter="showHover(1,13)" onmouseleave="hideHover()">
+    <g class="dot" data-size="13" transform="translate(844.29 338.74)" onmouseenter="showHover(1,13)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(902.14 350.48)" onmouseenter="showHover(1,14)" onmouseleave="hideHover()">
+    <g class="dot" data-size="14" transform="translate(902.14 338.74)" onmouseenter="showHover(1,14)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(960.00 350.50)" onmouseenter="showHover(1,15)" onmouseleave="hideHover()">
+    <g class="dot" data-size="15" transform="translate(960.00 338.74)" onmouseenter="showHover(1,15)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
   <g class="dots" id="dots-2" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 184.39)" onmouseenter="showHover(2,0)" onmouseleave="hideHover()">
+    <g class="dot" data-size="0" transform="translate(150.00 161.51)" onmouseenter="showHover(2,0)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="1" transform="translate(207.86 211.38)" onmouseenter="showHover(2,1)" onmouseleave="hideHover()">
+    <g class="dot" data-size="1" transform="translate(207.86 194.59)" onmouseenter="showHover(2,1)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(265.71 226.07)" onmouseenter="showHover(2,2)" onmouseleave="hideHover()">
+    <g class="dot" data-size="2" transform="translate(265.71 212.95)" onmouseenter="showHover(2,2)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="3" transform="translate(323.57 237.01)" onmouseenter="showHover(2,3)" onmouseleave="hideHover()">
+    <g class="dot" data-size="3" transform="translate(323.57 226.76)" onmouseenter="showHover(2,3)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="4" transform="translate(381.43 241.85)" onmouseenter="showHover(2,4)" onmouseleave="hideHover()">
+    <g class="dot" data-size="4" transform="translate(381.43 233.56)" onmouseenter="showHover(2,4)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="5" transform="translate(439.29 243.27)" onmouseenter="showHover(2,5)" onmouseleave="hideHover()">
+    <g class="dot" data-size="5" transform="translate(439.29 235.83)" onmouseenter="showHover(2,5)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="6" transform="translate(473.13 242.21)" onmouseenter="showHover(2,6)" onmouseleave="hideHover()">
+    <g class="dot" data-size="6" transform="translate(473.13 234.17)" onmouseenter="showHover(2,6)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="7" transform="translate(497.14 243.35)" onmouseenter="showHover(2,7)" onmouseleave="hideHover()">
+    <g class="dot" data-size="7" transform="translate(497.14 235.62)" onmouseenter="showHover(2,7)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="8" transform="translate(555.00 243.51)" onmouseenter="showHover(2,8)" onmouseleave="hideHover()">
+    <g class="dot" data-size="8" transform="translate(555.00 235.83)" onmouseenter="showHover(2,8)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="9" transform="translate(612.86 243.95)" onmouseenter="showHover(2,9)" onmouseleave="hideHover()">
+    <g class="dot" data-size="9" transform="translate(612.86 236.39)" onmouseenter="showHover(2,9)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="10" transform="translate(670.71 241.89)" onmouseenter="showHover(2,10)" onmouseleave="hideHover()">
+    <g class="dot" data-size="10" transform="translate(670.71 233.97)" onmouseenter="showHover(2,10)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(728.57 241.58)" onmouseenter="showHover(2,11)" onmouseleave="hideHover()">
+    <g class="dot" data-size="11" transform="translate(728.57 233.36)" onmouseenter="showHover(2,11)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="12" transform="translate(786.43 239.11)" onmouseenter="showHover(2,12)" onmouseleave="hideHover()">
+    <g class="dot" data-size="12" transform="translate(786.43 230.22)" onmouseenter="showHover(2,12)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="13" transform="translate(844.29 237.40)" onmouseenter="showHover(2,13)" onmouseleave="hideHover()">
+    <g class="dot" data-size="13" transform="translate(844.29 228.15)" onmouseenter="showHover(2,13)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(902.14 235.42)" onmouseenter="showHover(2,14)" onmouseleave="hideHover()">
+    <g class="dot" data-size="14" transform="translate(902.14 225.02)" onmouseenter="showHover(2,14)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(960.00 235.68)" onmouseenter="showHover(2,15)" onmouseleave="hideHover()">
+    <g class="dot" data-size="15" transform="translate(960.00 225.51)" onmouseenter="showHover(2,15)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
   <g class="dots" id="dots-3" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 290.08)" onmouseenter="showHover(3,0)" onmouseleave="hideHover()">
+    <g class="dot" data-size="0" transform="translate(150.00 271.91)" onmouseenter="showHover(3,0)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="1" transform="translate(207.86 289.65)" onmouseenter="showHover(3,1)" onmouseleave="hideHover()">
+    <g class="dot" data-size="1" transform="translate(207.86 270.76)" onmouseenter="showHover(3,1)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(265.71 295.31)" onmouseenter="showHover(3,2)" onmouseleave="hideHover()">
+    <g class="dot" data-size="2" transform="translate(265.71 276.81)" onmouseenter="showHover(3,2)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="3" transform="translate(323.57 298.10)" onmouseenter="showHover(3,3)" onmouseleave="hideHover()">
+    <g class="dot" data-size="3" transform="translate(323.57 280.11)" onmouseenter="showHover(3,3)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="4" transform="translate(381.43 299.58)" onmouseenter="showHover(3,4)" onmouseleave="hideHover()">
+    <g class="dot" data-size="4" transform="translate(381.43 281.76)" onmouseenter="showHover(3,4)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot dot-transition" data-size="5" transform="translate(439.29 326.03)" onmouseenter="showHover(3,5)" onmouseleave="hideHover()">
+    <g class="dot dot-transition" data-size="5" transform="translate(439.29 311.71)" onmouseenter="showHover(3,5)" onmouseleave="hideHover()">
       <circle class="dot-ring" r="9.5" fill="none" stroke="#7c3aed"/>
       <path d="M 0 -7.50 L 7.50 0 L 0 7.50 L -7.50 0 Z" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="6" transform="translate(473.13 351.58)" onmouseenter="showHover(3,6)" onmouseleave="hideHover()">
+    <g class="dot" data-size="6" transform="translate(473.13 339.89)" onmouseenter="showHover(3,6)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="7" transform="translate(497.14 358.25)" onmouseenter="showHover(3,7)" onmouseleave="hideHover()">
+    <g class="dot" data-size="7" transform="translate(497.14 347.12)" onmouseenter="showHover(3,7)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="8" transform="translate(555.00 365.56)" onmouseenter="showHover(3,8)" onmouseleave="hideHover()">
+    <g class="dot" data-size="8" transform="translate(555.00 355.55)" onmouseenter="showHover(3,8)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot dot-transition" data-size="9" transform="translate(612.86 390.13)" onmouseenter="showHover(3,9)" onmouseleave="hideHover()">
+    <g class="dot dot-transition" data-size="9" transform="translate(612.86 382.61)" onmouseenter="showHover(3,9)" onmouseleave="hideHover()">
       <circle class="dot-ring" r="9.5" fill="none" stroke="#7c3aed"/>
       <rect x="-5.40" y="-5.40" width="10.80" height="10.80" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="10" transform="translate(670.71 395.74)" onmouseenter="showHover(3,10)" onmouseleave="hideHover()">
+    <g class="dot" data-size="10" transform="translate(670.71 388.88)" onmouseenter="showHover(3,10)" onmouseleave="hideHover()">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(728.57 398.99)" onmouseenter="showHover(3,11)" onmouseleave="hideHover()">
+    <g class="dot" data-size="11" transform="translate(728.57 392.61)" onmouseenter="showHover(3,11)" onmouseleave="hideHover()">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="12" transform="translate(786.43 400.57)" onmouseenter="showHover(3,12)" onmouseleave="hideHover()">
+    <g class="dot" data-size="12" transform="translate(786.43 394.76)" onmouseenter="showHover(3,12)" onmouseleave="hideHover()">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="13" transform="translate(844.29 409.37)" onmouseenter="showHover(3,13)" onmouseleave="hideHover()">
+    <g class="dot" data-size="13" transform="translate(844.29 404.40)" onmouseenter="showHover(3,13)" onmouseleave="hideHover()">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(902.14 409.94)" onmouseenter="showHover(3,14)" onmouseleave="hideHover()">
+    <g class="dot" data-size="14" transform="translate(902.14 404.89)" onmouseenter="showHover(3,14)" onmouseleave="hideHover()">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(960.00 410.32)" onmouseenter="showHover(3,15)" onmouseleave="hideHover()">
+    <g class="dot" data-size="15" transform="translate(960.00 405.38)" onmouseenter="showHover(3,15)" onmouseleave="hideHover()">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
   <g class="dots" id="dots-4" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 192.87)" onmouseenter="showHover(4,0)" onmouseleave="hideHover()">
-      <circle r="5.0" fill="#0e9aa7" stroke="#fdfdfc" stroke-width="1.5"/>
+    <g class="dot" data-size="0" transform="translate(150.00 276.92)" onmouseenter="showHover(4,0)" onmouseleave="hideHover()">
+      <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="1" transform="translate(207.86 243.73)" onmouseenter="showHover(4,1)" onmouseleave="hideHover()">
-      <circle r="5.0" fill="#0e9aa7" stroke="#fdfdfc" stroke-width="1.5"/>
+    <g class="dot" data-size="1" transform="translate(207.86 321.62)" onmouseenter="showHover(4,1)" onmouseleave="hideHover()">
+      <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(265.71 285.49)" onmouseenter="showHover(4,2)" onmouseleave="hideHover()">
-      <circle r="5.0" fill="#0e9aa7" stroke="#fdfdfc" stroke-width="1.5"/>
+    <g class="dot" data-size="2" transform="translate(265.71 341.29)" onmouseenter="showHover(4,2)" onmouseleave="hideHover()">
+      <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="3" transform="translate(323.57 315.23)" onmouseenter="showHover(4,3)" onmouseleave="hideHover()">
-      <circle r="5.0" fill="#0e9aa7" stroke="#fdfdfc" stroke-width="1.5"/>
+    <g class="dot" data-size="3" transform="translate(323.57 346.62)" onmouseenter="showHover(4,3)" onmouseleave="hideHover()">
+      <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="4" transform="translate(381.43 335.28)" onmouseenter="showHover(4,4)" onmouseleave="hideHover()">
-      <circle r="5.0" fill="#0e9aa7" stroke="#fdfdfc" stroke-width="1.5"/>
+    <g class="dot" data-size="4" transform="translate(381.43 349.41)" onmouseenter="showHover(4,4)" onmouseleave="hideHover()">
+      <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="5" transform="translate(439.29 347.99)" onmouseenter="showHover(4,5)" onmouseleave="hideHover()">
-      <circle r="5.0" fill="#0e9aa7" stroke="#fdfdfc" stroke-width="1.5"/>
+    <g class="dot" data-size="5" transform="translate(439.29 350.97)" onmouseenter="showHover(4,5)" onmouseleave="hideHover()">
+      <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="6" transform="translate(473.13 352.54)" onmouseenter="showHover(4,6)" onmouseleave="hideHover()">
-      <circle r="5.0" fill="#0e9aa7" stroke="#fdfdfc" stroke-width="1.5"/>
+    <g class="dot" data-size="6" transform="translate(473.13 351.50)" onmouseenter="showHover(4,6)" onmouseleave="hideHover()">
+      <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="7" transform="translate(497.14 355.01)" onmouseenter="showHover(4,7)" onmouseleave="hideHover()">
-      <circle r="5.0" fill="#0e9aa7" stroke="#fdfdfc" stroke-width="1.5"/>
+    <g class="dot" data-size="7" transform="translate(497.14 351.76)" onmouseenter="showHover(4,7)" onmouseleave="hideHover()">
+      <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="8" transform="translate(555.00 358.83)" onmouseenter="showHover(4,8)" onmouseleave="hideHover()">
-      <circle r="5.0" fill="#0e9aa7" stroke="#fdfdfc" stroke-width="1.5"/>
+    <g class="dot" data-size="8" transform="translate(555.00 352.03)" onmouseenter="showHover(4,8)" onmouseleave="hideHover()">
+      <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="9" transform="translate(612.86 360.70)" onmouseenter="showHover(4,9)" onmouseleave="hideHover()">
-      <circle r="5.0" fill="#0e9aa7" stroke="#fdfdfc" stroke-width="1.5"/>
+    <g class="dot" data-size="9" transform="translate(612.86 352.29)" onmouseenter="showHover(4,9)" onmouseleave="hideHover()">
+      <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="10" transform="translate(670.71 361.80)" onmouseenter="showHover(4,10)" onmouseleave="hideHover()">
-      <circle r="5.0" fill="#0e9aa7" stroke="#fdfdfc" stroke-width="1.5"/>
+    <g class="dot" data-size="10" transform="translate(670.71 352.29)" onmouseenter="showHover(4,10)" onmouseleave="hideHover()">
+      <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(728.57 362.12)" onmouseenter="showHover(4,11)" onmouseleave="hideHover()">
-      <circle r="5.0" fill="#0e9aa7" stroke="#fdfdfc" stroke-width="1.5"/>
+    <g class="dot" data-size="11" transform="translate(728.57 352.29)" onmouseenter="showHover(4,11)" onmouseleave="hideHover()">
+      <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="12" transform="translate(786.43 362.68)" onmouseenter="showHover(4,12)" onmouseleave="hideHover()">
-      <circle r="5.0" fill="#0e9aa7" stroke="#fdfdfc" stroke-width="1.5"/>
+    <g class="dot" data-size="12" transform="translate(786.43 352.29)" onmouseenter="showHover(4,12)" onmouseleave="hideHover()">
+      <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="13" transform="translate(844.29 362.78)" onmouseenter="showHover(4,13)" onmouseleave="hideHover()">
-      <circle r="5.0" fill="#0e9aa7" stroke="#fdfdfc" stroke-width="1.5"/>
+    <g class="dot" data-size="13" transform="translate(844.29 352.56)" onmouseenter="showHover(4,13)" onmouseleave="hideHover()">
+      <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(902.14 362.85)" onmouseenter="showHover(4,14)" onmouseleave="hideHover()">
-      <circle r="5.0" fill="#0e9aa7" stroke="#fdfdfc" stroke-width="1.5"/>
+    <g class="dot" data-size="14" transform="translate(902.14 352.29)" onmouseenter="showHover(4,14)" onmouseleave="hideHover()">
+      <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(960.00 362.68)" onmouseenter="showHover(4,15)" onmouseleave="hideHover()">
-      <circle r="5.0" fill="#0e9aa7" stroke="#fdfdfc" stroke-width="1.5"/>
+    <g class="dot" data-size="15" transform="translate(960.00 352.56)" onmouseenter="showHover(4,15)" onmouseleave="hideHover()">
+      <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
   <text x="972.0" y="523.0" class="legend">third</text>
@@ -480,40 +489,118 @@
   <g transform="translate(758.4 519.5) scale(0.75)"><circle r="9.5" fill="none" stroke="#8a8a8a" stroke-width="1.5"/><circle r="5" fill="#8a8a8a"/></g>
   <text x="746.4" y="523.0" class="legend" text-anchor="end">a new path begins</text>
   <g id="hover" style="display:none">
-    <line id="hover-guide" x1="0" y1="150.0" x2="0" y2="455.0"/>
+    <line id="hover-guide" x1="0" y1="115.0" x2="0" y2="455.0"/>
     <rect id="hover-box" x="0" y="0" width="0" height="0" rx="4"/>
     <g id="hover-body"></g>
   </g>
   <metadata>
-    timestamp: 2026-09-21 14:26:23 UTC
+    timestamp: 2026-09-21 17:21:41 UTC
     git source: https://github.com/johnservil/bench-hashes
-    git commit: 29d6b564ef8bcc15dd33a53c4ca1e7c03650fba7
-    git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+21 commits)
-    git clean status: dirty-70a1e4c7f235abbabb761695745c76a4c252c130ce00891522b7f048afb3a40f
+    git commit: 2fdd9fbb900ad90115cb359817ca5108f75a894b
+    git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+41 commits)
+    git clean status: dirty-e1e9f252b306b3f3f6ecb2a8ea7b742d54363a1bce9dbb035dead1f10af3b681
     bench-hashes version: 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f
     CPU type: Apple M4 Max
     OS type: darwin25
     Rust compiler: rustc 1.98.0-nightly (f428d123a 2026-06-19)
     build target: aarch64-apple-darwin
     target features: aes,bf16,bti,crc,dit,dotprod,dpb,dpb2,ecv,fcma,fhm,flagm,flagm2,fp16,frintts,i8mm,jsconv,lor,lse,lse2,neon,paca,pacg,pan,pmuv3,ras,rcpc,rcpc2,rdm,sb,sha2,sha3,sme,sme-f64f64,sme-i16i64,sme2,ssbs,v8.1a,v8.2a,v8.3a,v8.4a,v8.5a,v8.6a,v8.7a,vh,wfxt
+    sample clock: std::time::Instant → CLOCK_UPTIME_RAW (mach_absolute_time; stops during sleep, no NTP slew)
+    reported time: per-thread cycles at the run&apos;s sustained clock, 3.994 GHz (median of cycles ÷ elapsed time over every sample); 1683 of 19200 samples whose cycle count fell short of that rate (work the counter does not see, such as SME2 streaming mode) keep their measured time
     BLAKE3 source: blake3 1.8.7; crate archive SHA-256 6d9e454fc11f76977dc803893aff6304ed33d6a26efae8696573bea74baa27ae; source registry+https://github.com/rust-lang/crates.io-index
-    SHA-256 source: sha2 0.10.9; crate archive SHA-256 a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283; source registry+https://github.com/rust-lang/crates.io-index
-    SHA-256 assembly source: sha2-asm 0.6.4; crate archive SHA-256 b845214d6175804686b2bd482bcffe96651bb2d1200742b712003504a2dac1ab; source registry+https://github.com/rust-lang/crates.io-index
+    SHA-256 source: sha2 0.11.0; crate archive SHA-256 446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4; source registry+https://github.com/rust-lang/crates.io-index
     SHA-1DC source: sha1-checked 0.10.0; crate archive SHA-256 89f599ac0c323ebb1c6082821a54962b839832b03984598375bff3975b804423; source registry+https://github.com/rust-lang/crates.io-index
-    BLAKE3 SME2 source: blake3_sme2 (git dependency); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit 4ca9952c8522d04470e3efdc21fb172c75817050
+    SHA-256 ring source: ring 0.17.14; crate archive SHA-256 a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7; source registry+https://github.com/rust-lang/crates.io-index
+    BLAKE3 servil source: blake3_sme2 (git dependency); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit 4ca9952c8522d04470e3efdc21fb172c75817050
   </metadata>
   <line x1="110.0" y1="540.0" x2="1090.0" y2="540.0" class="divider"/>
   <text x="110.0" y="560.0" class="prov-head">PROVENANCE</text>
-  <text class="prov" x="110.0" y="580.0">Run: 2026-09-21 14:26:23 UTC · bench-hashes 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f</text>
-  <text class="prov" x="110.0" y="594.0">Machine: Apple M4 Max · 16 logical CPUs · darwin25</text>
-  <text class="prov" x="110.0" y="608.0">Toolchain: rustc 1.98.0-nightly (f428d123a 2026-06-19) · aarch64-apple-darwin</text>
-  <text class="prov" x="110.0" y="622.0">Source: https://github.com/johnservil/bench-hashes @ 29d6b564ef8bcc15dd33a53c4ca1e7c03650fba7</text>
-  <text class="prov" x="110.0" y="636.0">Tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+21 commits) · Working tree: dirty-70a1e4c7f235abbabb761695745c76a4c252c130ce00891522b7f048afb3a40f</text>
-  <text class="prov" x="110.0" y="650.0">Full crate checksums are in this file&apos;s metadata element</text>
+  <text class="prov" x="110.0" y="580.0">Run: 2026-09-21 17:21:41 UTC · bench-hashes 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f</text>
+  <text class="prov" x="110.0" y="594.0">Contenders: every contender available on this machine</text>
+  <text class="prov" x="110.0" y="608.0">Machine: Apple M4 Max · 16 logical CPUs · darwin25</text>
+  <text class="prov" x="110.0" y="622.0">Toolchain: rustc 1.98.0-nightly (f428d123a 2026-06-19) · aarch64-apple-darwin</text>
+  <text class="prov" x="110.0" y="636.0">Sample clock: std::time::Instant → CLOCK_UPTIME_RAW (mach_absolute_time; stops during sleep, no NTP slew)</text>
+  <text class="prov" x="110.0" y="650.0">Reported time: per-thread cycles at the run&apos;s sustained clock, 3.994 GHz (median of cycles ÷ elapsed time over every sample); 1683 of 19200 samples whose cycle count fell short of that rate (work the counter does not see, such as SME2 streaming mode) keep their measured time</text>
+  <text class="prov" x="110.0" y="664.0">Source: https://github.com/johnservil/bench-hashes @ 2fdd9fbb900ad90115cb359817ca5108f75a894b</text>
+  <text class="prov" x="110.0" y="678.0">Tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+41 commits) · Working tree: dirty-e1e9f252b306b3f3f6ecb2a8ea7b742d54363a1bce9dbb035dead1f10af3b681</text>
+  <text class="prov" x="110.0" y="692.0">Full crate checksums are in this file&apos;s metadata element</text>
   <script><![CDATA[
-const DATA = {"series":[{"name":"BLAKE3","regimes":[{"from":0,"name":"portable compression","why":"Fewer than four whole chunks: each runs through the portable single-chunk compressor, so 2 KiB and 3 KiB take this path too.","mark":"circle"},{"from":7,"name":"NEON hash_many (4-way)","why":"Four whole chunks fill a NEON batch; from here the bulk of the input runs four chunks at a time.","mark":"diamond"}],"min":[0.7734838661413395,0.7565160647634419,0.7461116364722278,0.7657330353615173,0.7642401960784314,0.7831546098758012,0.7914599490571776,0.4337454196626106,0.4262789874009683,0.423325432671441,0.41626103719075513,0.41868040296766496,0.42085266113281244,0.4205703735351563,0.4210792541503906,0.42108678817749023],"med":[0.7796197820557579,0.7839358670432766,0.7722935434501295,0.7689158342799289,0.7681177236519608,0.7862842266376202,0.7960307050892133,0.43824668141592926,0.4283294677734375,0.4262218475341797,0.42420853508843315,0.4238022698296441,0.4247824350992839,0.42382876078287757,0.4235107421875,0.42469286918640137],"max":[0.7991987619071368,0.8166091874306466,0.7909903506370695,0.8131273767779533,0.810961243872549,0.8193774101061699,0.8483864938158961,0.44739309665376104,0.44214683855083625,0.45038138495551217,0.43918482462565106,0.4419572618272569,0.4368184407552083,0.43918482462565106,0.4368782043457031,0.4604659080505371]},{"name":"SHA-256","regimes":[{"from":0,"name":"ARMv8 SHA-256 instructions (sha2-asm)","why":"One implementation at every size.","mark":"circle"}],"min":[0.5394627813837868,0.40657298738753656,0.37074132716205294,0.38290528685708675,0.3820136688040487,0.3806631426609105,0.3804418840367331,0.3803192948030421,0.380526176788522,0.36787986755371094,0.3466922760009766,0.3639377593994141,0.3801029205322266,0.3788631439208985,0.38005523681640624,0.3800656000773112],"med":[0.5428570812042536,0.4265171351493073,0.3910575368761366,0.38774611522133884,0.3850124527073507,0.3831622304871468,0.3823978711777062,0.38239810842433697,0.3820457218578026,0.38259830474853507,0.3822170257568359,0.38229618072509763,0.38235988616943356,0.38163642883300786,0.3821531295776367,0.3820592562357584],"max":[0.5594229042949869,0.43819642807860015,0.4056347399727217,0.4010700395072635,0.40939618956367924,0.4052404765992936,0.39123864302461897,0.3946653178627145,0.39348136853871857,0.39272308349609375,0.3894805908203125,0.40876083374023436,0.3933746337890625,0.4031658172607422,0.39604492187500007,0.3907019297281901]},{"name":"SHA-1DC","regimes":[{"from":0,"name":"SHA-1 with collision detection, pure Rust","why":"One implementation at every size.","mark":"circle"}],"min":[3.1337566042267047,2.247445481849047,1.8599821297653958,1.6247769835992907,1.5175451072821846,1.4977250532670454,1.520235716841603,1.50080322265625,1.494903564453125,1.42603515625,1.5183029174804688,1.5196800231933594,1.5523694356282551,1.5903574625651042,1.646596908569336,1.635432243347168],"med":[3.2165585975024014,2.2755002938103943,1.8847680797025554,1.6378199800531914,1.539371088670351,1.5115189985795454,1.5321955013517812,1.509984130859375,1.506983642578125,1.4984893798828125,1.538595199584961,1.5447400410970054,1.59443728129069,1.6297499338785806,1.6717510223388672,1.6661877632141113],"max":[3.386542387127762,2.435327027291721,1.9316463526392962,1.7039048648049646,1.5763839503413524,1.5660560684974747,1.5795625099395674,1.5472412109375,1.55634521484375,1.534219970703125,1.6460952758789063,1.6162656148274739,1.6631558736165364,1.6730092366536458,1.7423629760742188,1.7240047454833984]},{"name":"BLAKE3 SME2","regimes":[{"from":0,"name":"scalar kernel k1","why":"One chunk runs on the integer ALUs alone.","mark":"circle"},{"from":5,"name":"integer + NEON hybrid kernels","why":"Two or more whole chunks: hybrid kernels keep the integer and NEON units busy together, up to fifteen chunks at a time.","mark":"diamond"},{"from":9,"name":"SME2 hash16_chunks kernel","why":"Sixteen whole chunks fill an SME2 group on 512-bit streaming vectors; leftovers below sixteen stay on the hybrid kernels.","mark":"square"}],"min":[0.7763866818134062,0.8257299877503197,0.7710169134654062,0.7440785379165071,0.73095556493994,0.5181397011676566,0.37375323639210023,0.3432654905854986,0.3105253703853627,0.22870974433153196,0.21122311874174735,0.20307262523754224,0.19771174380653783,0.17778451102120535,0.17634305087002838,0.17550792694091796],"med":[0.8291752304843455,0.8338262609181935,0.7753705909342317,0.7481616987026043,0.7341323256850601,0.5229183716083963,0.3767950686416185,0.34590886148174155,0.31492670088852004,0.22980929496593044,0.21384687826667031,0.205104415481155,0.201007742630808,0.17955562046595983,0.17822872508655896,0.1773834228515625],"max":[0.8538164530363521,0.8520826121112058,0.811642070595334,0.7681713184603599,0.7556694878472223,0.5346178751012419,0.39829261500481694,0.35333800583742975,0.3243218456525259,0.23587059078359962,0.2176348189233055,0.20840784021326011,0.20683027568616366,0.18529274350120908,0.18661672418767755,0.18177032470703125]},{"name":"SHA-256 CommonCrypto","regimes":[{"from":0,"name":"CC_SHA256 (corecrypto, ARMv8 SHA-256 instructions)","why":"One implementation at every size.","mark":"circle"}],"min":[2.534930052895323,1.4837536549707602,0.8698594430749828,0.5929845535438543,0.4590483662749288,0.39162993719733663,0.36922673769479286,0.3584088800931047,0.34172246697243686,0.3329823252918956,0.32887964663298236,0.3227477378033577,0.32567264722741174,0.31854057312011724,0.3248453140258789,0.3247130711873372],"med":[2.885102020694135,1.5027267604775827,0.8795251949094245,0.6005874454717417,0.4643716984211776,0.3945202153954802,0.372165333404599,0.3605544728867073,0.34334418478976475,0.33520440740899726,0.33048961473547894,0.32912607395902593,0.3267853778341542,0.32637516657511395,0.3260704676310222,0.3267725308736165],"max":[3.0065365163325906,1.5592638279727096,0.921102886379271,0.6231693223054354,0.4817314184176164,0.4079028261198547,0.38356338785157734,0.38606086663440264,0.36061044757285815,0.3968683599115728,0.3489064755647079,0.34061707841589095,0.34531303074048914,0.3351370493570964,0.33545494079589844,0.3356800079345703]}],"x":[150.00,207.86,265.71,323.57,381.43,439.29,473.13,497.14,555.00,612.86,670.71,728.57,786.43,844.29,902.14,960.00],"labelY":[342.25,386.25,235.68,474.25,430.25],"colors":["#3b82f6","#e07a45","#8a7a1e","#7c3aed","#0e9aa7"],"sizes":["64 B","128 B","256 B","512 B","1 KiB","2 KiB","3 KiB","4 KiB","8 KiB","16 KiB","32 KiB","64 KiB","128 KiB","256 KiB","512 KiB","1 MiB"],"baseline":0,"sharedProv":6,"plotLeft":110,"plotRight":1000,"plotTop":150,"plotBottom":455,"labelGap":44,"spreadNoticeable":0.1,"spreadWide":0.25,"provTop":540,"provLine":14,"takeaway":"On this machine: SHA-256 is 1.11× to 2.08× faster than BLAKE3; BLAKE3 is 1.92× to 4.13× faster than SHA-1DC; BLAKE3 is faster at 64 B, BLAKE3 SME2 at 1 MiB; BLAKE3 is faster at 64 B, SHA-256 CommonCrypto at 1 MiB"};
+const DATA = {"series":[{"name":"BLAKE3","regimes":[{"from":0,"name":"portable compression","why":"Fewer than four whole chunks: each runs through the portable single-chunk compressor, so 2 KiB and 3 KiB take this path too.","mark":"circle"},{"from":7,"name":"NEON hash_many (4-way)","why":"Four whole chunks fill a NEON batch; from here the bulk of the input runs four chunks at a time.","mark":"diamond"}],"min":[0.771,0.777,0.769,0.765,0.763,0.782,0.792,0.431,0.425,0.422,0.421,0.420,0.420,0.421,0.420,0.420],"low":[0.776,0.779,0.771,0.766,0.765,0.783,0.794,0.437,0.427,0.423,0.422,0.421,0.421,0.422,0.421,0.421],"med":[0.776,0.779,0.771,0.767,0.765,0.783,0.794,0.437,0.427,0.424,0.422,0.422,0.422,0.422,0.422,0.421],"high":[0.777,0.779,0.772,0.767,0.765,0.785,0.794,0.437,0.427,0.424,0.422,0.422,0.422,0.422,0.422,0.422],"max":[0.903,0.827,0.821,0.801,0.809,0.846,0.839,0.456,0.447,0.443,0.443,0.433,0.446,0.442,0.442,0.449],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"SHA-256","regimes":[{"from":0,"name":"sha2 aarch64_sha2 backend (ARMv8 SHA-256 instructions)","why":"One implementation at every size.","mark":"circle"}],"min":[0.567,0.425,0.385,0.383,0.382,0.381,0.381,0.381,0.381,0.380,0.380,0.380,0.380,0.380,0.380,0.380],"low":[0.580,0.436,0.390,0.386,0.384,0.382,0.381,0.381,0.381,0.381,0.381,0.381,0.381,0.381,0.380,0.381],"med":[0.581,0.436,0.391,0.386,0.384,0.382,0.382,0.382,0.382,0.381,0.381,0.381,0.381,0.381,0.381,0.381],"high":[0.581,0.437,0.391,0.386,0.385,0.382,0.382,0.382,0.382,0.382,0.381,0.381,0.381,0.381,0.381,0.381],"max":[0.615,0.493,0.410,0.399,0.402,0.406,0.406,0.394,0.404,0.401,0.399,0.395,0.403,0.408,0.393,0.435],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"SHA-1DC","regimes":[{"from":0,"name":"SHA-1 with collision detection, pure Rust","why":"One implementation at every size.","mark":"circle"}],"min":[2.894,1.984,1.608,1.375,1.266,1.237,1.256,1.230,1.232,1.223,1.252,1.263,1.301,1.321,1.376,1.382],"low":[2.925,2.000,1.619,1.381,1.277,1.244,1.269,1.247,1.244,1.236,1.271,1.279,1.323,1.354,1.408,1.401],"med":[2.928,2.001,1.620,1.382,1.278,1.245,1.269,1.248,1.245,1.237,1.272,1.281,1.328,1.360,1.410,1.402],"high":[2.930,2.002,1.621,1.382,1.279,1.245,1.270,1.248,1.246,1.238,1.273,1.282,1.334,1.371,1.411,1.403],"max":[3.132,2.108,1.668,1.463,1.483,1.313,1.315,1.328,1.286,1.445,1.307,1.350,1.425,1.454,1.547,1.447],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"BLAKE3 servil","regimes":[{"from":0,"name":"scalar kernel k1","why":"One chunk runs on the integer ALUs alone.","mark":"circle"},{"from":5,"name":"integer + NEON hybrid kernels","why":"Two or more whole chunks: hybrid kernels keep the integer and NEON units busy together, up to fifteen chunks at a time.","mark":"diamond"},{"from":9,"name":"SME2 hash16_chunks kernel","why":"Sixteen whole chunks fill an SME2 group on 512-bit streaming vectors; leftovers below sixteen stay on the hybrid kernels.","mark":"square"}],"min":[0.814,0.827,0.774,0.746,0.732,0.517,0.370,0.343,0.310,0.229,0.212,0.203,0.198,0.177,0.176,0.175],"low":[0.821,0.832,0.777,0.747,0.734,0.519,0.376,0.346,0.314,0.230,0.214,0.205,0.200,0.179,0.178,0.177],"med":[0.822,0.833,0.777,0.748,0.734,0.520,0.376,0.346,0.314,0.230,0.214,0.205,0.200,0.179,0.178,0.177],"high":[0.822,0.833,0.777,0.748,0.734,0.521,0.376,0.346,0.315,0.230,0.214,0.205,0.200,0.179,0.178,0.177],"max":[0.907,0.851,0.808,0.807,0.781,0.554,0.387,0.367,0.345,0.252,0.225,0.214,0.207,0.208,0.192,0.204],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"SHA-256 ring","regimes":[{"from":0,"name":"sha256_block_data_order_hw (ARMv8 SHA-256 instructions, pipelined schedule)","why":"One implementation at every size.","mark":"circle"}],"min":[0.686,0.448,0.365,0.345,0.335,0.330,0.328,0.327,0.326,0.325,0.325,0.325,0.325,0.325,0.325,0.325],"low":[0.736,0.463,0.370,0.348,0.337,0.331,0.329,0.328,0.327,0.326,0.326,0.326,0.325,0.325,0.325,0.325],"med":[0.776,0.464,0.370,0.348,0.337,0.331,0.329,0.328,0.327,0.326,0.326,0.326,0.326,0.325,0.326,0.325],"high":[0.792,0.469,0.370,0.348,0.337,0.331,0.330,0.328,0.327,0.326,0.326,0.326,0.326,0.326,0.326,0.326],"max":[0.902,0.618,0.445,0.396,0.361,0.346,0.348,0.348,0.342,0.338,0.341,0.342,0.343,0.342,0.355,0.345],"modes":[null,[0.462,156,0.595,84],null,null,null,null,null,null,null,null,null,null,null,null,null,null]}],"x":[150.00,207.86,265.71,323.57,381.43,439.29,473.13,497.14,555.00,612.86,670.71,728.57,786.43,844.29,902.14,960.00],"labelY":[330.07,374.07,225.51,462.07,418.07],"colors":["#3b82f6","#e07a45","#8a7a1e","#7c3aed","#c2410c"],"sizes":["64 B","128 B","256 B","512 B","1 KiB","2 KiB","3 KiB","4 KiB","8 KiB","16 KiB","32 KiB","64 KiB","128 KiB","256 KiB","512 KiB","1 MiB"],"sharedProv":9,"plotLeft":110,"plotRight":1000,"plotTop":115,"plotBottom":455,"labelGap":44,"rounds":240,"labelAbove":-11,"labelBelow":17,"labelHeight":11,"spreadNoticeable":0.020,"spreadWide":0.050,"provTop":540,"provLine":14};
 
 const on = DATA.series.map(() => true);
+
+/*
+ * Display unit. Data is stored as ns/B; GB/s is its reciprocal × 1000, so on
+ * the log axis switching units mirrors the plot: the fastest contender moves
+ * from the bottom to the top. Every drawn or printed value goes through
+ * val() and fmt(); ratios between contenders are unitless and stay put.
+ */
+let unit = "ns";
+
+/*
+ * Blend between the units. 1 ns/B is 1 GB/s, so GB/s is the reciprocal of
+ * ns/B. `blend` runs from 0 (ns/B) to 1 (GB/s), and the plotted value is
+ * the log-space interpolation of the two readings, so during a switch
+ * every point travels a straight line on the log axis and the whole plot
+ * mirrors through its middle. Text follows the unit from the midpoint; the
+ * two axes cross-fade.
+ */
+let blend = 0;
+const valAt = (ns, b) => Math.exp((1 - 2 * b) * Math.log(ns));
+const val = ns => valAt(ns, blend);
+/* Values in the settled unit, for text. */
+const settled = ns => unit === "ns" ? ns : 1 / ns;
+function fmt(ns, digits) {
+  const v = settled(ns);
+  if (unit === "ns") return v.toFixed(digits === undefined ? 3 : digits);
+  return v >= 10 ? v.toFixed(digits === undefined ? 0 : Math.max(0, digits - 2)) : v.toFixed(digits === undefined ? 1 : Math.max(1, digits - 1));
+}
+const unitLabel = () => unit === "ns" ? "ns/B" : "GB/s";
+const otherUnitLabel = () => unit === "ns" ? "GB/s" : "ns/B";
+const fmtOther = ns => unit === "ns" ? gbps(ns) : ns.toFixed(3) + " ns/B";
+
+let animation = null;
+let chosen = "ns";
+function flipUnit() { setUnit(chosen === "ns" ? "gbps" : "ns"); }
+function setUnit(u) {
+  chosen = u;
+  const target = u === "ns" ? 0 : 1;
+  if (animation) cancelAnimationFrame(animation);
+  document.getElementById("unit-knob").setAttribute("cy", u === "ns" ? 27 : 7);
+  document.getElementById("unit-switch").querySelectorAll(".unit-label")
+    .forEach(l => l.setAttribute("class", "unit-label" + (l.getAttribute("data-unit") === u ? " unit-on" : "")));
+
+  const start = blend, startTime = performance.now(), DURATION = 700;
+  const ease = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  /* Prepare the incoming axis so it can fade in while the old one fades out. */
+  const outgoing = document.getElementById("y-axis");
+  outgoing.setAttribute("id", "y-axis-old");
+  const incoming = document.createElementNS(NS, "g");
+  incoming.setAttribute("id", "y-axis");
+  incoming.setAttribute("opacity", "0");
+  outgoing.parentNode.insertBefore(incoming, outgoing.nextSibling);
+
+  const step = now => {
+    const raw = Math.min(1, (now - startTime) / DURATION);
+    const e = ease(raw);
+    blend = start + (target - start) * e;
+    /* Text follows the unit once the plot is past halfway. */
+    unit = blend >= 0.5 ? "gbps" : "ns";
+    document.getElementById("y-title").textContent =
+      unit === "ns" ? "Nanoseconds per byte · lower is better" : "Gigabytes per second · higher is better";
+    outgoing.setAttribute("opacity", (1 - e).toFixed(3));
+    incoming.setAttribute("opacity", e.toFixed(3));
+    relayout();
+    if (hovered) showHover(hovered[0], hovered[1]);
+    if (raw < 1) {
+      animation = requestAnimationFrame(step);
+    } else {
+      outgoing.parentNode.removeChild(outgoing);
+      animation = null;
+    }
+  };
+  animation = requestAnimationFrame(step);
+}
 const NS = "http://www.w3.org/2000/svg";
 
 function niceBelow(v) {
@@ -544,70 +631,59 @@ function ticks(lo, hi) {
   return out;
 }
 
-/* Mirror of takeaway_clause() in main.rs, for the visible contenders. */
-function clause(i) {
-  const b = DATA.series[DATA.baseline], s = DATA.series[i];
-  const ratios = b.med.map((v, k) => v / s.med[k]);
-  const lowest = Math.min(...ratios), highest = Math.max(...ratios);
-  const TIE = 0.05, n = s.name, bn = b.name;
-  const tiedLow = lowest > 1 - TIE, tiedHigh = highest < 1 + TIE;
-  const x = v => v.toFixed(2) + "\u00d7";
-  if (tiedLow && tiedHigh) return `${n} matches ${bn} at every size`;
-  if (lowest > 1 + TIE) return `${n} is ${x(lowest)} to ${x(highest)} faster than ${bn}`;
-  if (highest < 1 - TIE) return `${bn} is ${x(1 / highest)} to ${x(1 / lowest)} faster than ${n}`;
-  if (tiedLow) {
-    const first = ratios.findIndex(r => r > 1 + TIE);
-    return `${n} matches ${bn} below ${label(first)} and is up to ${x(highest)} faster from there`;
-  }
-  if (tiedHigh) {
-    let last = -1; ratios.forEach((r, k) => { if (r < 1 - TIE) last = k; });
-    return `${bn} is up to ${x(1 / lowest)} faster than ${n} through ${label(last)}, then they match`;
-  }
-  const first = ratios[0] > 1 ? n : bn, lastN = ratios[ratios.length - 1] > 1 ? n : bn;
-  return `${first} is faster at ${label(0)}, ${lastN} at ${label(ratios.length - 1)}`;
-}
-
-function takeaway() {
-  const visible = DATA.series.map((_, i) => i).filter(i => on[i]);
-  if (visible.length === 0) return "Every contender is hidden; click a name at right to show one";
-  if (!on[DATA.baseline]) {
-    return visible.length === 1
-      ? `Showing ${DATA.series[visible[0]].name} alone`
-      : `Showing ${visible.map(i => DATA.series[i].name).join(", ")}; show ${DATA.series[DATA.baseline].name} for speed ratios`;
-  }
-  const others = visible.filter(i => i !== DATA.baseline);
-  if (others.length === 0) return `Showing ${DATA.series[DATA.baseline].name} alone`;
-  return "On this machine: " + others.map(clause).join("; ");
-}
-
 function relayout() {
   const visible = DATA.series.map((_, i) => i).filter(i => on[i]);
   let lo = Infinity, hi = 0;
   for (const i of visible) {
-    lo = Math.min(lo, ...DATA.series[i].min);
-    hi = Math.max(hi, ...DATA.series[i].max);
+    lo = Math.min(lo, ...DATA.series[i].low);
+    hi = Math.max(hi, ...DATA.series[i].high);
   }
   if (visible.length === 0) { lo = 0.1; hi = 1; }
-  const axMin = niceBelow(lo * 0.92), axMax = niceAbove(hi * 1.08);
-  const lMin = Math.log(axMin), lMax = Math.log(axMax);
-  const mapY = v => DATA.plotBottom - (Math.log(v) - lMin) / (lMax - lMin) * (DATA.plotBottom - DATA.plotTop);
+  /*
+   * Axis bounds at both ends of the blend, then interpolated in log space
+   * alongside the data, so the axis and the points move together.
+   */
+  const boundsAt = b => {
+    const a = valAt(lo, b), c = valAt(hi, b);
+    const dLo = Math.min(a, c), dHi = Math.max(a, c);
+    return [Math.log(niceBelow(dLo * 0.92)), Math.log(niceAbove(dHi * 1.08))];
+  };
+  const [n0, n1] = boundsAt(0), [g0, g1] = boundsAt(1);
+  const lMin = (1 - blend) * n0 + blend * g0, lMax = (1 - blend) * n1 + blend * g1;
+  /* mapY takes ns/B, as stored; the unit transform happens inside. */
+  const mapY = ns => DATA.plotBottom - (Math.log(val(ns)) - lMin) / (lMax - lMin) * (DATA.plotBottom - DATA.plotTop);
   currentMapY = mapY;
-
-  /* Y axis: grid lines and tick labels. */
+  /*
+   * Y axis for the settled unit. Each tick is a value in that unit; its
+   * ns/B equivalent is placed with the blended mapY, so mid-animation the
+   * ticks ride the same mirroring motion as the data, while the outgoing
+   * axis (still in the old unit, in its own group) fades out and this one
+   * fades in.
+   */
   const axis = document.getElementById("y-axis");
   while (axis.firstChild) axis.removeChild(axis.firstChild);
-  for (const v of ticks(axMin, axMax)) {
-    const y = mapY(v);
+  const [tMin, tMax] = unit === "ns" ? [n0, n1] : [g0, g1];
+  const tickToNs = v => unit === "ns" ? v : 1 / v;
+  for (const v of ticks(Math.exp(tMin), Math.exp(tMax))) {
+    const y = mapY(tickToNs(v));
     const line = document.createElementNS(NS, "line");
     line.setAttribute("x1", DATA.plotLeft); line.setAttribute("x2", DATA.plotRight);
     line.setAttribute("y1", y.toFixed(2)); line.setAttribute("y2", y.toFixed(2));
     line.setAttribute("class", "grid");
     axis.appendChild(line);
+    line.setAttribute("data-ns", tickToNs(v));
     const t = document.createElementNS(NS, "text");
     t.setAttribute("x", (DATA.plotLeft - 10).toFixed(1)); t.setAttribute("y", (y + 3.5).toFixed(2));
     t.setAttribute("class", "tick-label"); t.setAttribute("text-anchor", "end");
-    t.textContent = fmtTick(v);
+    t.setAttribute("data-ns", tickToNs(v));
+    t.textContent = unit === "ns" ? fmtTick(v) : (v >= 10 ? v.toFixed(0) : v.toFixed(1));
     axis.appendChild(t);
+  }
+  /* The outgoing axis, if one is fading, rides the same motion. */
+  const old = document.getElementById("y-axis-old");
+  if (old) {
+    old.querySelectorAll("line").forEach(l => { const y = mapY(+l.getAttribute("data-ns")); l.setAttribute("y1", y.toFixed(2)); l.setAttribute("y2", y.toFixed(2)); });
+    old.querySelectorAll("text").forEach(t => { t.setAttribute("y", (mapY(+t.getAttribute("data-ns")) + 3.5).toFixed(2)); });
   }
 
   /* Each series: band, median line, dots, value labels. */
@@ -619,8 +695,8 @@ function relayout() {
     if (!on[i]) return;
     const X = DATA.x;
     let band = "";
-    X.forEach((x, k) => { band += (k ? " L " : "M ") + x + " " + mapY(s.max[k]).toFixed(2); });
-    for (let k = X.length - 1; k >= 0; k--) band += " L " + X[k] + " " + mapY(s.min[k]).toFixed(2);
+    X.forEach((x, k) => { band += (k ? " L " : "M ") + x + " " + mapY(s.high[k]).toFixed(2); });
+    for (let k = X.length - 1; k >= 0; k--) band += " L " + X[k] + " " + mapY(s.low[k]).toFixed(2);
     g.querySelector(".band").setAttribute("d", band + " Z");
     let med = "";
     X.forEach((x, k) => { med += (k ? " L " : "M ") + x + " " + mapY(s.med[k]).toFixed(2); });
@@ -629,12 +705,26 @@ function relayout() {
       const k = +dot.getAttribute("data-size");
       dot.setAttribute("transform", `translate(${X[k]} ${mapY(s.med[k]).toFixed(2)})`);
     });
-    g.querySelectorAll(".value-label").forEach(t => {
-      const k = +t.getAttribute("data-size");
-      t.setAttribute("y", (mapY(s.med[k]) + +t.getAttribute("data-offset")).toFixed(2));
-    });
   });
 
+  /* Value labels: above the dot unless that collides within the column. */
+  for (let k = 0; k < DATA.x.length; k++) {
+    const order = visible.slice().sort((a, b) => mapY(DATA.series[a].med[k]) - mapY(DATA.series[b].med[k]));
+    const taken = [];
+    const clear = y => taken.every(t => Math.abs(t - y) >= DATA.labelHeight);
+    for (const i of order) {
+      const dotY = mapY(DATA.series[i].med[k]);
+      let y = dotY + DATA.labelAbove;
+      if (!clear(y)) { y = dotY + DATA.labelBelow; while (!clear(y)) y += DATA.labelHeight; }
+      taken.push(y);
+      document.getElementById("series-" + i).querySelectorAll(".value-label").forEach(t => {
+        if (+t.getAttribute("data-size") === k) {
+          t.setAttribute("y", y.toFixed(2));
+          t.textContent = fmt(DATA.series[i].med[k], 2);
+        }
+      });
+    }
+  }
   /*
    * Right-edge labels, every contender in its slot. Each anchors level with
    * its line's last point on the current axis; a hidden contender's anchor
@@ -654,6 +744,9 @@ function relayout() {
   for (const [i, y] of slots) {
     const lab = document.getElementById("series-" + i).querySelector(".series-label");
     lab.setAttribute("transform", `translate(0 ${(y - overrun).toFixed(2)})`);
+    const detail = lab.querySelector(".series-detail");
+    const m = DATA.series[i].med[last];
+    detail.textContent = `${fmt(m, 2)} ${unitLabel()} · ${fmtOther(m)} at ${DATA.sizes[last]}`;
   }
 
   /* Provenance: visible contenders' lines close ranks after the shared lines. */
@@ -664,20 +757,6 @@ function relayout() {
     });
   });
 
-  const head = document.getElementById("takeaway");
-  while (head.firstChild) head.removeChild(head.firstChild);
-  const lines = [];
-  for (const clause of takeaway().split("; ")) {
-    const last = lines[lines.length - 1];
-    if (last !== undefined && last.length + 2 + clause.length <= 118) lines[lines.length - 1] = last + "; " + clause;
-    else lines.push(clause);
-  }
-  lines.forEach((line, i) => {
-    const span = document.createElementNS(NS, "tspan");
-    span.setAttribute("x", DATA.plotLeft); span.setAttribute("dy", i ? 18 : 0);
-    span.textContent = line;
-    head.appendChild(span);
-  });
 }
 
 function toggleSeries(i) {
@@ -743,13 +822,29 @@ function showHover(focus, k) {
   let y = PAD + 12;
   body.appendChild(textEl(PAD, y, "hover-head", `${f.name} at ${DATA.sizes[k]}`));
   y += 14;
-  const spread = (f.max[k] - f.min[k]) / f.med[k];
-  const spreadNote = spread >= DATA.spreadWide ? " · wide spread, low precision"
-    : spread >= DATA.spreadNoticeable ? " · noticeable spread" : "";
+  const spread = (f.high[k] - f.low[k]) / f.med[k];
+  const spreadNote = spread >= DATA.spreadWide ? " · median poorly determined"
+    : spread >= DATA.spreadNoticeable ? " · median less certain" : "";
+  /* In GB/s the fastest sample (min time) is the top of the range. */
+  const asc = (a, b) => unit === "ns" ? [a, b] : [b, a];
+  const [cLo, cHi] = asc(f.low[k], f.high[k]);
+  const [rLo, rHi] = asc(f.min[k], f.max[k]);
   const rangeRow = textEl(PAD, y, "hover-sub",
-    `median ${f.med[k].toFixed(3)} ns/B (${gbps(f.med[k])}) · range ${f.min[k].toFixed(3)}–${f.max[k].toFixed(3)} (±${(spread * 50).toFixed(0)}%)${spreadNote}`);
+    `median ${fmt(f.med[k])} ${unitLabel()} (${fmtOther(f.med[k])}) · 95% interval ${fmt(cLo)}–${fmt(cHi)} (±${(spread * 50).toFixed(1)}%)${spreadNote}`);
   if (spread >= DATA.spreadWide) rangeRow.setAttribute("fill", "#b45309");
   body.appendChild(rangeRow);
+  y += 13;
+  const modes = f.modes[k];
+  if (modes) {
+    const [mLo, mHi] = asc(modes[0], modes[2]);
+    const [nLo, nHi] = asc(modes[1], modes[3]);
+    const modeRow = textEl(PAD, y, "hover-sub",
+      `two speeds: ${nLo} samples near ${fmt(mLo)}, ${nHi} near ${fmt(mHi)} ${unitLabel()} · extremes ${fmt(rLo)}–${fmt(rHi)}`);
+    modeRow.setAttribute("fill", "#b45309");
+    body.appendChild(modeRow);
+  } else {
+    body.appendChild(textEl(PAD, y, "hover-sub", `extremes ${fmt(rLo)}–${fmt(rHi)} ${unitLabel()} over ${DATA.rounds} samples`));
+  }
 
   /* Code path at this size; the first size of a new path explains why. */
   let ri = 0;
@@ -776,8 +871,8 @@ function showHover(focus, k) {
   if (rows.length > 1) {
     y += LINE;
     body.appendChild(textEl(PAD, y, "hover-sub", "contender"));
-    body.appendChild(textEl(PAD + 150, y, "hover-sub", "ns/B", { "text-anchor": "end" }));
-    body.appendChild(textEl(PAD + 215, y, "hover-sub", "GB/s", { "text-anchor": "end" }));
+    body.appendChild(textEl(PAD + 150, y, "hover-sub", unitLabel(), { "text-anchor": "end" }));
+    body.appendChild(textEl(PAD + 215, y, "hover-sub", otherUnitLabel(), { "text-anchor": "end" }));
     body.appendChild(textEl(W - PAD, y, "hover-sub", `relative to ${f.name}`, { "text-anchor": "end" }));
     y += 4;
     for (const [i, med] of rows) {
@@ -793,8 +888,8 @@ function showHover(focus, k) {
       body.appendChild(sw);
       const cls = "hover-row" + (i === focus ? " hover-row-focus" : "");
       body.appendChild(textEl(PAD + 15, y, cls, s.name));
-      body.appendChild(textEl(PAD + 150, y, cls, med.toFixed(3), { "text-anchor": "end" }));
-      body.appendChild(textEl(PAD + 215, y, cls, gbps(med).replace(" GB/s", ""), { "text-anchor": "end" }));
+      body.appendChild(textEl(PAD + 150, y, cls, fmt(med), { "text-anchor": "end" }));
+      body.appendChild(textEl(PAD + 215, y, cls, fmtOther(med).replace(/ (GB\/s|ns\/B)$/, ""), { "text-anchor": "end" }));
       let rel, color;
       if (i === focus) { rel = "—"; color = "#9a9a9a"; }
       else {
@@ -835,6 +930,8 @@ function hideHover() {
 window.toggleSeries = toggleSeries;
 window.showHover = showHover;
 window.hideHover = hideHover;
+window.setUnit = setUnit;
+window.flipUnit = flipUnit;
 relayout();
   ]]></script>
 </svg>
