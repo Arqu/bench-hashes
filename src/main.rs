@@ -1408,8 +1408,9 @@ fn generate_svg(
     .series-label { cursor: pointer; transition: transform 0.3s ease; }
     .series-label:hover .series-name { text-decoration: underline; }
     .series-hint { display: none; }
-    .marks { transition: opacity 0.3s ease; }
-    .series[data-on="false"] .marks { opacity: 0; pointer-events: none; }
+    .marks, .dots { transition: opacity 0.3s ease; }
+    .marks { pointer-events: none; }
+    .series[data-on="false"] .marks, .dots[data-on="false"] { opacity: 0; pointer-events: none; }
     .series[data-on="false"] .series-name { fill: #9a9a9a; }
     .series[data-on="false"] .series-detail { display: none; }
     .series[data-on="false"] .series-hint { display: inline; }
@@ -1576,6 +1577,18 @@ fn generate_svg(
     let shared_count = provenance_shared.len();
     let mut provenance_slot = shared_count;
 
+    /*
+     * Dots are collected here and emitted after every series' band and
+     * line, so no band can sit above another contender's dots and take
+     * the hover. Each dot layer carries its series index; the script and
+     * stylesheet treat it as part of that series.
+     */
+    let mut dot_layers: Vec<String> = (0..ALGORITHM_COUNT)
+        .map(|algorithm_index| {
+            format!("  <g class=\"dots\" id=\"dots-{algorithm_index}\" data-on=\"true\">\n")
+        })
+        .collect();
+
     for algorithm_index in 0..ALGORITHM_COUNT {
         let algorithm = ALGORITHMS[algorithm_index];
         let color = algorithm.color();
@@ -1654,21 +1667,22 @@ fn generate_svg(
             let (regime_index, first_in_regime) = implementation.regime_index_for(size_index);
             let regime = &implementation.regimes[regime_index];
             let transition = first_in_regime && regime_index > 0;
+            let dots = &mut dot_layers[algorithm_index];
             writeln!(
-                svg,
-                r##"      <g class="dot{}" data-size="{size_index}" transform="translate({x:.2} {median_y:.2})" onmouseenter="showHover({algorithm_index},{size_index})" onmouseleave="hideHover()">"##,
+                dots,
+                r##"    <g class="dot{}" data-size="{size_index}" transform="translate({x:.2} {median_y:.2})" onmouseenter="showHover({algorithm_index},{size_index})" onmouseleave="hideHover()">"##,
                 if transition { " dot-transition" } else { "" },
             )
                 .unwrap();
             if transition {
                 writeln!(
-                    svg,
-                    r##"        <circle class="dot-ring" r="9.5" fill="none" stroke="{color}"/>"##
+                    dots,
+                    r##"      <circle class="dot-ring" r="9.5" fill="none" stroke="{color}"/>"##
                 )
                     .unwrap();
             }
-            writeln!(svg, "        {}", mark_shape(regime.mark, color, if transition { 6.0 } else { 5.0 })).unwrap();
-            svg.push_str("      </g>\n");
+            writeln!(dots, "      {}", mark_shape(regime.mark, color, if transition { 6.0 } else { 5.0 })).unwrap();
+            dots.push_str("    </g>\n");
 
             /*
              * With sixteen columns, a value at every dot would overprint.
@@ -1770,6 +1784,11 @@ fn generate_svg(
         }
 
         writeln!(svg, "  </g>").unwrap();
+    }
+
+    for layer in &dot_layers {
+        svg.push_str(layer);
+        svg.push_str("  </g>\n");
     }
 
     /*
@@ -2187,7 +2206,9 @@ function relayout() {
   /* Each series: band, median line, dots, value labels. */
   DATA.series.forEach((s, i) => {
     const g = document.getElementById("series-" + i);
+    const dots = document.getElementById("dots-" + i);
     g.setAttribute("data-on", on[i] ? "true" : "false");
+    dots.setAttribute("data-on", on[i] ? "true" : "false");
     if (!on[i]) return;
     const X = DATA.x;
     let band = "";
@@ -2197,7 +2218,7 @@ function relayout() {
     let med = "";
     X.forEach((x, k) => { med += (k ? " L " : "M ") + x + " " + mapY(s.med[k]).toFixed(2); });
     g.querySelector(".median").setAttribute("d", med);
-    g.querySelectorAll(".dot").forEach(dot => {
+    dots.querySelectorAll(".dot").forEach(dot => {
       const k = +dot.getAttribute("data-size");
       dot.setAttribute("transform", `translate(${X[k]} ${mapY(s.med[k]).toFixed(2)})`);
     });
