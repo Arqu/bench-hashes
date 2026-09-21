@@ -6,11 +6,17 @@ rust-version = "1.75"
 build = "build.rs"
 
 [dependencies]
-# Rayon is not enabled, so BLAKE3 remains single-threaded.
+# The `rayon` feature adds Hasher::update_rayon for the BLAKE3 mt contender;
+# blake3::hash and every other API stay single-threaded with it on.
 [dependencies.blake3]
 version = "1"
 default-features = false
-features = ["std"]
+features = ["std", "rayon"]
+
+# The pool BLAKE3 mt runs on. blake3 itself depends on rayon-core alone, and
+# ThreadPoolBuilder lives there.
+[dependencies.rayon-core]
+version = "1.12"
 
 # Machine metadata does not need sysinfo's multithread feature.
 [dependencies.sysinfo]

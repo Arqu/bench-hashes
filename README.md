@@ -2,10 +2,13 @@
 
 Written by GPT-5.6 Sol and Claude Fable 5 to my (Zooko's) specifications.
 
-A small single-threaded benchmark comparing BLAKE3, SHA-256, SHA-1DC
-(SHA-1 with collision detection, the construction git uses), BLAKE3
-servil (a fork with SME2 kernels for Apple M4 and later), and on Apple
-platforms the system's CommonCrypto SHA-256.
+A small benchmark comparing BLAKE3, SHA-256, SHA-1DC (SHA-1 with
+collision detection, the construction git uses), BLAKE3 servil (a fork
+with SME2 kernels for Apple M4 and later), and on Apple platforms the
+system's CommonCrypto SHA-256. Two multithreaded contenders, BLAKE3 mt
+(the crates.io crate on a Rayon pool) and BLAKE3 servil mt (the fork
+over the machine's execution lanes), join with `--duo`, which measures
+every contender under contention: see "The duo measurement" below.
 
 The benchmark tests every power-of-two input size from 64 B to 1 MiB,
 plus 3 KiB: 64 B, 128 B, 256 B, 512 B, 1 KiB, 2 KiB, 3 KiB, 4 KiB, 8 KiB,
@@ -67,7 +70,36 @@ Keys: `blake3`, `blake3-servil`, `sha256`, `sha256-ring`, `sha1dc`; and
 `sha256-cc`, which runs only when named with `--contenders`. It stays
 available for direct comparison; on Apple silicon the ring and sha2
 crates are each faster than CommonCrypto at every size, so the default
-and `--all` runs leave it out.
+and `--all` runs leave it out. `blake3-mt` and `blake3-servil-mt` are
+the multithreaded contenders; they join default and `--all` runs under
+`--duo`, and run in any mode when named.
+
+### The duo measurement
+
+```sh
+cargo run --release -- --duo --all                   # every contender, two copies at once
+```
+
+A hash tuned to take every core finishes sooner on an idle machine and
+later on a busy one: when the cores it counted on are running something
+else, its threads queue behind that work, and the pair finishes after
+two single-threaded hashes would have. Solo timing shows the first
+case alone. `--duo` shows the second: every sample runs two independent
+copies of the contender at the same time, each on its own thread over
+its own input of the size, released together, and records the time to
+the later finish, per byte of one copy. Every contender is measured
+this way in a duo run, single-threaded ones included, so the columns
+compare; a single-threaded hash costs about what it costs solo (the
+two copies share memory bandwidth and, under a hypervisor, a scheduler),
+and a multithreaded one shows what its threads cost when the machine is
+shared. The two multithreaded contenders are the reason for the mode
+and join `--all` and default runs only under it: their solo numbers
+describe an idle machine, which is the one case a multithreaded hash
+is built for, and the duo numbers describe the rest.
+
+Duo samples report measured time (the cycle-count normalisation described at the top applies to solo runs): the
+copies' cycle counters describe two threads, and no one rate normalises
+the later finish.
 
 `--trace-clocks PATH` writes one CSV line per sample with the wall
 (`Instant`), thread-CPU, process-CPU, and `mach_absolute_time` readings
@@ -134,23 +166,28 @@ Results are written to a machine-specific subdirectory:
 ```text
 benchmark-results/{CPU}.{OS}/bench-hashes.result.txt
 benchmark-results/{CPU}.{OS}/bench-hashes.graph.svg
+benchmark-results/{CPU}.{OS}/bench-hashes.duo.result.txt   # --duo runs
+benchmark-results/{CPU}.{OS}/bench-hashes.duo.graph.svg
 ```
 
 ## BLAKE3 threading
 
-The BLAKE3 dependency is built with only its std feature. Its optional
-Rayon support is not enabled, and the benchmark uses the ordinary one-shot
-blake3::hash function.
+The `BLAKE3` and `BLAKE3 servil` contenders call the one-shot
+`blake3::hash` function, which is single-threaded on every platform.
+BLAKE3 may still use SIMD parallelism within the calling thread; that
+is single-threaded execution, not operating-system-level
+multithreading.
 
-BLAKE3 may still use SIMD parallelism within the calling thread. That is
-single-threaded execution, not operating-system-level multithreading.
+The blake3 crate is built with its `rayon` feature so that the
+`BLAKE3 mt` contender can call `Hasher::update_rayon`; that feature
+adds the method and leaves `blake3::hash` and every other API
+single-threaded.
 
 ## Hash implementations
 
-BLAKE3 is provided by the blake3 crate, built with only its std
-feature. Rayon is not enabled, and the benchmark uses the one-shot
-blake3::hash function. BLAKE3 may still use SIMD parallelism within the
-calling thread; that is single-threaded execution, not multithreading.
+BLAKE3 is provided by the blake3 crate through the one-shot
+blake3::hash function, which is single-threaded (see "BLAKE3
+threading").
 
 SHA-256 is provided by RustCrypto's sha2 crate (0.11), whose built-in
 backends use the ARMv8 SHA-256 instructions on AArch64 and SHA-NI on
@@ -174,6 +211,31 @@ assembles SME2 (see Requirements above). Both requirements fail stop,
 so this column measures the SME2 kernel on every machine where the
 benchmark runs. Its provenance line gives the checkout's branch, commit,
 and clean or dirty state instead of a registry checksum.
+
+BLAKE3 mt is the crates.io crate's own multithreading:
+`Hasher::update_rayon` on a Rayon pool with one thread per logical
+CPU (Rayon's default), built once per thread that hashes. The method
+splits the tree recursively with `rayon::join` down to the SIMD degree,
+so any input above one SIMD width of chunks may cross threads, and idle
+pool threads steal the halves. Each duo copy runs on its own thread and
+so on its own pool, as two independent programs would; both pools want
+every CPU, which is the behaviour the duo measurement is there to show.
+
+BLAKE3 servil mt is the fork's `lanes` module. A lane is a run of CPUs
+that share the execution resource the kernel saturates: on Apple
+silicon every core cluster has one SME unit, so a second SME2 thread on
+a cluster adds nothing, and lanes are clusters (from
+`hw.perflevelN.physicalcpu / cpusperl2`). On Linux the module measures
+once whether two threads keep their speed side by side and takes CPUs
+or CPU clusters accordingly; `BLAKE3_LANES=n` overrides. Inputs of 128
+KiB and up split at subtree boundaries into one piece per lane, each
+hashed by a resident worker thread with `set_input_offset` and
+`finalize_non_root`, and the caller merges the chaining values with
+`merge_subtrees_*`. A call takes only the lanes that are free at that
+moment (a process-wide count) and stands down to the caller's thread
+for a while when its workers straggle, which is how two callers, or two
+processes, come to share the machine instead of each taking all of it.
+Below 128 KiB the call is `blake3_sme2::hash`.
 
 SHA-256 CommonCrypto, on Apple platforms only, calls the system's
 libSystem through FFI using `CC_SHA256_Init`, `CC_SHA256_Update`, and
@@ -208,12 +270,15 @@ four chunks at 4 KiB; AVX-512, AVX2, SSE4.1, or SSE2 on x86). The SME2
 fork runs an input of one chunk or less through one call of its scalar
 kernel (every block including the root compression, with the state in
 registers throughout), two to fifteen chunks on integer + NEON hybrid
-kernels, and groups of sixteen on the SME2 kernel (16 KiB and above). SHA-256 and SHA-1DC run one path at every size.
+kernels, and groups of sixteen on the SME2 kernel (16 KiB and above).
+BLAKE3 mt leaves the caller's thread above one SIMD width of chunks;
+BLAKE3 servil mt splits over lanes from 128 KiB, its fourth path, drawn
+as a triangle. SHA-256 and SHA-1DC run one path at every size.
 
 The text report lists the path at each size for both BLAKE3s and marks
 where a new one begins. In the graph, dot shape carries the same
 information: a circle for a contender's first path, a diamond for its
-second, a square for its third. The first dot of a new path wears a
+second, a square for its third, a triangle for a fourth. The first dot of a new path wears a
 ring; hovering any dot names its path, and hovering a ringed dot adds a
 sentence on why the path changes there. A legend under the plot
 explains the shapes. Colour stays with the contender, so a line keeps

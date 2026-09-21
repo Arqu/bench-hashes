@@ -104,6 +104,13 @@ enum Algorithm {
     Sha256CommonCrypto,
     /// ring's SHA-256: BoringSSL's assembly, with runtime CPU detection.
     Sha256Ring,
+    /// crates.io blake3 through Hasher::update_rayon on a Rayon pool sized
+    /// to the machine: the crate's own multithreading.
+    Blake3Rayon,
+    /// The fork's lanes module: one thread per execution lane (a core
+    /// cluster with its SME unit), taken only while free, so concurrent
+    /// callers share the machine.
+    Blake3Sme2Lanes,
 }
 
 /// The hash function a contender implements; "best available" is chosen
@@ -126,13 +133,15 @@ impl Family {
 }
 
 impl Algorithm {
-    const ALL: [Algorithm; 6] = [
+    const ALL: [Algorithm; 8] = [
         Algorithm::Blake3,
         Algorithm::Sha256,
         Algorithm::Sha1Dc,
         Algorithm::Blake3Sme2,
         Algorithm::Sha256CommonCrypto,
         Algorithm::Sha256Ring,
+        Algorithm::Blake3Rayon,
+        Algorithm::Blake3Sme2Lanes,
     ];
 
     /// Command-line key, as in `--contenders blake3,sha256-cc`.
@@ -144,15 +153,22 @@ impl Algorithm {
             Self::Blake3Sme2 => "blake3-servil",
             Self::Sha256CommonCrypto => "sha256-cc",
             Self::Sha256Ring => "sha256-ring",
+            Self::Blake3Rayon => "blake3-mt",
+            Self::Blake3Sme2Lanes => "blake3-servil-mt",
         }
     }
 
     fn family(self) -> Family {
         match self {
-            Self::Blake3 | Self::Blake3Sme2 => Family::Blake3,
+            Self::Blake3 | Self::Blake3Sme2 | Self::Blake3Rayon | Self::Blake3Sme2Lanes => Family::Blake3,
             Self::Sha256 | Self::Sha256CommonCrypto | Self::Sha256Ring => Family::Sha256,
             Self::Sha1Dc => Family::Sha1Dc,
         }
+    }
+
+    /// Whether this contender may use more than the calling thread.
+    fn multithreaded(self) -> bool {
+        matches!(self, Self::Blake3Rayon | Self::Blake3Sme2Lanes)
     }
 
     /*
@@ -165,10 +181,34 @@ impl Algorithm {
         matches!(self, Self::Sha256CommonCrypto)
     }
 
+    /// Contenders that run in --all and default runs only with --duo: a
+    /// multithreaded hash measured alone shows what it takes from an idle
+    /// machine, and the duo measurement is what makes that number fair to
+    /// read beside the single-threaded ones. Named with --contenders they
+    /// run either way.
+    fn duo_only(self) -> bool {
+        self.multithreaded()
+    }
+
     /// Whether this contender can run on the current machine, or why not.
     fn availability(self) -> Result<(), String> {
         match self {
             Self::Blake3 | Self::Sha256 | Self::Sha1Dc | Self::Sha256Ring => Ok(()),
+            Self::Blake3Rayon => {
+                if std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) >= 2 {
+                    Ok(())
+                } else {
+                    Err("this machine has one CPU; a multithreaded contender has nothing to add".to_owned())
+                }
+            }
+            Self::Blake3Sme2Lanes => {
+                Self::Blake3Sme2.availability()?;
+                if blake3_sme2::lanes::lane_count() >= 2 {
+                    Ok(())
+                } else {
+                    Err("this machine has one execution lane; a multithreaded contender has nothing to add".to_owned())
+                }
+            }
             Self::Blake3Sme2 => {
                 let platform = blake3_sme2::platform::Platform::detect();
                 if format!("{platform:?}") == "SME2" {
@@ -197,12 +237,15 @@ impl Algorithm {
             Self::Blake3Sme2 => "BLAKE3 servil",
             Self::Sha256CommonCrypto => "SHA-256 CommonCrypto",
             Self::Sha256Ring => "SHA-256 ring",
+            Self::Blake3Rayon => "BLAKE3 mt",
+            Self::Blake3Sme2Lanes => "BLAKE3 servil mt",
         }
     }
 
     /*
      * Contender colours stay off pure green and pure red, which the hover
-     * panel reserves for "faster" and "slower".
+     * panel reserves for "faster" and "slower". A multithreaded contender
+     * wears a darker shade of its single-threaded sibling's hue.
      */
     fn color(self) -> &'static str {
         match self {
@@ -212,6 +255,8 @@ impl Algorithm {
             Self::Blake3Sme2 => "#7c3aed",
             Self::Sha256CommonCrypto => "#0e9aa7",
             Self::Sha256Ring => "#c2410c",
+            Self::Blake3Rayon => "#1e3a8a",
+            Self::Blake3Sme2Lanes => "#4c1d95",
         }
     }
 
@@ -224,6 +269,8 @@ impl Algorithm {
             Self::Blake3Sme2 => BLAKE3_SME2_SOURCE_INFO,
             Self::Sha256CommonCrypto => "CommonCrypto CC_SHA256_Init/Update/Final from the running macOS (libSystem); version follows the OS",
             Self::Sha256Ring => RING_SOURCE_INFO,
+            Self::Blake3Rayon => BLAKE3_SOURCE_INFO,
+            Self::Blake3Sme2Lanes => BLAKE3_SME2_SOURCE_INFO,
         }
     }
 
@@ -236,6 +283,21 @@ impl Algorithm {
             Self::Blake3Sme2 => "single-threaded; SME2 kernel for groups of sixteen chunks, integer + NEON hybrid kernels below that; needs a CPU with SME2",
             Self::Sha256CommonCrypto => "Apple CommonCrypto CC_SHA256_Init/Update/Final via FFI, the fastest route into the system's own SHA-256 (corecrypto, ARMv8 SHA-256 instructions on Apple silicon)",
             Self::Sha256Ring => "ring::digest::digest, BoringSSL's sha256_block_data_order_hw assembly (ARMv8 SHA-256 instructions; SHA-NI on x86), selected at runtime",
+            Self::Blake3Rayon => "multithreaded; Hasher::update_rayon on a Rayon pool with one thread per logical CPU (the crate's own multithreading, which splits the tree recursively over the pool; inputs under a few chunks stay on the caller's thread)",
+            Self::Blake3Sme2Lanes => "multithreaded; blake3_sme2::lanes::hash: inputs of 128 KiB and up split into subtrees over the machine's execution lanes (one per core cluster, which is one SME unit), each lane hashed by a resident worker thread with the SME2 kernel; a call takes only the lanes free at that moment, so concurrent callers share the machine (cooperative admission); below 128 KiB the caller's thread alone",
+        }
+    }
+
+    /// The description of the machine's lanes, for the reports; present
+    /// when a multithreaded contender is in the roster.
+    fn thread_resources(self) -> Option<String> {
+        match self {
+            Self::Blake3Rayon => Some(format!(
+                "Rayon pool: {} threads (one per logical CPU)",
+                std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)
+            )),
+            Self::Blake3Sme2Lanes => Some(format!("Lanes: {}", blake3_sme2::lanes::describe_lanes())),
+            _ => None,
         }
     }
 }
@@ -413,13 +475,16 @@ struct Roster {
     orders: Vec<Vec<usize>>,
     /// Sample rounds: a multiple of INPUT_COUNT and of orders.len().
     rounds: usize,
+    /// Each sample runs two independent copies of the contender at once
+    /// and times the later finish (see Duo).
+    duo: bool,
 }
 
 impl Roster {
-    fn new(algorithms: Vec<Algorithm>, thorough: bool) -> Self {
+    fn new(algorithms: Vec<Algorithm>, thorough: bool, duo: bool) -> Self {
         assert!(
-            (2..=6).contains(&algorithms.len()),
-            "a run compares two to six contenders; {} were selected",
+            (2..=8).contains(&algorithms.len()),
+            "a run compares two to eight contenders; {} were selected",
             algorithms.len()
         );
         for (index, algorithm) in algorithms.iter().enumerate() {
@@ -436,7 +501,7 @@ impl Roster {
         let step = lcm(INPUT_COUNT, orders.len());
         let target = SAMPLE_ROUNDS_TARGET * if thorough { THOROUGH_MULTIPLIER } else { 1 };
         let rounds = target.div_ceil(step) * step;
-        Self { algorithms, orders, rounds }
+        Self { algorithms, orders, rounds, duo }
     }
 
     fn len(&self) -> usize {
@@ -490,7 +555,7 @@ enum Selection {
 }
 
 const USAGE: &str = "\
-bench-hashes: single-threaded hash throughput by input size
+bench-hashes: hash throughput by input size
 
   bench-hashes                     SHA-1DC plus the best available BLAKE3 and
                                    SHA-256 on this machine (best = Pareto-better
@@ -500,8 +565,16 @@ bench-hashes: single-threaded hash throughput by input size
   bench-hashes --contenders K,...  exactly these, in this column order
   bench-hashes --list              contenders and their availability here
 
-Keys: blake3, blake3-servil, sha256, sha256-ring, sha1dc; sha256-cc on request
+Keys: blake3, blake3-servil, sha256, sha256-ring, sha1dc; sha256-cc on request;
+      blake3-mt and blake3-servil-mt (multithreaded) in --all and default runs
+      with --duo, or when named
 
+  --duo                            every sample runs two independent copies of
+                                   the contender at once, on two threads, and
+                                   records when the later one finishes: the
+                                   cost of a hash when the machine is shared.
+                                   A contender that takes the whole machine to
+                                   go faster alone shows its price here
   --thorough                       three times the sample rounds, for narrower
                                    bands; about three times the run time
   --trace-clocks PATH              also write one CSV line per sample with
@@ -516,19 +589,24 @@ struct Options {
     explicit: Vec<Algorithm>,
     trace_path: Option<std::path::PathBuf>,
     thorough: bool,
+    duo: bool,
 }
 
 fn parse_arguments() -> Options {
     let mut arguments: Vec<String> = std::env::args().skip(1).collect();
 
-    /* --thorough may accompany any selection. */
-    let thorough = arguments
-        .iter()
-        .position(|argument| argument == "--thorough")
-        .map(|index| {
-            arguments.remove(index);
-        })
-        .is_some();
+    /* --thorough and --duo may accompany any selection. */
+    let mut take_flag = |flag: &str| {
+        arguments
+            .iter()
+            .position(|argument| argument == flag)
+            .map(|index| {
+                arguments.remove(index);
+            })
+            .is_some()
+    };
+    let thorough = take_flag("--thorough");
+    let duo = take_flag("--duo");
 
     /* --trace-clocks PATH may accompany any selection. */
     let trace_path = arguments
@@ -542,7 +620,7 @@ fn parse_arguments() -> Options {
         });
 
     let (selection, explicit) = parse_selection(&arguments);
-    Options { selection, explicit, trace_path, thorough }
+    Options { selection, explicit, trace_path, thorough, duo }
 }
 
 fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
@@ -553,10 +631,11 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
             for algorithm in Algorithm::ALL {
                 let status = match algorithm.availability() {
                     Ok(()) if algorithm.on_request_only() => "available; runs only when named with --contenders".to_owned(),
+                    Ok(()) if algorithm.duo_only() => "available; in --all and default runs with --duo, or when named".to_owned(),
                     Ok(()) => "available".to_owned(),
                     Err(reason) => format!("unavailable: {reason}"),
                 };
-                println!("  {:<12} {:<22} {status}", algorithm.key(), algorithm.name());
+                println!("  {:<17} {:<22} {status}", algorithm.key(), algorithm.name());
             }
             std::process::exit(0);
         }
@@ -587,11 +666,19 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
 }
 
 fn main() {
-    let Options { selection, explicit, trace_path, thorough } = parse_arguments();
+    let Options { selection, explicit, trace_path, thorough, duo } = parse_arguments();
     let mut trace = trace_path.map(ClockTrace::new);
+    assert!(
+        !(duo && trace.is_some()),
+        "--trace-clocks reads one thread's clocks; --duo times two, so the two options are exclusive"
+    );
     let available: Vec<Algorithm> = Algorithm::ALL
         .into_iter()
-        .filter(|algorithm| algorithm.availability().is_ok() && !algorithm.on_request_only())
+        .filter(|algorithm| {
+            algorithm.availability().is_ok()
+                && !algorithm.on_request_only()
+                && (duo || !algorithm.duo_only())
+        })
         .collect();
 
     let machine = machine_metadata();
@@ -604,20 +691,20 @@ fn main() {
      */
     let (roster, results, basis, selection_note) = match selection {
         Selection::Explicit => {
-            let roster = Roster::new(explicit, thorough);
+            let roster = Roster::new(explicit, thorough, duo);
             let (results, basis) = measure_all(&roster, trace.as_mut());
             (roster, results, basis, String::from("contenders chosen on the command line"))
         }
         Selection::All => {
-            let roster = Roster::new(available, thorough);
+            let roster = Roster::new(available, thorough, duo);
             let (results, basis) = measure_all(&roster, trace.as_mut());
             (roster, results, basis, String::from("every contender available on this machine"))
         }
         Selection::Best => {
-            let full = Roster::new(available, thorough);
+            let full = Roster::new(available, thorough, duo);
             let (full_results, basis) = measure_all(&full, trace.as_mut());
             let (keep, note) = choose_best_per_family(&full, &full_results);
-            let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect(), thorough);
+            let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect(), thorough, duo);
             let results: Results = full_results
                 .iter()
                 .enumerate()
@@ -632,6 +719,11 @@ fn main() {
         trace.write();
     }
 
+    let selection_note = if duo {
+        format!("{selection_note}; duo measurement (two copies at once, later finish)")
+    } else {
+        selection_note
+    };
     let text = generate_text(&roster, &results, &machine, &selection_note, basis);
     let svg = generate_svg(&roster, &results, &machine, &selection_note, basis);
 
@@ -646,8 +738,10 @@ fn main() {
         )
     });
 
-    let text_path = directory.join("bench-hashes.result.txt");
-    let svg_path = directory.join("bench-hashes.graph.svg");
+    /* Duo results sit beside the solo ones under their own names. */
+    let stem = if duo { "bench-hashes.duo" } else { "bench-hashes" };
+    let text_path = directory.join(format!("{stem}.result.txt"));
+    let svg_path = directory.join(format!("{stem}.graph.svg"));
 
     fs::write(&text_path, &text).unwrap_or_else(|error| {
         panic!("failed to write {}: {error}", text_path.display())
@@ -786,6 +880,14 @@ fn first_crossover(results: &Results, a: usize, b: usize) -> Option<&'static str
 fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results, TimeBasis) {
     let inputs: [Vec<u8>; INPUT_COUNT] =
         std::array::from_fn(|index| make_input(INPUT_SIZES[index].bytes));
+    /*
+     * The second copy in a duo sample hashes its own buffer of the same
+     * size and different contents, as two independent programs would;
+     * sharing one buffer would let the copies share cache lines.
+     */
+    let duo_inputs: [Vec<u8>; INPUT_COUNT] =
+        std::array::from_fn(|index| make_input_seeded(INPUT_SIZES[index].bytes, 1));
+    let duo: Option<&Duo> = roster.duo.then(Duo::new);
 
     /*
      * The two BLAKE3 contenders must produce the same digest on every input;
@@ -798,6 +900,22 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
             "BLAKE3 servil must agree with crates.io blake3 on a {}-byte input",
             input.len(),
         );
+        if roster.algorithms.contains(&Algorithm::Blake3Rayon) {
+            assert_eq!(
+                blake3::hash(input).as_bytes(),
+                rayon_pool::hash(input).as_bytes(),
+                "BLAKE3 mt must agree with blake3::hash on a {}-byte input",
+                input.len(),
+            );
+        }
+        if roster.algorithms.contains(&Algorithm::Blake3Sme2Lanes) {
+            assert_eq!(
+                blake3::hash(input).as_bytes(),
+                blake3_sme2::lanes::hash(input).as_bytes(),
+                "BLAKE3 servil mt must agree with blake3::hash on a {}-byte input",
+                input.len(),
+            );
+        }
         if roster.algorithms.contains(&Algorithm::Sha256CommonCrypto) {
             assert_eq!(
                 Sha256::digest(input).as_slice(),
@@ -831,6 +949,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                 calibrate_batch(
                     roster.algorithms[algorithm_index],
                     &inputs[size_index],
+                    duo.map(|duo| (duo, duo_inputs[size_index].as_slice())),
                 );
         }
     }
@@ -849,11 +968,14 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                 (size_offset + warmup_round) % INPUT_COUNT;
 
             for &algorithm_index in order {
-                run_batch(
-                    roster.algorithms[algorithm_index],
-                    &inputs[size_index],
-                    batch_iterations[algorithm_index][size_index],
-                );
+                let algorithm = roster.algorithms[algorithm_index];
+                let iterations = batch_iterations[algorithm_index][size_index];
+                match duo {
+                    Some(duo) => {
+                        duo.run(algorithm, &inputs[size_index], &duo_inputs[size_index], iterations);
+                    }
+                    None => run_batch(algorithm, &inputs[size_index], iterations),
+                }
             }
         }
     }
@@ -897,13 +1019,24 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                     (0, 0, 0, PerfCounters::default())
                 };
 
-                let cycles0 = trace_clocks::thread_cycles();
-                let started = sample_clock::now();
-
-                run_batch(algorithm, input, iterations);
-
-                let elapsed_ns = sample_clock::since_ns(started);
-                let cycles = trace_clocks::thread_cycles() - cycles0;
+                /*
+                 * Solo: this thread runs the batch and its own cycle counter
+                 * describes the work. Duo: two threads run a batch each and
+                 * the sample is the time to the later finish; the copies'
+                 * cycle counts describe two threads and cannot normalise one
+                 * time, so duo samples carry zero cycles and the run reports
+                 * measured time (see TimeBasis).
+                 */
+                let (elapsed_ns, cycles) = match duo {
+                    Some(duo) => (duo.run(algorithm, input, &duo_inputs[size_index], iterations), 0),
+                    None => {
+                        let cycles0 = trace_clocks::thread_cycles();
+                        let started = sample_clock::now();
+                        run_batch(algorithm, input, iterations);
+                        let elapsed_ns = sample_clock::since_ns(started);
+                        (elapsed_ns, trace_clocks::thread_cycles() - cycles0)
+                    }
+                };
 
                 if let Some(trace) = trace.as_deref_mut() {
                     let perf1 = trace_clocks::perf_counters();
@@ -1108,6 +1241,12 @@ fn running_medians(roster: &Roster, samples: &Samples, size_index: usize) -> Str
 }
 
 fn make_input(size: usize) -> Vec<u8> {
+    make_input_seeded(size, 0)
+}
+
+/// A second buffer of the same size with different contents: `seed` 0 is
+/// make_input's buffer, other seeds differ from it and from each other.
+fn make_input_seeded(size: usize, seed: u64) -> Vec<u8> {
     assert!(size > 0, "input size must be positive");
 
     let mut input = vec![0_u8; size];
@@ -1117,7 +1256,7 @@ fn make_input(size: usize) -> Vec<u8> {
      * Cryptographic hash performance should not depend on these byte values.
      */
     let mut state =
-        0x6a09_e667_f3bc_c909_u64 ^ (size as u64).rotate_left(17);
+        0x6a09_e667_f3bc_c909_u64 ^ (size as u64).rotate_left(17) ^ seed.wrapping_mul(0x9e37_79b9_7f4a_7c15);
 
     for byte in &mut input {
         state ^= state << 13;
@@ -1172,6 +1311,158 @@ fn run_batch(
                 let digest = ring::digest::digest(&ring::digest::SHA256, black_box(input));
                 let _ = black_box(digest);
             }
+        }
+        Algorithm::Blake3Rayon => {
+            for _ in 0..iterations {
+                let digest = rayon_pool::hash(black_box(input));
+                let _ = black_box(digest);
+            }
+        }
+        Algorithm::Blake3Sme2Lanes => {
+            for _ in 0..iterations {
+                let digest = blake3_sme2::lanes::hash(black_box(input));
+                let _ = black_box(digest);
+            }
+        }
+    }
+}
+
+/*
+ * The crates.io crate's multithreading: Hasher::update_rayon on a Rayon
+ * pool. The pool is built once per thread that hashes, sized to the
+ * machine (Rayon's default), which is what a program using update_rayon
+ * gets. In a duo sample each copy runs on its own thread and so on its own
+ * pool, as two independent programs would; both pools want every CPU.
+ */
+mod rayon_pool {
+    use std::cell::OnceCell;
+
+    thread_local! {
+        static POOL: OnceCell<rayon_core::ThreadPool> = const { OnceCell::new() };
+    }
+
+    pub fn hash(input: &[u8]) -> blake3::Hash {
+        POOL.with(|cell| {
+            let pool = cell.get_or_init(|| {
+                rayon_core::ThreadPoolBuilder::new()
+                    .build()
+                    .expect("building a Rayon pool for BLAKE3 mt")
+            });
+            pool.install(|| {
+                let mut hasher = blake3::Hasher::new();
+                hasher.update_rayon(input);
+                hasher.finalize()
+            })
+        })
+    }
+}
+
+/*
+ * The duo measurement: two independent copies of a contender run at once,
+ * each on its own thread over its own input, and the sample is the time
+ * from a shared release to the later finish. A hash that takes the whole
+ * machine to go faster alone runs beside a copy of itself here and shows
+ * what that costs; a hash that leaves room finishes at its solo speed.
+ * Every contender, single- or multithreaded, is measured the same way, so
+ * the columns compare.
+ *
+ * The two threads persist for the run: a job (contender, input,
+ * iterations) is posted, both threads take it and wait at a barrier so
+ * they start together, and the caller reads the later finish. The clock
+ * starts when the barrier releases and each thread stops its own; the
+ * later stop is the sample. Reported per byte per copy: a duo sample over
+ * N bytes per copy is divided by N, so the number reads as "the time one
+ * hash costs when another runs beside it".
+ */
+struct Duo {
+    /// A job for both threads, or None between jobs.
+    job: std::sync::Mutex<Option<DuoJob>>,
+    posted: std::sync::Condvar,
+    /// Both workers and the caller: releases together once both hold the job.
+    start: std::sync::Barrier,
+    /// Each worker's finish, in sample-clock nanoseconds since the release.
+    finished: std::sync::Mutex<[Option<u64>; 2]>,
+    done: std::sync::Condvar,
+}
+
+#[derive(Clone, Copy)]
+struct DuoJob {
+    algorithm: Algorithm,
+    inputs: [*const [u8]; 2],
+    iterations: usize,
+    /// Which workers have taken this job (a bit each).
+    taken: u8,
+}
+
+// The input pointers are borrows of the caller's buffers, which outlive the
+// job: run() returns only after both finishes are read.
+unsafe impl Send for DuoJob {}
+
+impl Duo {
+    fn new() -> &'static Self {
+        let duo: &'static Self = Box::leak(Box::new(Self {
+            job: std::sync::Mutex::new(None),
+            posted: std::sync::Condvar::new(),
+            start: std::sync::Barrier::new(3),
+            finished: std::sync::Mutex::new([None, None]),
+            done: std::sync::Condvar::new(),
+        }));
+        for copy in 0..2 {
+            std::thread::Builder::new()
+                .name(format!("duo-copy-{copy}"))
+                .spawn(move || duo.worker(copy))
+                .expect("spawning a duo copy thread");
+        }
+        duo
+    }
+
+    /// Run `iterations` of `algorithm` on both threads at once, copy 0 over
+    /// `input` and copy 1 over `other`; returns the later finish in
+    /// nanoseconds after the shared release.
+    fn run(&self, algorithm: Algorithm, input: &[u8], other: &[u8], iterations: usize) -> u64 {
+        assert_eq!(input.len(), other.len(), "the two copies hash inputs of one size");
+        {
+            let mut job = self.job.lock().unwrap();
+            assert!(job.is_none(), "one duo job at a time");
+            *job = Some(DuoJob { algorithm, inputs: [input, other], iterations, taken: 0 });
+            self.posted.notify_all();
+        }
+        self.start.wait();
+        let mut finished = self.finished.lock().unwrap();
+        while finished.iter().any(Option::is_none) {
+            finished = self.done.wait(finished).unwrap();
+        }
+        let later = finished.iter().map(|f| f.unwrap()).max().unwrap();
+        *finished = [None, None];
+        later
+    }
+
+    fn worker(&self, copy: usize) {
+        loop {
+            let job = {
+                let mut job = self.job.lock().unwrap();
+                loop {
+                    if let Some(current) = job.as_mut() {
+                        if current.taken & (1 << copy) == 0 {
+                            current.taken |= 1 << copy;
+                            let taken = *current;
+                            if taken.taken == 0b11 {
+                                *job = None;
+                            }
+                            break taken;
+                        }
+                    }
+                    job = self.posted.wait(job).unwrap();
+                }
+            };
+            self.start.wait();
+            let started = sample_clock::now();
+            // Sound: run() holds the borrows until both finishes are read.
+            run_batch(job.algorithm, unsafe { &*job.inputs[copy] }, job.iterations);
+            let elapsed_ns = sample_clock::since_ns(started);
+            let mut finished = self.finished.lock().unwrap();
+            finished[copy] = Some(elapsed_ns);
+            self.done.notify_all();
         }
     }
 }
@@ -1460,13 +1751,19 @@ mod sample_clock {
 fn calibrate_batch(
     algorithm: Algorithm,
     input: &[u8],
+    duo: Option<(&Duo, &[u8])>,
 ) -> usize {
     let mut iterations = 1usize;
 
     loop {
-        let started = sample_clock::now();
-        run_batch(algorithm, input, iterations);
-        let elapsed_ns = u128::from(sample_clock::since_ns(started));
+        let elapsed_ns = match duo {
+            Some((duo, other)) => u128::from(duo.run(algorithm, input, other, iterations)),
+            None => {
+                let started = sample_clock::now();
+                run_batch(algorithm, input, iterations);
+                u128::from(sample_clock::since_ns(started))
+            }
+        };
 
         /*
          * A sufficiently short interval can be below a platform timer's
@@ -1657,6 +1954,8 @@ enum Mark {
     Circle,
     Diamond,
     Square,
+    /// A fourth path, which only the multithreaded servil contender has.
+    Triangle,
 }
 
 impl Mark {
@@ -1665,6 +1964,7 @@ impl Mark {
             Self::Circle => "circle",
             Self::Diamond => "diamond",
             Self::Square => "square",
+            Self::Triangle => "triangle",
         }
     }
 }
@@ -1889,7 +2189,48 @@ fn detect_implementation(algorithm: Algorithm) -> Implementation {
         Algorithm::Blake3Sme2 => detect_blake3_sme2_implementation(),
         Algorithm::Sha256CommonCrypto => detect_common_crypto_implementation(),
         Algorithm::Sha256Ring => detect_ring_implementation(),
+        Algorithm::Blake3Rayon => detect_blake3_rayon_implementation(),
+        Algorithm::Blake3Sme2Lanes => detect_blake3_sme2_lanes_implementation(),
     }
+}
+
+/*
+ * update_rayon splits the tree with rayon::join down to the SIMD degree,
+ * so any input above one SIMD width of chunks may cross threads; the
+ * regime boundary is where the crate's serial path ends.
+ */
+fn detect_blake3_rayon_implementation() -> Implementation {
+    let single = detect_blake3_implementation();
+    let degree_bytes = single.regimes.last().map(|r| r.first).unwrap_or(0).max(2 * 1024);
+    Implementation::new(
+        single.platform,
+        vec![
+            Regime {
+                first: 0,
+                name: "caller's thread (below one SIMD width of chunks)",
+                why: "One SIMD width of chunks or less is one hash_many call; update_rayon has nothing to split.",
+                mark: Mark::Circle,
+            },
+            Regime {
+                first: 2 * degree_bytes,
+                name: "rayon::join over the pool",
+                why: "Above one SIMD width of chunks the tree splits recursively with rayon::join, and idle pool threads steal the halves.",
+                mark: Mark::Diamond,
+            },
+        ],
+    )
+}
+
+fn detect_blake3_sme2_lanes_implementation() -> Implementation {
+    let single = detect_blake3_sme2_implementation();
+    let mut regimes = single.regimes.clone();
+    regimes.push(Regime {
+        first: blake3_sme2::lanes::MIN_SPLIT_LEN,
+        name: "subtrees over free lanes",
+        why: "From 128 KiB the input splits into subtrees, one per free lane, each on its own SME2 thread; the caller merges the chaining values.",
+        mark: Mark::Triangle,
+    });
+    Implementation::new(single.platform, regimes)
 }
 
 fn append_implementation_report(output: &mut String, algorithm: Algorithm) {
@@ -1963,6 +2304,18 @@ fn generate_text(
     for algorithm in &roster.algorithms {
         writeln!(output, "{} mode: {}", algorithm.name(), algorithm.mode()).unwrap();
     }
+    for algorithm in &roster.algorithms {
+        if let Some(resources) = algorithm.thread_resources() {
+            writeln!(output, "{} threads: {}", algorithm.name(), resources).unwrap();
+        }
+    }
+    if roster.duo {
+        writeln!(
+            output,
+            "Measurement: duo. Every sample ran two independent copies of the contender at once, on two threads over two inputs of the size, released together; the sample is the time to the later finish, per byte of one copy. A contender that takes the whole machine to go faster alone runs beside a copy of itself here and shows what that costs."
+        )
+        .unwrap();
+    }
     writeln!(output).unwrap();
 
     for algorithm in &roster.algorithms {
@@ -1986,7 +2339,8 @@ fn generate_text(
 
     writeln!(
         output,
-        "Time per byte in ns/B: median, with minimum–maximum beneath; lower is better. Bands in the graph are the 95% interval of each median."
+        "Time per byte in ns/B{}: median, with minimum–maximum beneath; lower is better. Bands in the graph are the 95% interval of each median.",
+        if roster.duo { " (duo: two copies at once, time to the later finish, per byte of one copy)" } else { "" },
     )
         .unwrap();
     writeln!(output).unwrap();
@@ -2057,6 +2411,7 @@ fn column_heading(algorithm: Algorithm) -> &'static str {
     match algorithm {
         Algorithm::Sha256CommonCrypto => "SHA-256 CC",
         Algorithm::Sha256Ring => "SHA-256 ring",
+        Algorithm::Blake3Sme2Lanes => "B3 servil mt",
         other => other.name(),
     }
 }
@@ -2573,9 +2928,16 @@ fn generate_svg(
         }
     }
 
+    /*
+     * Keep the stack inside the plot: with many contenders the pushed-apart
+     * labels can run past the bottom axis, so the whole stack shifts up by
+     * the overrun. The script applies the same rule after each toggle.
+     */
+    let overrun = (label_slots.last().map(|slot| slot.1).unwrap_or(0.0) + 20.0 - PLOT_BOTTOM).max(0.0);
+
     let mut label_y_by_algorithm = vec![0.0_f64; roster.len()];
     for (algorithm_index, label_y) in &label_slots {
-        label_y_by_algorithm[*algorithm_index] = *label_y;
+        label_y_by_algorithm[*algorithm_index] = *label_y - overrun;
     }
 
     /*
@@ -2824,7 +3186,7 @@ fn generate_svg(
             .iter()
             .enumerate()
             .map(|(index, &mark)| {
-                (mark, match index { 0 => "first code path", 1 => "second", _ => "third" })
+                (mark, match index { 0 => "first code path", 1 => "second", 2 => "third", _ => "fourth" })
             })
             .collect();
         /* Lay out right-to-left so the row ends flush with the plot edge. */
@@ -3054,6 +3416,16 @@ fn mark_shape(mark: Mark, color: &str, radius: f64) -> String {
                 w = 2.0 * h,
             )
         }
+        Mark::Triangle => {
+            /* Point up; the centroid sits at the origin. */
+            let r = radius * 1.3;
+            format!(
+                r##"<path d="M 0 {top:.2} L {r:.2} {base:.2} L {left:.2} {base:.2} Z" fill="{color}" {stroke}/>"##,
+                top = -r,
+                base = r * 0.5,
+                left = -r,
+            )
+        }
     }
 }
 
@@ -3115,6 +3487,18 @@ fn contender_provenance_lines(
             package_name_and_version(RING_SOURCE_INFO),
             algorithm.mode(),
         )],
+        Algorithm::Blake3Rayon => vec![
+            format!(
+                "{name}: {} · Hasher::update_rayon · platform {}",
+                package_name_and_version(BLAKE3_SOURCE_INFO),
+                implementation.platform,
+            ),
+            format!("{name}: {}", algorithm.thread_resources().unwrap()),
+        ],
+        Algorithm::Blake3Sme2Lanes => vec![
+            format!("{name}: {} · lanes::hash", short_git_source(BLAKE3_SME2_SOURCE_INFO)),
+            format!("{name}: {}", algorithm.thread_resources().unwrap()),
+        ],
     }
 }
 
@@ -3469,6 +3853,7 @@ function markGlyph(mark, color) {
   let el;
   if (mark === "diamond") { el = document.createElementNS(NS, "path"); el.setAttribute("d", "M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z"); }
   else if (mark === "square") { el = document.createElementNS(NS, "rect"); el.setAttribute("x", -4.5); el.setAttribute("y", -4.5); el.setAttribute("width", 9); el.setAttribute("height", 9); }
+  else if (mark === "triangle") { el = document.createElementNS(NS, "path"); el.setAttribute("d", "M 0 -6.5 L 6.5 3.25 L -6.5 3.25 Z"); }
   else { el = document.createElementNS(NS, "circle"); el.setAttribute("r", 5); }
   el.setAttribute("fill", color); el.setAttribute(...stroke); el.setAttribute(...sw);
   return el;
