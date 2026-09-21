@@ -54,7 +54,7 @@
     .hover-path { font-weight: 700; fill: #333333; }
     .hover-why { font-size: 10px; fill: #555555; }
   </style>
-  <text x="110" y="44" class="title">Cryptographic Hash Time per Byte</text>
+  <text x="110" y="44" class="title">Cryptographic Hash Performance</text>
   <text x="110" y="72" class="method">Line and dot: median · shaded band: minimum–maximum across 80 interleaved samples; a deeper tint or dashed outline marks a wide spread, meaning lower precision · single-threaded · lower is better</text>
   <text x="110" y="88" class="method">Dot shape marks the code path a contender used at that size; a ringed dot is where a new path begins · hover any dot to compare contenders and see the path · click a name at right to hide or show that contender</text>
   <g id="y-axis">
@@ -128,15 +128,15 @@
   <line x1="110.0" y1="455.0" x2="1000.0" y2="455.0" class="axis"/>
   <g class="series" id="series-0" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 269.93 L 207.86 265.50 L 265.71 268.90 L 323.57 271.18 L 381.43 273.84 L 439.29 269.11 L 473.13 267.08 L 497.14 321.06 L 555.00 324.09 L 612.86 320.87 L 670.71 317.95 L 728.57 324.47 L 786.43 321.06 L 844.29 320.87 L 902.14 313.91 L 960.00 315.64 L 960.00 337.84 L 902.14 337.61 L 844.29 337.61 L 786.43 337.61 L 728.57 337.61 L 670.71 337.61 L 612.86 337.39 L 555.00 336.72 L 497.14 334.95 L 473.13 284.16 L 439.29 285.01 L 381.43 287.25 L 323.57 287.13 L 265.71 287.00 L 207.86 285.75 L 150.00 287.00 Z" fill="#3b82f6" fill-opacity="0.30" stroke="#3b82f6" stroke-opacity="0.6" stroke-width="1" stroke-dasharray="4,3"/>
-      <path class="median" d="M 150.00 285.26 L 207.86 283.67 L 265.71 284.65 L 323.57 284.77 L 381.43 285.88 L 439.29 284.40 L 473.13 283.31 L 497.14 333.65 L 555.00 335.61 L 612.86 336.49 L 670.71 336.49 L 728.57 336.94 L 786.43 336.72 L 844.29 336.72 L 902.14 336.72 L 960.00 336.72" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text class="value-label" data-size="0" x="159.00" y="274.26" fill="#3b82f6" text-anchor="start">0.71</text>
-      <text class="value-label" data-size="4" x="381.43" y="302.88" fill="#3b82f6" text-anchor="middle">0.70</text>
-      <text class="value-label" data-size="8" x="555.00" y="324.61" fill="#3b82f6" text-anchor="middle">0.40</text>
-      <text class="value-label" data-size="12" x="786.43" y="325.72" fill="#3b82f6" text-anchor="middle">0.39</text>
-      <text class="value-label" data-size="15" x="951.00" y="325.72" fill="#3b82f6" text-anchor="end">0.39</text>
+      <path class="band" d="M 150.00 280.35 L 207.86 278.62 L 265.71 279.30 L 323.57 281.40 L 381.43 283.07 L 439.29 281.05 L 473.13 275.04 L 497.14 327.42 L 555.00 332.37 L 612.86 332.37 L 670.71 332.16 L 728.57 329.04 L 786.43 332.79 L 844.29 329.45 L 902.14 333.22 L 960.00 331.11 L 960.00 337.61 L 902.14 337.84 L 844.29 337.39 L 786.43 338.06 L 728.57 337.61 L 670.71 337.61 L 612.86 337.16 L 555.00 336.49 L 497.14 334.95 L 473.13 284.04 L 439.29 284.77 L 381.43 287.25 L 323.57 287.00 L 265.71 286.75 L 207.86 285.75 L 150.00 287.13 Z" fill="#3b82f6" fill-opacity="0.16" stroke="#3b82f6" stroke-opacity="0" stroke-width="1" stroke-dasharray="4,3"/>
+      <path class="median" d="M 150.00 286.38 L 207.86 283.67 L 265.71 285.38 L 323.57 286.13 L 381.43 286.88 L 439.29 284.52 L 473.13 283.67 L 497.14 334.30 L 555.00 336.05 L 612.86 336.72 L 670.71 337.16 L 728.57 337.16 L 786.43 337.16 L 844.29 336.94 L 902.14 337.16 L 960.00 336.94" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="value-label" data-size="0" x="159.00" y="325.38" fill="#3b82f6" text-anchor="start">0.70</text>
+      <text class="value-label" data-size="4" x="381.43" y="303.88" fill="#3b82f6" text-anchor="middle">0.69</text>
+      <text class="value-label" data-size="8" x="555.00" y="325.05" fill="#3b82f6" text-anchor="middle">0.39</text>
+      <text class="value-label" data-size="12" x="786.43" y="326.16" fill="#3b82f6" text-anchor="middle">0.39</text>
+      <text class="value-label" data-size="15" x="951.00" y="325.94" fill="#3b82f6" text-anchor="end">0.39</text>
     </g>
-    <g class="series-label" transform="translate(0 336.72)" onclick="toggleSeries(0)">
+    <g class="series-label" transform="translate(0 336.94)" onclick="toggleSeries(0)">
       <title>Click to hide or show BLAKE3</title>
       <rect x="1010.0" y="-14" width="180.0" height="40" fill="transparent"/>
       <circle class="series-swatch" cx="1018.5" cy="0" r="4.5" fill="#3b82f6" stroke="#3b82f6"/>
@@ -148,15 +148,15 @@
   </g>
   <g class="series" id="series-1" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 301.92 L 207.86 304.19 L 265.71 335.61 L 323.57 338.06 L 381.43 340.12 L 439.29 337.61 L 473.13 342.71 L 497.14 338.06 L 555.00 340.36 L 612.86 337.61 L 670.71 341.06 L 728.57 341.29 L 786.43 340.36 L 844.29 334.30 L 902.14 340.82 L 960.00 337.61 L 960.00 354.45 L 902.14 354.45 L 844.29 354.73 L 786.43 354.73 L 728.57 354.45 L 670.71 354.45 L 612.86 354.45 L 555.00 354.45 L 497.14 354.18 L 473.13 354.45 L 439.29 354.45 L 381.43 353.91 L 323.57 353.37 L 265.71 351.50 L 207.86 343.67 L 150.00 318.67 Z" fill="#e07a45" fill-opacity="0.30" stroke="#e07a45" stroke-opacity="0.6" stroke-width="1" stroke-dasharray="4,3"/>
-      <path class="median" d="M 150.00 316.70 L 207.86 342.47 L 265.71 350.19 L 323.57 351.76 L 381.43 353.37 L 439.29 353.91 L 473.13 354.18 L 497.14 353.64 L 555.00 353.64 L 612.86 353.64 L 670.71 353.91 L 728.57 353.37 L 786.43 353.64 L 844.29 353.91 L 902.14 353.91 L 960.00 353.64" fill="none" stroke="#e07a45" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text class="value-label" data-size="0" x="159.00" y="305.70" fill="#e07a45" text-anchor="start">0.49</text>
+      <path class="band" d="M 150.00 309.08 L 207.86 331.53 L 265.71 344.40 L 323.57 349.41 L 381.43 346.62 L 439.29 349.93 L 473.13 349.67 L 497.14 344.89 L 555.00 349.93 L 612.86 351.23 L 670.71 351.50 L 728.57 348.90 L 786.43 350.45 L 844.29 346.87 L 902.14 348.64 L 960.00 348.13 L 960.00 354.45 L 902.14 354.45 L 844.29 354.45 L 786.43 354.73 L 728.57 354.18 L 670.71 354.45 L 612.86 354.45 L 555.00 354.18 L 497.14 354.18 L 473.13 354.45 L 439.29 354.18 L 381.43 353.64 L 323.57 353.10 L 265.71 350.45 L 207.86 340.36 L 150.00 316.88 Z" fill="#e07a45" fill-opacity="0.17" stroke="#e07a45" stroke-opacity="0" stroke-width="1" stroke-dasharray="4,3"/>
+      <path class="median" d="M 150.00 314.95 L 207.86 339.66 L 265.71 349.67 L 323.57 352.56 L 381.43 353.37 L 439.29 354.18 L 473.13 354.18 L 497.14 353.91 L 555.00 353.91 L 612.86 353.91 L 670.71 354.18 L 728.57 353.91 L 786.43 353.91 L 844.29 353.91 L 902.14 354.18 L 960.00 354.18" fill="none" stroke="#e07a45" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="value-label" data-size="0" x="159.00" y="303.95" fill="#e07a45" text-anchor="start">0.50</text>
       <text class="value-label" data-size="4" x="381.43" y="370.37" fill="#e07a45" text-anchor="middle">0.32</text>
-      <text class="value-label" data-size="8" x="555.00" y="342.64" fill="#e07a45" text-anchor="middle">0.32</text>
-      <text class="value-label" data-size="12" x="786.43" y="392.64" fill="#e07a45" text-anchor="middle">0.32</text>
-      <text class="value-label" data-size="15" x="951.00" y="370.64" fill="#e07a45" text-anchor="end">0.32</text>
+      <text class="value-label" data-size="8" x="555.00" y="342.91" fill="#e07a45" text-anchor="middle">0.32</text>
+      <text class="value-label" data-size="12" x="786.43" y="392.91" fill="#e07a45" text-anchor="middle">0.32</text>
+      <text class="value-label" data-size="15" x="951.00" y="371.18" fill="#e07a45" text-anchor="end">0.32</text>
     </g>
-    <g class="series-label" transform="translate(0 380.72)" onclick="toggleSeries(1)">
+    <g class="series-label" transform="translate(0 380.94)" onclick="toggleSeries(1)">
       <title>Click to hide or show SHA-256</title>
       <rect x="1010.0" y="-14" width="180.0" height="40" fill="transparent"/>
       <circle class="series-swatch" cx="1018.5" cy="0" r="4.5" fill="#e07a45" stroke="#e07a45"/>
@@ -168,40 +168,40 @@
   </g>
   <g class="series" id="series-2" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 157.56 L 207.86 196.04 L 265.71 208.66 L 323.57 225.02 L 381.43 237.17 L 439.29 230.03 L 473.13 231.01 L 497.14 234.52 L 555.00 233.08 L 612.86 230.95 L 670.71 229.44 L 728.57 177.67 L 786.43 223.13 L 844.29 212.95 L 902.14 220.45 L 960.00 214.36 L 960.00 238.82 L 902.14 238.82 L 844.29 242.05 L 786.43 243.19 L 728.57 244.87 L 670.71 245.34 L 612.86 248.84 L 555.00 248.51 L 497.14 249.00 L 473.13 248.76 L 439.29 249.24 L 381.43 248.76 L 323.57 241.68 L 265.71 227.26 L 207.86 209.89 L 150.00 178.00 Z" fill="#8a7a1e" fill-opacity="0.30" stroke="#8a7a1e" stroke-opacity="0.6" stroke-width="1" stroke-dasharray="4,3"/>
-      <path class="median" d="M 150.00 174.34 L 207.86 206.19 L 265.71 222.83 L 323.57 237.67 L 381.43 244.56 L 439.29 246.99 L 473.13 245.34 L 497.14 245.89 L 555.00 245.73 L 612.86 246.20 L 670.71 244.10 L 728.57 243.72 L 786.43 241.31 L 844.29 238.89 L 902.14 236.96 L 960.00 237.81" fill="none" stroke="#8a7a1e" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text class="value-label" data-size="0" x="159.00" y="163.34" fill="#8a7a1e" text-anchor="start">2.53</text>
-      <text class="value-label" data-size="4" x="381.43" y="233.56" fill="#8a7a1e" text-anchor="middle">1.13</text>
-      <text class="value-label" data-size="8" x="555.00" y="234.73" fill="#8a7a1e" text-anchor="middle">1.11</text>
-      <text class="value-label" data-size="12" x="786.43" y="230.31" fill="#8a7a1e" text-anchor="middle">1.17</text>
-      <text class="value-label" data-size="15" x="951.00" y="226.81" fill="#8a7a1e" text-anchor="end">1.22</text>
+      <path class="band" d="M 150.00 165.39 L 207.86 197.96 L 265.71 214.63 L 323.57 229.77 L 381.43 238.82 L 439.29 242.51 L 473.13 239.32 L 497.14 242.81 L 555.00 241.68 L 612.86 238.82 L 670.71 240.79 L 728.57 236.60 L 786.43 230.75 L 844.29 236.18 L 902.14 232.41 L 960.00 233.02 L 960.00 239.47 L 902.14 240.71 L 844.29 241.98 L 786.43 243.26 L 728.57 245.11 L 670.71 245.34 L 612.86 249.49 L 555.00 248.51 L 497.14 249.65 L 473.13 248.51 L 439.29 249.81 L 381.43 247.71 L 323.57 239.69 L 265.71 223.85 L 207.86 205.01 L 150.00 170.21 Z" fill="#8a7a1e" fill-opacity="0.20" stroke="#8a7a1e" stroke-opacity="0" stroke-width="1" stroke-dasharray="4,3"/>
+      <path class="median" d="M 150.00 168.91 L 207.86 202.02 L 265.71 220.98 L 323.57 236.25 L 381.43 243.57 L 439.29 246.99 L 473.13 245.34 L 497.14 246.99 L 555.00 245.65 L 612.86 246.52 L 670.71 244.64 L 728.57 244.33 L 786.43 242.13 L 844.29 240.05 L 902.14 238.96 L 960.00 238.17" fill="none" stroke="#8a7a1e" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="value-label" data-size="0" x="159.00" y="157.91" fill="#8a7a1e" text-anchor="start">2.69</text>
+      <text class="value-label" data-size="4" x="381.43" y="232.57" fill="#8a7a1e" text-anchor="middle">1.14</text>
+      <text class="value-label" data-size="8" x="555.00" y="234.65" fill="#8a7a1e" text-anchor="middle">1.11</text>
+      <text class="value-label" data-size="12" x="786.43" y="231.13" fill="#8a7a1e" text-anchor="middle">1.16</text>
+      <text class="value-label" data-size="15" x="951.00" y="227.17" fill="#8a7a1e" text-anchor="end">1.21</text>
     </g>
-    <g class="series-label" transform="translate(0 237.81)" onclick="toggleSeries(2)">
+    <g class="series-label" transform="translate(0 238.17)" onclick="toggleSeries(2)">
       <title>Click to hide or show SHA-1DC</title>
       <rect x="1010.0" y="-14" width="180.0" height="40" fill="transparent"/>
       <circle class="series-swatch" cx="1018.5" cy="0" r="4.5" fill="#8a7a1e" stroke="#8a7a1e"/>
       <text class="series-name" x="1028.0" y="4" fill="#8a7a1e">SHA-1DC</text>
-      <text class="series-detail" x="1028.0" y="18">1.22 ns/B · 0.8 GB/s at 1 MiB</text>
+      <text class="series-detail" x="1028.0" y="18">1.21 ns/B · 0.8 GB/s at 1 MiB</text>
       <text class="series-hint" x="1028.0" y="18">hidden · click to show</text>
     </g>
     <text class="prov series-prov" x="110.0" y="734.0">SHA-1DC: sha1-checked 0.10.0 · SHA-1 with collision detection, pure Rust (the construction git uses)</text>
   </g>
   <g class="series" id="series-3" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 264.23 L 207.86 265.20 L 265.71 271.39 L 323.57 274.16 L 381.43 280.70 L 439.29 306.84 L 473.13 334.73 L 497.14 348.13 L 555.00 353.91 L 612.86 378.19 L 670.71 372.29 L 728.57 356.67 L 786.43 388.47 L 844.29 393.46 L 902.14 394.76 L 960.00 395.63 L 960.00 404.40 L 902.14 406.86 L 844.29 400.60 L 786.43 394.32 L 728.57 392.19 L 670.71 390.52 L 612.86 382.99 L 555.00 367.08 L 497.14 359.23 L 473.13 354.18 L 439.29 325.05 L 381.43 292.59 L 323.57 290.86 L 265.71 287.89 L 207.86 281.76 L 150.00 283.43 Z" fill="#7c3aed" fill-opacity="0.30" stroke="#7c3aed" stroke-opacity="0.6" stroke-width="1" stroke-dasharray="4,3"/>
-      <path class="median" d="M 150.00 281.99 L 207.86 279.07 L 265.71 285.26 L 323.57 288.78 L 381.43 291.12 L 439.29 323.51 L 473.13 352.03 L 497.14 354.45 L 555.00 365.20 L 612.86 380.74 L 670.71 389.28 L 728.57 390.93 L 786.43 392.61 L 844.29 395.63 L 902.14 404.40 L 960.00 401.53" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text class="value-label" data-size="0" x="159.00" y="320.99" fill="#7c3aed" text-anchor="start">0.73</text>
-      <text class="value-label" data-size="4" x="381.43" y="280.12" fill="#7c3aed" text-anchor="middle">0.66</text>
-      <text class="value-label" data-size="8" x="555.00" y="354.20" fill="#7c3aed" text-anchor="middle">0.28</text>
+      <path class="band" d="M 150.00 277.14 L 207.86 276.25 L 265.71 279.88 L 323.57 283.55 L 381.43 285.51 L 439.29 319.76 L 473.13 348.13 L 497.14 347.12 L 555.00 359.52 L 612.86 378.91 L 670.71 387.27 L 728.57 379.27 L 786.43 392.19 L 844.29 395.19 L 902.14 402.95 L 960.00 408.37 L 960.00 410.95 L 902.14 405.38 L 844.29 403.43 L 786.43 393.89 L 728.57 392.19 L 670.71 390.52 L 612.86 382.61 L 555.00 367.40 L 497.14 360.10 L 473.13 354.45 L 439.29 325.05 L 381.43 292.32 L 323.57 290.73 L 265.71 287.76 L 207.86 281.87 L 150.00 283.43 Z" fill="#7c3aed" fill-opacity="0.21" stroke="#7c3aed" stroke-opacity="0" stroke-width="1" stroke-dasharray="4,3"/>
+      <path class="median" d="M 150.00 283.07 L 207.86 280.35 L 265.71 286.75 L 323.57 288.78 L 381.43 290.47 L 439.29 323.70 L 473.13 352.83 L 497.14 354.73 L 555.00 365.83 L 612.86 381.11 L 670.71 389.28 L 728.57 391.35 L 786.43 392.61 L 844.29 397.40 L 902.14 404.89 L 960.00 409.91" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="value-label" data-size="0" x="159.00" y="272.07" fill="#7c3aed" text-anchor="start">0.72</text>
+      <text class="value-label" data-size="4" x="381.43" y="279.47" fill="#7c3aed" text-anchor="middle">0.66</text>
+      <text class="value-label" data-size="8" x="555.00" y="354.83" fill="#7c3aed" text-anchor="middle">0.28</text>
       <text class="value-label" data-size="12" x="786.43" y="381.61" fill="#7c3aed" text-anchor="middle">0.21</text>
-      <text class="value-label" data-size="15" x="951.00" y="390.53" fill="#7c3aed" text-anchor="end">0.19</text>
+      <text class="value-label" data-size="15" x="951.00" y="398.91" fill="#7c3aed" text-anchor="end">0.17</text>
     </g>
-    <g class="series-label" transform="translate(0 468.72)" onclick="toggleSeries(3)">
+    <g class="series-label" transform="translate(0 468.94)" onclick="toggleSeries(3)">
       <title>Click to hide or show BLAKE3 servil</title>
       <rect x="1010.0" y="-14" width="180.0" height="40" fill="transparent"/>
       <circle class="series-swatch" cx="1018.5" cy="0" r="4.5" fill="#7c3aed" stroke="#7c3aed"/>
       <text class="series-name" x="1028.0" y="4" fill="#7c3aed">BLAKE3 servil</text>
-      <text class="series-detail" x="1028.0" y="18">0.19 ns/B · 5.4 GB/s at 1 MiB</text>
+      <text class="series-detail" x="1028.0" y="18">0.17 ns/B · 6.0 GB/s at 1 MiB</text>
       <text class="series-hint" x="1028.0" y="18">hidden · click to show</text>
     </g>
     <text class="prov series-prov" x="110.0" y="748.0">BLAKE3 servil: source https://github.com/johnservil/BLAKE3 · branch sme2-bench · commit 4ca9952c8522</text>
@@ -209,139 +209,139 @@
   </g>
   <g class="series" id="series-4" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 285.26 L 207.86 310.72 L 265.71 328.63 L 323.57 341.76 L 381.43 342.71 L 439.29 334.73 L 473.13 328.43 L 497.14 330.07 L 555.00 345.87 L 612.86 345.38 L 670.71 346.37 L 728.57 341.29 L 786.43 340.36 L 844.29 348.64 L 902.14 348.38 L 960.00 342.47 L 960.00 363.37 L 902.14 363.37 L 844.29 363.07 L 786.43 363.07 L 728.57 363.07 L 670.71 363.07 L 612.86 362.76 L 555.00 362.76 L 497.14 362.46 L 473.13 362.17 L 439.29 361.87 L 381.43 359.81 L 323.57 356.95 L 265.71 352.03 L 207.86 331.11 L 150.00 297.84 Z" fill="#c2410c" fill-opacity="0.30" stroke="#c2410c" stroke-opacity="0.6" stroke-width="1" stroke-dasharray="4,3"/>
-      <path class="median" d="M 150.00 296.71 L 207.86 328.63 L 265.71 348.64 L 323.57 356.11 L 381.43 359.23 L 439.29 361.27 L 473.13 361.87 L 497.14 362.17 L 555.00 362.17 L 612.86 362.46 L 670.71 362.17 L 728.57 362.46 L 786.43 362.76 L 844.29 362.46 L 902.14 362.17 L 960.00 362.46" fill="none" stroke="#c2410c" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text class="value-label" data-size="0" x="159.00" y="285.71" fill="#c2410c" text-anchor="start">0.62</text>
-      <text class="value-label" data-size="4" x="381.43" y="348.23" fill="#c2410c" text-anchor="middle">0.30</text>
+      <path class="band" d="M 150.00 292.05 L 207.86 323.13 L 265.71 342.95 L 323.57 351.50 L 381.43 351.50 L 439.29 355.28 L 473.13 356.95 L 497.14 358.08 L 555.00 358.37 L 612.86 355.55 L 670.71 358.08 L 728.57 349.15 L 786.43 358.94 L 844.29 355.83 L 902.14 360.10 L 960.00 360.68 L 960.00 363.37 L 902.14 363.37 L 844.29 363.07 L 786.43 362.76 L 728.57 362.76 L 670.71 363.07 L 612.86 362.76 L 555.00 362.46 L 497.14 362.17 L 473.13 361.87 L 439.29 361.57 L 381.43 360.10 L 323.57 357.51 L 265.71 351.23 L 207.86 329.45 L 150.00 298.41 Z" fill="#c2410c" fill-opacity="0.22" stroke="#c2410c" stroke-opacity="0" stroke-width="1" stroke-dasharray="4,3"/>
+      <path class="median" d="M 150.00 297.13 L 207.86 328.03 L 265.71 349.93 L 323.57 356.11 L 381.43 359.52 L 439.29 361.27 L 473.13 361.57 L 497.14 362.17 L 555.00 362.17 L 612.86 362.46 L 670.71 362.76 L 728.57 362.76 L 786.43 362.76 L 844.29 362.76 L 902.14 362.76 L 960.00 362.76" fill="none" stroke="#c2410c" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="value-label" data-size="0" x="159.00" y="286.13" fill="#c2410c" text-anchor="start">0.62</text>
+      <text class="value-label" data-size="4" x="381.43" y="348.52" fill="#c2410c" text-anchor="middle">0.30</text>
       <text class="value-label" data-size="8" x="555.00" y="379.17" fill="#c2410c" text-anchor="middle">0.29</text>
       <text class="value-label" data-size="12" x="786.43" y="351.76" fill="#c2410c" text-anchor="middle">0.29</text>
-      <text class="value-label" data-size="15" x="951.00" y="351.46" fill="#c2410c" text-anchor="end">0.29</text>
+      <text class="value-label" data-size="15" x="951.00" y="351.76" fill="#c2410c" text-anchor="end">0.29</text>
     </g>
-    <g class="series-label" transform="translate(0 424.72)" onclick="toggleSeries(4)">
+    <g class="series-label" transform="translate(0 424.94)" onclick="toggleSeries(4)">
       <title>Click to hide or show SHA-256 ring</title>
       <rect x="1010.0" y="-14" width="180.0" height="40" fill="transparent"/>
       <circle class="series-swatch" cx="1018.5" cy="0" r="4.5" fill="#c2410c" stroke="#c2410c"/>
       <text class="series-name" x="1028.0" y="4" fill="#c2410c">SHA-256 ring</text>
-      <text class="series-detail" x="1028.0" y="18">0.29 ns/B · 3.4 GB/s at 1 MiB</text>
+      <text class="series-detail" x="1028.0" y="18">0.29 ns/B · 3.5 GB/s at 1 MiB</text>
       <text class="series-hint" x="1028.0" y="18">hidden · click to show</text>
     </g>
     <text class="prov series-prov" x="110.0" y="776.0">SHA-256 ring: ring 0.17.14 · ring::digest::digest, BoringSSL&apos;s sha256_block_data_order_hw assembly (ARMv8 SHA-256 instructions; SHA-NI on x86), selected at runtime</text>
   </g>
   <g class="dots" id="dots-0" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 285.26)" onmouseenter="showHover(0,0)" onmouseleave="hideHover()">
+    <g class="dot" data-size="0" transform="translate(150.00 286.38)" onmouseenter="showHover(0,0)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
     <g class="dot" data-size="1" transform="translate(207.86 283.67)" onmouseenter="showHover(0,1)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(265.71 284.65)" onmouseenter="showHover(0,2)" onmouseleave="hideHover()">
+    <g class="dot" data-size="2" transform="translate(265.71 285.38)" onmouseenter="showHover(0,2)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="3" transform="translate(323.57 284.77)" onmouseenter="showHover(0,3)" onmouseleave="hideHover()">
+    <g class="dot" data-size="3" transform="translate(323.57 286.13)" onmouseenter="showHover(0,3)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="4" transform="translate(381.43 285.88)" onmouseenter="showHover(0,4)" onmouseleave="hideHover()">
+    <g class="dot" data-size="4" transform="translate(381.43 286.88)" onmouseenter="showHover(0,4)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="5" transform="translate(439.29 284.40)" onmouseenter="showHover(0,5)" onmouseleave="hideHover()">
+    <g class="dot" data-size="5" transform="translate(439.29 284.52)" onmouseenter="showHover(0,5)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="6" transform="translate(473.13 283.31)" onmouseenter="showHover(0,6)" onmouseleave="hideHover()">
+    <g class="dot" data-size="6" transform="translate(473.13 283.67)" onmouseenter="showHover(0,6)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot dot-transition" data-size="7" transform="translate(497.14 333.65)" onmouseenter="showHover(0,7)" onmouseleave="hideHover()">
+    <g class="dot dot-transition" data-size="7" transform="translate(497.14 334.30)" onmouseenter="showHover(0,7)" onmouseleave="hideHover()">
       <circle class="dot-ring" r="9.5" fill="none" stroke="#3b82f6"/>
       <path d="M 0 -7.50 L 7.50 0 L 0 7.50 L -7.50 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="8" transform="translate(555.00 335.61)" onmouseenter="showHover(0,8)" onmouseleave="hideHover()">
+    <g class="dot" data-size="8" transform="translate(555.00 336.05)" onmouseenter="showHover(0,8)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="9" transform="translate(612.86 336.49)" onmouseenter="showHover(0,9)" onmouseleave="hideHover()">
+    <g class="dot" data-size="9" transform="translate(612.86 336.72)" onmouseenter="showHover(0,9)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="10" transform="translate(670.71 336.49)" onmouseenter="showHover(0,10)" onmouseleave="hideHover()">
+    <g class="dot" data-size="10" transform="translate(670.71 337.16)" onmouseenter="showHover(0,10)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(728.57 336.94)" onmouseenter="showHover(0,11)" onmouseleave="hideHover()">
+    <g class="dot" data-size="11" transform="translate(728.57 337.16)" onmouseenter="showHover(0,11)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="12" transform="translate(786.43 336.72)" onmouseenter="showHover(0,12)" onmouseleave="hideHover()">
+    <g class="dot" data-size="12" transform="translate(786.43 337.16)" onmouseenter="showHover(0,12)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="13" transform="translate(844.29 336.72)" onmouseenter="showHover(0,13)" onmouseleave="hideHover()">
+    <g class="dot" data-size="13" transform="translate(844.29 336.94)" onmouseenter="showHover(0,13)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(902.14 336.72)" onmouseenter="showHover(0,14)" onmouseleave="hideHover()">
+    <g class="dot" data-size="14" transform="translate(902.14 337.16)" onmouseenter="showHover(0,14)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(960.00 336.72)" onmouseenter="showHover(0,15)" onmouseleave="hideHover()">
+    <g class="dot" data-size="15" transform="translate(960.00 336.94)" onmouseenter="showHover(0,15)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
   <g class="dots" id="dots-1" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 316.70)" onmouseenter="showHover(1,0)" onmouseleave="hideHover()">
+    <g class="dot" data-size="0" transform="translate(150.00 314.95)" onmouseenter="showHover(1,0)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="1" transform="translate(207.86 342.47)" onmouseenter="showHover(1,1)" onmouseleave="hideHover()">
+    <g class="dot" data-size="1" transform="translate(207.86 339.66)" onmouseenter="showHover(1,1)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(265.71 350.19)" onmouseenter="showHover(1,2)" onmouseleave="hideHover()">
+    <g class="dot" data-size="2" transform="translate(265.71 349.67)" onmouseenter="showHover(1,2)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="3" transform="translate(323.57 351.76)" onmouseenter="showHover(1,3)" onmouseleave="hideHover()">
+    <g class="dot" data-size="3" transform="translate(323.57 352.56)" onmouseenter="showHover(1,3)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
     <g class="dot" data-size="4" transform="translate(381.43 353.37)" onmouseenter="showHover(1,4)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="5" transform="translate(439.29 353.91)" onmouseenter="showHover(1,5)" onmouseleave="hideHover()">
+    <g class="dot" data-size="5" transform="translate(439.29 354.18)" onmouseenter="showHover(1,5)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
     <g class="dot" data-size="6" transform="translate(473.13 354.18)" onmouseenter="showHover(1,6)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="7" transform="translate(497.14 353.64)" onmouseenter="showHover(1,7)" onmouseleave="hideHover()">
+    <g class="dot" data-size="7" transform="translate(497.14 353.91)" onmouseenter="showHover(1,7)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="8" transform="translate(555.00 353.64)" onmouseenter="showHover(1,8)" onmouseleave="hideHover()">
+    <g class="dot" data-size="8" transform="translate(555.00 353.91)" onmouseenter="showHover(1,8)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="9" transform="translate(612.86 353.64)" onmouseenter="showHover(1,9)" onmouseleave="hideHover()">
+    <g class="dot" data-size="9" transform="translate(612.86 353.91)" onmouseenter="showHover(1,9)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="10" transform="translate(670.71 353.91)" onmouseenter="showHover(1,10)" onmouseleave="hideHover()">
+    <g class="dot" data-size="10" transform="translate(670.71 354.18)" onmouseenter="showHover(1,10)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(728.57 353.37)" onmouseenter="showHover(1,11)" onmouseleave="hideHover()">
+    <g class="dot" data-size="11" transform="translate(728.57 353.91)" onmouseenter="showHover(1,11)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="12" transform="translate(786.43 353.64)" onmouseenter="showHover(1,12)" onmouseleave="hideHover()">
+    <g class="dot" data-size="12" transform="translate(786.43 353.91)" onmouseenter="showHover(1,12)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
     <g class="dot" data-size="13" transform="translate(844.29 353.91)" onmouseenter="showHover(1,13)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(902.14 353.91)" onmouseenter="showHover(1,14)" onmouseleave="hideHover()">
+    <g class="dot" data-size="14" transform="translate(902.14 354.18)" onmouseenter="showHover(1,14)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(960.00 353.64)" onmouseenter="showHover(1,15)" onmouseleave="hideHover()">
+    <g class="dot" data-size="15" transform="translate(960.00 354.18)" onmouseenter="showHover(1,15)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
   <g class="dots" id="dots-2" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 174.34)" onmouseenter="showHover(2,0)" onmouseleave="hideHover()">
+    <g class="dot" data-size="0" transform="translate(150.00 168.91)" onmouseenter="showHover(2,0)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="1" transform="translate(207.86 206.19)" onmouseenter="showHover(2,1)" onmouseleave="hideHover()">
+    <g class="dot" data-size="1" transform="translate(207.86 202.02)" onmouseenter="showHover(2,1)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(265.71 222.83)" onmouseenter="showHover(2,2)" onmouseleave="hideHover()">
+    <g class="dot" data-size="2" transform="translate(265.71 220.98)" onmouseenter="showHover(2,2)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="3" transform="translate(323.57 237.67)" onmouseenter="showHover(2,3)" onmouseleave="hideHover()">
+    <g class="dot" data-size="3" transform="translate(323.57 236.25)" onmouseenter="showHover(2,3)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="4" transform="translate(381.43 244.56)" onmouseenter="showHover(2,4)" onmouseleave="hideHover()">
+    <g class="dot" data-size="4" transform="translate(381.43 243.57)" onmouseenter="showHover(2,4)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
     <g class="dot" data-size="5" transform="translate(439.29 246.99)" onmouseenter="showHover(2,5)" onmouseleave="hideHover()">
@@ -350,106 +350,106 @@
     <g class="dot" data-size="6" transform="translate(473.13 245.34)" onmouseenter="showHover(2,6)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="7" transform="translate(497.14 245.89)" onmouseenter="showHover(2,7)" onmouseleave="hideHover()">
+    <g class="dot" data-size="7" transform="translate(497.14 246.99)" onmouseenter="showHover(2,7)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="8" transform="translate(555.00 245.73)" onmouseenter="showHover(2,8)" onmouseleave="hideHover()">
+    <g class="dot" data-size="8" transform="translate(555.00 245.65)" onmouseenter="showHover(2,8)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="9" transform="translate(612.86 246.20)" onmouseenter="showHover(2,9)" onmouseleave="hideHover()">
+    <g class="dot" data-size="9" transform="translate(612.86 246.52)" onmouseenter="showHover(2,9)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="10" transform="translate(670.71 244.10)" onmouseenter="showHover(2,10)" onmouseleave="hideHover()">
+    <g class="dot" data-size="10" transform="translate(670.71 244.64)" onmouseenter="showHover(2,10)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(728.57 243.72)" onmouseenter="showHover(2,11)" onmouseleave="hideHover()">
+    <g class="dot" data-size="11" transform="translate(728.57 244.33)" onmouseenter="showHover(2,11)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="12" transform="translate(786.43 241.31)" onmouseenter="showHover(2,12)" onmouseleave="hideHover()">
+    <g class="dot" data-size="12" transform="translate(786.43 242.13)" onmouseenter="showHover(2,12)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="13" transform="translate(844.29 238.89)" onmouseenter="showHover(2,13)" onmouseleave="hideHover()">
+    <g class="dot" data-size="13" transform="translate(844.29 240.05)" onmouseenter="showHover(2,13)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(902.14 236.96)" onmouseenter="showHover(2,14)" onmouseleave="hideHover()">
+    <g class="dot" data-size="14" transform="translate(902.14 238.96)" onmouseenter="showHover(2,14)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(960.00 237.81)" onmouseenter="showHover(2,15)" onmouseleave="hideHover()">
+    <g class="dot" data-size="15" transform="translate(960.00 238.17)" onmouseenter="showHover(2,15)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
   <g class="dots" id="dots-3" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 281.99)" onmouseenter="showHover(3,0)" onmouseleave="hideHover()">
+    <g class="dot" data-size="0" transform="translate(150.00 283.07)" onmouseenter="showHover(3,0)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="1" transform="translate(207.86 279.07)" onmouseenter="showHover(3,1)" onmouseleave="hideHover()">
+    <g class="dot" data-size="1" transform="translate(207.86 280.35)" onmouseenter="showHover(3,1)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(265.71 285.26)" onmouseenter="showHover(3,2)" onmouseleave="hideHover()">
+    <g class="dot" data-size="2" transform="translate(265.71 286.75)" onmouseenter="showHover(3,2)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
     <g class="dot" data-size="3" transform="translate(323.57 288.78)" onmouseenter="showHover(3,3)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="4" transform="translate(381.43 291.12)" onmouseenter="showHover(3,4)" onmouseleave="hideHover()">
+    <g class="dot" data-size="4" transform="translate(381.43 290.47)" onmouseenter="showHover(3,4)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot dot-transition" data-size="5" transform="translate(439.29 323.51)" onmouseenter="showHover(3,5)" onmouseleave="hideHover()">
+    <g class="dot dot-transition" data-size="5" transform="translate(439.29 323.70)" onmouseenter="showHover(3,5)" onmouseleave="hideHover()">
       <circle class="dot-ring" r="9.5" fill="none" stroke="#7c3aed"/>
       <path d="M 0 -7.50 L 7.50 0 L 0 7.50 L -7.50 0 Z" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="6" transform="translate(473.13 352.03)" onmouseenter="showHover(3,6)" onmouseleave="hideHover()">
+    <g class="dot" data-size="6" transform="translate(473.13 352.83)" onmouseenter="showHover(3,6)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="7" transform="translate(497.14 354.45)" onmouseenter="showHover(3,7)" onmouseleave="hideHover()">
+    <g class="dot" data-size="7" transform="translate(497.14 354.73)" onmouseenter="showHover(3,7)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="8" transform="translate(555.00 365.20)" onmouseenter="showHover(3,8)" onmouseleave="hideHover()">
+    <g class="dot" data-size="8" transform="translate(555.00 365.83)" onmouseenter="showHover(3,8)" onmouseleave="hideHover()">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot dot-transition" data-size="9" transform="translate(612.86 380.74)" onmouseenter="showHover(3,9)" onmouseleave="hideHover()">
+    <g class="dot dot-transition" data-size="9" transform="translate(612.86 381.11)" onmouseenter="showHover(3,9)" onmouseleave="hideHover()">
       <circle class="dot-ring" r="9.5" fill="none" stroke="#7c3aed"/>
       <rect x="-5.40" y="-5.40" width="10.80" height="10.80" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
     <g class="dot" data-size="10" transform="translate(670.71 389.28)" onmouseenter="showHover(3,10)" onmouseleave="hideHover()">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(728.57 390.93)" onmouseenter="showHover(3,11)" onmouseleave="hideHover()">
+    <g class="dot" data-size="11" transform="translate(728.57 391.35)" onmouseenter="showHover(3,11)" onmouseleave="hideHover()">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
     <g class="dot" data-size="12" transform="translate(786.43 392.61)" onmouseenter="showHover(3,12)" onmouseleave="hideHover()">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="13" transform="translate(844.29 395.63)" onmouseenter="showHover(3,13)" onmouseleave="hideHover()">
+    <g class="dot" data-size="13" transform="translate(844.29 397.40)" onmouseenter="showHover(3,13)" onmouseleave="hideHover()">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(902.14 404.40)" onmouseenter="showHover(3,14)" onmouseleave="hideHover()">
+    <g class="dot" data-size="14" transform="translate(902.14 404.89)" onmouseenter="showHover(3,14)" onmouseleave="hideHover()">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(960.00 401.53)" onmouseenter="showHover(3,15)" onmouseleave="hideHover()">
+    <g class="dot" data-size="15" transform="translate(960.00 409.91)" onmouseenter="showHover(3,15)" onmouseleave="hideHover()">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
   <g class="dots" id="dots-4" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 296.71)" onmouseenter="showHover(4,0)" onmouseleave="hideHover()">
+    <g class="dot" data-size="0" transform="translate(150.00 297.13)" onmouseenter="showHover(4,0)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="1" transform="translate(207.86 328.63)" onmouseenter="showHover(4,1)" onmouseleave="hideHover()">
+    <g class="dot" data-size="1" transform="translate(207.86 328.03)" onmouseenter="showHover(4,1)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(265.71 348.64)" onmouseenter="showHover(4,2)" onmouseleave="hideHover()">
+    <g class="dot" data-size="2" transform="translate(265.71 349.93)" onmouseenter="showHover(4,2)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
     <g class="dot" data-size="3" transform="translate(323.57 356.11)" onmouseenter="showHover(4,3)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="4" transform="translate(381.43 359.23)" onmouseenter="showHover(4,4)" onmouseleave="hideHover()">
+    <g class="dot" data-size="4" transform="translate(381.43 359.52)" onmouseenter="showHover(4,4)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
     <g class="dot" data-size="5" transform="translate(439.29 361.27)" onmouseenter="showHover(4,5)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="6" transform="translate(473.13 361.87)" onmouseenter="showHover(4,6)" onmouseleave="hideHover()">
+    <g class="dot" data-size="6" transform="translate(473.13 361.57)" onmouseenter="showHover(4,6)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
     <g class="dot" data-size="7" transform="translate(497.14 362.17)" onmouseenter="showHover(4,7)" onmouseleave="hideHover()">
@@ -461,22 +461,22 @@
     <g class="dot" data-size="9" transform="translate(612.86 362.46)" onmouseenter="showHover(4,9)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="10" transform="translate(670.71 362.17)" onmouseenter="showHover(4,10)" onmouseleave="hideHover()">
+    <g class="dot" data-size="10" transform="translate(670.71 362.76)" onmouseenter="showHover(4,10)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(728.57 362.46)" onmouseenter="showHover(4,11)" onmouseleave="hideHover()">
+    <g class="dot" data-size="11" transform="translate(728.57 362.76)" onmouseenter="showHover(4,11)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
     <g class="dot" data-size="12" transform="translate(786.43 362.76)" onmouseenter="showHover(4,12)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="13" transform="translate(844.29 362.46)" onmouseenter="showHover(4,13)" onmouseleave="hideHover()">
+    <g class="dot" data-size="13" transform="translate(844.29 362.76)" onmouseenter="showHover(4,13)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(902.14 362.17)" onmouseenter="showHover(4,14)" onmouseleave="hideHover()">
+    <g class="dot" data-size="14" transform="translate(902.14 362.76)" onmouseenter="showHover(4,14)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(960.00 362.46)" onmouseenter="showHover(4,15)" onmouseleave="hideHover()">
+    <g class="dot" data-size="15" transform="translate(960.00 362.76)" onmouseenter="showHover(4,15)" onmouseleave="hideHover()">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
@@ -494,11 +494,11 @@
     <g id="hover-body"></g>
   </g>
   <metadata>
-    timestamp: 2026-09-21 17:08:10 UTC
+    timestamp: 2026-09-21 17:09:15 UTC
     git source: https://github.com/johnservil/bench-hashes
-    git commit: 480dd5997a1f59d1519cab6f8b0bd2b3da0bd909
-    git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+38 commits)
-    git clean status: dirty-7af9c8f98de41c134e3d27d55294e1715674186693d1b7c4a3f3c611a3b14b43
+    git commit: 17f357bc8cba57975c84a0b5949f02a148711226
+    git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+39 commits)
+    git clean status: dirty-2b02882c4c6fe399142f58a1a4aa48d77964adfd64f50ae9f389178f2c0e7c3c
     bench-hashes version: 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f
     CPU type: aarch64
     OS type: linux6.18.52-0-virt
@@ -515,17 +515,17 @@
   </metadata>
   <line x1="110.0" y1="540.0" x2="1090.0" y2="540.0" class="divider"/>
   <text x="110.0" y="560.0" class="prov-head">PROVENANCE</text>
-  <text class="prov" x="110.0" y="580.0">Run: 2026-09-21 17:08:10 UTC · bench-hashes 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f</text>
+  <text class="prov" x="110.0" y="580.0">Run: 2026-09-21 17:09:15 UTC · bench-hashes 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f</text>
   <text class="prov" x="110.0" y="594.0">Contenders: every contender available on this machine</text>
   <text class="prov" x="110.0" y="608.0">Machine: aarch64 · 2 logical CPUs · linux6.18.52-0-virt</text>
   <text class="prov" x="110.0" y="622.0">Toolchain: rustc 1.98.1 (48a229cea 2026-09-01) · aarch64-unknown-linux-gnu</text>
   <text class="prov" x="110.0" y="636.0">Sample clock: std::time::Instant → CLOCK_MONOTONIC (stops during suspend, NTP slew only)</text>
   <text class="prov" x="110.0" y="650.0">Reported time: measured elapsed time on the hardware counter</text>
-  <text class="prov" x="110.0" y="664.0">Source: https://github.com/johnservil/bench-hashes @ 480dd5997a1f59d1519cab6f8b0bd2b3da0bd909</text>
-  <text class="prov" x="110.0" y="678.0">Tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+38 commits) · Working tree: dirty-7af9c8f98de41c134e3d27d55294e1715674186693d1b7c4a3f3c611a3b14b43</text>
+  <text class="prov" x="110.0" y="664.0">Source: https://github.com/johnservil/bench-hashes @ 17f357bc8cba57975c84a0b5949f02a148711226</text>
+  <text class="prov" x="110.0" y="678.0">Tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+39 commits) · Working tree: dirty-2b02882c4c6fe399142f58a1a4aa48d77964adfd64f50ae9f389178f2c0e7c3c</text>
   <text class="prov" x="110.0" y="692.0">Full crate checksums are in this file&apos;s metadata element</text>
   <script><![CDATA[
-const DATA = {"series":[{"name":"BLAKE3","regimes":[{"from":0,"name":"portable compression","why":"Fewer than four whole chunks: each runs through the portable single-chunk compressor, so 2 KiB and 3 KiB take this path too.","mark":"circle"},{"from":7,"name":"NEON hash_many (4-way)","why":"Four whole chunks fill a NEON batch; from here the bulk of the input runs four chunks at a time.","mark":"diamond"}],"min":[0.691,0.701,0.691,0.690,0.689,0.707,0.714,0.398,0.390,0.387,0.386,0.386,0.386,0.386,0.386,0.385],"med":[0.705,0.718,0.710,0.709,0.700,0.712,0.721,0.404,0.395,0.391,0.391,0.389,0.390,0.390,0.390,0.390],"max":[0.841,0.885,0.851,0.829,0.804,0.849,0.869,0.467,0.451,0.468,0.484,0.449,0.467,0.468,0.507,0.497]},{"name":"SHA-256","regimes":[{"from":0,"name":"sha2 aarch64_sha2 backend (ARMv8 SHA-256 instructions)","why":"One implementation at every size.","mark":"circle"}],"min":[0.480,0.360,0.329,0.322,0.320,0.318,0.318,0.319,0.318,0.318,0.318,0.318,0.317,0.317,0.318,0.318],"med":[0.491,0.365,0.334,0.328,0.322,0.320,0.319,0.321,0.321,0.321,0.320,0.322,0.321,0.320,0.320,0.321],"max":[0.582,0.567,0.395,0.384,0.375,0.386,0.364,0.384,0.374,0.386,0.371,0.370,0.374,0.401,0.372,0.386]},{"name":"SHA-1DC","regimes":[{"from":0,"name":"SHA-1 with collision detection, pure Rust","why":"One implementation at every size.","mark":"circle"}],"min":[2.422,1.678,1.374,1.164,1.073,1.067,1.073,1.070,1.076,1.072,1.116,1.122,1.144,1.159,1.203,1.203],"med":[2.526,1.751,1.446,1.219,1.126,1.095,1.116,1.109,1.111,1.105,1.132,1.137,1.169,1.202,1.229,1.217],"max":[3.064,1.968,1.702,1.410,1.226,1.331,1.316,1.264,1.285,1.317,1.340,2.431,1.441,1.620,1.486,1.594]},{"name":"BLAKE3 servil","regimes":[{"from":0,"name":"scalar kernel k1","why":"One chunk runs on the integer ALUs alone.","mark":"circle"},{"from":5,"name":"integer + NEON hybrid kernels","why":"Two or more whole chunks: hybrid kernels keep the integer and NEON units busy together, up to fifteen chunks at a time.","mark":"diamond"},{"from":9,"name":"SME2 hash16_chunks kernel","why":"Sixteen whole chunks fill an SME2 group on 512-bit streaming vectors; leftovers below sixteen stay on the hybrid kernels.","mark":"square"}],"min":[0.720,0.734,0.684,0.661,0.648,0.446,0.319,0.301,0.275,0.229,0.210,0.206,0.201,0.187,0.174,0.179],"med":[0.732,0.757,0.705,0.677,0.659,0.454,0.327,0.318,0.281,0.235,0.213,0.209,0.205,0.198,0.179,0.185],"max":[0.898,0.888,0.827,0.801,0.743,0.550,0.399,0.342,0.320,0.242,0.259,0.310,0.215,0.203,0.200,0.198]},{"name":"SHA-256 ring","regimes":[{"from":0,"name":"sha256_block_data_order_hw (ARMv8 SHA-256 instructions, pipelined schedule)","why":"One implementation at every size.","mark":"circle"}],"min":[0.610,0.416,0.327,0.309,0.299,0.292,0.291,0.290,0.289,0.289,0.288,0.288,0.288,0.288,0.287,0.287],"med":[0.618,0.428,0.340,0.312,0.301,0.294,0.292,0.291,0.291,0.290,0.291,0.290,0.289,0.290,0.291,0.290],"max":[0.705,0.526,0.428,0.368,0.364,0.399,0.429,0.421,0.351,0.353,0.349,0.370,0.374,0.340,0.341,0.365]}],"x":[150.00,207.86,265.71,323.57,381.43,439.29,473.13,497.14,555.00,612.86,670.71,728.57,786.43,844.29,902.14,960.00],"labelY":[336.72,380.72,237.81,468.72,424.72],"colors":["#3b82f6","#e07a45","#8a7a1e","#7c3aed","#c2410c"],"sizes":["64 B","128 B","256 B","512 B","1 KiB","2 KiB","3 KiB","4 KiB","8 KiB","16 KiB","32 KiB","64 KiB","128 KiB","256 KiB","512 KiB","1 MiB"],"sharedProv":9,"plotLeft":110,"plotRight":1000,"plotTop":115,"plotBottom":455,"labelGap":44,"labelAbove":-11,"labelBelow":17,"labelHeight":11,"spreadNoticeable":0.100,"spreadWide":0.250,"provTop":540,"provLine":14};
+const DATA = {"series":[{"name":"BLAKE3","regimes":[{"from":0,"name":"portable compression","why":"Fewer than four whole chunks: each runs through the portable single-chunk compressor, so 2 KiB and 3 KiB take this path too.","mark":"circle"},{"from":7,"name":"NEON hash_many (4-way)","why":"Four whole chunks fill a NEON batch; from here the bulk of the input runs four chunks at a time.","mark":"diamond"}],"min":[0.690,0.701,0.693,0.691,0.689,0.709,0.715,0.398,0.391,0.388,0.386,0.386,0.384,0.387,0.385,0.386],"med":[0.696,0.718,0.704,0.698,0.692,0.711,0.718,0.401,0.393,0.390,0.388,0.388,0.388,0.389,0.388,0.389],"max":[0.746,0.761,0.755,0.737,0.723,0.740,0.793,0.434,0.410,0.410,0.411,0.426,0.408,0.424,0.406,0.416]},{"name":"SHA-256","regimes":[{"from":0,"name":"sha2 aarch64_sha2 backend (ARMv8 SHA-256 instructions)","why":"One implementation at every size.","mark":"circle"}],"min":[0.490,0.374,0.333,0.323,0.321,0.319,0.318,0.319,0.319,0.318,0.318,0.319,0.317,0.318,0.318,0.318],"med":[0.501,0.377,0.336,0.325,0.322,0.319,0.319,0.320,0.320,0.320,0.319,0.320,0.320,0.320,0.319,0.319],"max":[0.536,0.414,0.357,0.337,0.348,0.335,0.336,0.355,0.335,0.330,0.329,0.339,0.333,0.347,0.340,0.342]},{"name":"SHA-1DC","regimes":[{"from":0,"name":"SHA-1 with collision detection, pure Rust","why":"One implementation at every size.","mark":"circle"}],"min":[2.649,1.775,1.429,1.191,1.086,1.060,1.076,1.062,1.076,1.064,1.116,1.119,1.143,1.160,1.177,1.194],"med":[2.689,1.837,1.477,1.239,1.139,1.095,1.116,1.095,1.112,1.101,1.125,1.129,1.158,1.186,1.201,1.212],"max":[2.800,1.925,1.589,1.335,1.203,1.153,1.196,1.149,1.164,1.203,1.176,1.234,1.320,1.240,1.295,1.286]},{"name":"BLAKE3 servil","regimes":[{"from":0,"name":"scalar kernel k1","why":"One chunk runs on the integer ALUs alone.","mark":"circle"},{"from":5,"name":"integer + NEON hybrid kernels","why":"Two or more whole chunks: hybrid kernels keep the integer and NEON units busy together, up to fifteen chunks at a time.","mark":"diamond"},{"from":9,"name":"SME2 hash16_chunks kernel","why":"Sixteen whole chunks fill an SME2 group on 512-bit streaming vectors; leftovers below sixteen stay on the hybrid kernels.","mark":"square"}],"min":[0.720,0.733,0.685,0.662,0.650,0.446,0.318,0.298,0.274,0.230,0.210,0.206,0.202,0.181,0.177,0.166],"med":[0.723,0.746,0.693,0.677,0.664,0.453,0.324,0.317,0.279,0.234,0.213,0.208,0.205,0.194,0.178,0.168],"max":[0.774,0.782,0.750,0.719,0.703,0.474,0.342,0.346,0.300,0.240,0.218,0.239,0.206,0.199,0.182,0.171]},{"name":"SHA-256 ring","regimes":[{"from":0,"name":"sha256_block_data_order_hw (ARMv8 SHA-256 instructions, pipelined schedule)","why":"One implementation at every size.","mark":"circle"}],"min":[0.606,0.424,0.330,0.307,0.298,0.293,0.292,0.291,0.290,0.289,0.288,0.289,0.289,0.288,0.287,0.287],"med":[0.615,0.431,0.335,0.312,0.300,0.294,0.293,0.291,0.291,0.290,0.289,0.289,0.289,0.289,0.289,0.289],"max":[0.652,0.456,0.363,0.329,0.329,0.315,0.309,0.305,0.304,0.314,0.305,0.338,0.302,0.313,0.298,0.296]}],"x":[150.00,207.86,265.71,323.57,381.43,439.29,473.13,497.14,555.00,612.86,670.71,728.57,786.43,844.29,902.14,960.00],"labelY":[336.94,380.94,238.17,468.94,424.94],"colors":["#3b82f6","#e07a45","#8a7a1e","#7c3aed","#c2410c"],"sizes":["64 B","128 B","256 B","512 B","1 KiB","2 KiB","3 KiB","4 KiB","8 KiB","16 KiB","32 KiB","64 KiB","128 KiB","256 KiB","512 KiB","1 MiB"],"sharedProv":9,"plotLeft":110,"plotRight":1000,"plotTop":115,"plotBottom":455,"labelGap":44,"labelAbove":-11,"labelBelow":17,"labelHeight":11,"spreadNoticeable":0.100,"spreadWide":0.250,"provTop":540,"provLine":14};
 
 const on = DATA.series.map(() => true);
 

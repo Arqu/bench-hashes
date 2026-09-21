@@ -2300,7 +2300,7 @@ fn generate_svg(
 
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="44" class="title">Cryptographic Hash Time per Byte</text>"##
+        r##"  <text x="{PLOT_LEFT:.0}" y="44" class="title">Cryptographic Hash Performance</text>"##
     )
         .unwrap();
 
