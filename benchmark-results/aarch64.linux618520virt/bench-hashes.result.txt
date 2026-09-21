@@ -1,8 +1,8 @@
-TIMESTAMP: 2026-09-21 15:16:48 UTC
+TIMESTAMP: 2026-09-21 15:24:48 UTC
 git source: https://github.com/johnservil/bench-hashes
-git commit: bbfba95b62cd5eaca42f4bae613164f737f8814c
-git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+24 commits)
-git clean status: dirty-d7e09f244724285cdfe97fda2bd38da09164b3de225270f64d3f3f73ada111c1
+git commit: eb38cfaca84abb332d2d33eed5e19f62ff2b259f
+git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+26 commits)
+git clean status: dirty-fe016950c38534def0ecf4a760e2e9dbc3653a2794088330f77ad55cac9d3e3e
 bench-hashes version: 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f
 CPU type: aarch64
 CPU count: 2
@@ -13,14 +13,15 @@ Target features: aes,crc,lse,neon,sha2,sha3
 Sample clock: clock_gettime(CLOCK_THREAD_CPUTIME_ID): thread CPU time
 Contenders: every contender available on this machine
 BLAKE3 source: blake3 1.8.7; crate archive SHA-256 6d9e454fc11f76977dc803893aff6304ed33d6a26efae8696573bea74baa27ae; source registry+https://github.com/rust-lang/crates.io-index
-SHA-256 source: sha2 0.10.9; crate archive SHA-256 a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283; source registry+https://github.com/rust-lang/crates.io-index
+SHA-256 source: sha2 0.11.0; crate archive SHA-256 446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4; source registry+https://github.com/rust-lang/crates.io-index
 SHA-1DC source: sha1-checked 0.10.0; crate archive SHA-256 89f599ac0c323ebb1c6082821a54962b839832b03984598375bff3975b804423; source registry+https://github.com/rust-lang/crates.io-index
 BLAKE3 SME2 source: blake3_sme2 (git dependency); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit 4ca9952c8522d04470e3efdc21fb172c75817050
-SHA-256 assembly source: sha2-asm 0.6.4; crate archive SHA-256 b845214d6175804686b2bd482bcffe96651bb2d1200742b712003504a2dac1ab; source registry+https://github.com/rust-lang/crates.io-index
+SHA-256 ring source: ring 0.17.14; crate archive SHA-256 a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7; source registry+https://github.com/rust-lang/crates.io-index
 BLAKE3 mode: single-threaded; Rayon not enabled
-SHA-256 mode: assembly backends where available (ARMv8 SHA-256 instructions on AArch64)
+SHA-256 mode: RustCrypto sha2 with its built-in hardware backends (ARMv8 SHA-256 instructions on AArch64, SHA-NI on x86), selected at runtime
 SHA-1DC mode: SHA-1 with collision detection, pure Rust (the construction git uses)
 BLAKE3 SME2 mode: single-threaded; SME2 kernel for groups of sixteen chunks, integer + NEON hybrid kernels below that; needs a CPU with SME2
+SHA-256 ring mode: ring::digest::digest, BoringSSL's sha256_block_data_order_hw assembly (ARMv8 SHA-256 instructions; SHA-NI on x86), selected at runtime
 
 BLAKE3 implementation selection:
   selected platform: NEON
@@ -66,41 +67,41 @@ BENCHMARK SUMMARY
 
 Time per byte in ns/B: median, with minimum–maximum beneath; lower is better.
 
-  size             BLAKE3        SHA-256        SHA-1DC    BLAKE3 SME2
-  64 B              0.786          0.555          3.054          0.823
-             0.779–0.817    0.526–0.575    3.041–3.169    0.803–0.846 
-  128 B             0.803          0.428          2.057          0.840
-             0.789–0.831    0.413–0.437    2.022–2.109    0.822–0.862 
-  256 B             0.792          0.394          1.665          0.783
-             0.787–0.822    0.389–0.404    1.643–1.693    0.778–0.803 
-  512 B             0.787          0.384          1.393          0.755
-             0.782–0.813    0.382–0.392    1.357–1.426    0.751–0.788 
-  1 KiB             0.783          0.379          1.282          0.739
-             0.769–0.803    0.357–0.392    1.254–1.352    0.710–0.759 
-  2 KiB             0.807          0.377          1.242          0.516
-             0.801–0.818    0.376–0.386    1.210–1.289    0.506–0.533 
-  3 KiB             0.817          0.376          1.259          0.368
-             0.812–0.837    0.371–0.383    1.232–1.303    0.363–0.382 
-  4 KiB             0.457          0.377          1.243          0.349
-             0.453–0.465    0.373–0.392    1.209–1.284    0.341–0.360 
-  8 KiB             0.448          0.380          1.264          0.319
-             0.442–0.457    0.377–0.391    1.245–1.314    0.312–0.326 
-  16 KiB            0.441          0.379          1.250          0.235
-             0.438–0.452    0.376–0.414    1.231–1.620!   0.231–0.241 
-  32 KiB            0.438          0.377          1.274          0.217
-             0.435–0.450    0.376–0.384    1.264–1.312    0.215–0.220 
-  64 KiB            0.437          0.378          1.285          0.207
-             0.435–0.449    0.374–0.385    1.270–1.319    0.205–0.212 
-  128 KiB           0.438          0.378          1.316          0.206
-             0.432–0.452    0.372–0.386    1.283–1.372    0.203–0.209 
-  256 KiB           0.439          0.378          1.343          0.183
-             0.435–0.452    0.362–0.386    1.308–1.410    0.182–0.188 
-  512 KiB           0.438          0.376          1.384          0.172
-             0.435–0.453    0.373–0.387    1.357–1.434    0.170–0.175 
-  1 MiB             0.437          0.375          1.372          0.166
-             0.434–0.452    0.371–0.386    1.350–1.404    0.165–0.169 
+  size             BLAKE3        SHA-256        SHA-1DC    BLAKE3 SME2   SHA-256 ring
+  64 B              0.788          0.569          2.833          0.822          0.699
+             0.783–0.806    0.554–0.603    2.776–2.934    0.810–0.844    0.685–0.725 
+  128 B             0.799          0.426          1.937          0.837          0.483
+             0.796–0.822    0.421–0.441    1.909–1.996    0.830–0.866    0.473–0.498 
+  256 B             0.791          0.384          1.609          0.781          0.375
+             0.786–0.818    0.380–0.393    1.579–1.653    0.778–0.801    0.370–0.385 
+  512 B             0.788          0.368          1.364          0.754          0.351
+             0.782–0.803    0.366–0.379    1.343–1.405    0.750–0.782    0.348–0.362 
+  1 KiB             0.785          0.366          1.268          0.741          0.341
+             0.781–0.801    0.364–0.377    1.222–1.289    0.739–0.761    0.337–0.349 
+  2 KiB             0.809          0.364          1.238          0.514          0.334
+             0.804–0.845    0.362–0.374    1.212–1.274    0.508–0.539    0.333–0.344 
+  3 KiB             0.819          0.363          1.254          0.367          0.333
+             0.814–0.838    0.358–0.374    1.225–1.311    0.362–0.378    0.330–0.340 
+  4 KiB             0.455          0.364          1.239          0.344          0.331
+             0.448–0.469    0.359–0.373    1.201–1.276    0.334–0.357    0.330–0.347 
+  8 KiB             0.445          0.364          1.258          0.318          0.331
+             0.443–0.468    0.362–0.378    1.219–1.320    0.311–0.326    0.326–0.341 
+  16 KiB            0.441          0.364          1.250          0.237          0.329
+             0.435–0.462    0.361–0.384    1.221–1.306    0.232–0.242    0.324–0.335 
+  32 KiB            0.440          0.363          1.279          0.215          0.329
+             0.435–0.456    0.358–0.376    1.247–1.331    0.212–0.246    0.309–0.338 
+  64 KiB            0.440          0.364          1.288          0.209          0.329
+             0.415–0.452    0.360–0.374    1.273–1.346    0.207–0.214    0.323–0.342 
+  128 KiB           0.440          0.363          1.320          0.204          0.329
+             0.435–0.449    0.360–0.373    1.302–1.352    0.200–0.209    0.325–0.339 
+  256 KiB           0.439          0.362          1.349          0.182          0.328
+             0.437–0.453    0.360–0.374    1.314–1.392    0.181–0.188    0.326–0.341 
+  512 KiB           0.439          0.363          1.388          0.171          0.328
+             0.435–0.454    0.359–0.374    1.360–1.423    0.170–0.176    0.327–0.337 
+  1 MiB             0.440          0.363          1.376          0.166          0.329
+             0.401–0.456    0.322–0.371    1.331–1.406    0.165–0.169    0.314–0.339 
 
-!  marks a cell whose minimum–maximum spread is at least 25% of its median: 1 of 64 cells; treat those medians as low precision.
+Every cell's minimum–maximum spread is under 25% of its median.
 
-On this machine: SHA-256 is 1.16× to 2.17× faster than BLAKE3; BLAKE3 is 1.54× to 3.89× faster than SHA-1DC; BLAKE3 SME2 matches BLAKE3 below 1 KiB and is up to 2.63× faster from there
+On this machine: SHA-256 is 1.21× to 2.26× faster than BLAKE3; BLAKE3 is 1.53× to 3.60× faster than SHA-1DC; BLAKE3 SME2 matches BLAKE3 below 1 KiB and is up to 2.65× faster from there; SHA-256 ring is 1.13× to 2.46× faster than BLAKE3
 

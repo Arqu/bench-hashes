@@ -17,15 +17,17 @@ features = ["std"]
 version = "0.30"
 default-features = false
 
-# Assembly backends where sha2-asm / keccak-asm support the target.
-# sha2-asm 0.6.4 compile_error!s on all Windows targets; on x86-64 the
-# SHA-256 hot path is SHA-NI regardless.
-[target.'cfg(not(windows))'.dependencies.sha2]
-version = "0.10"
-features = ["asm", "asm-aarch64"]
+# sha2 0.11 carries its own hardware backends (ARMv8 SHA-256 instructions,
+# x86 SHA-NI) with runtime detection, on every target.
+[dependencies.sha2]
+version = "0.11"
+default-features = false
 
-[target.'cfg(windows)'.dependencies]
-sha2 = { version = "0.10" }
+# SHA-256 through BoringSSL's assembly (OpenSSL lineage), which pipelines
+# the next block's message schedule under the current block's rounds.
+[dependencies.ring]
+version = "0.17"
+default-features = false
 
 # BLAKE3 with the SME2 kernels (Apple M4 and later), from the sme2-bench
 # branch of the fork. Same single-threaded blake3::hash API; the crate

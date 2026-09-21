@@ -42,7 +42,7 @@ const TARGET_FEATURES: &str = env!("BENCH_TARGET_FEATURES");
 
 const BLAKE3_SOURCE_INFO: &str = env!("BLAKE3_SOURCE_INFO");
 const SHA2_SOURCE_INFO: &str = env!("SHA2_SOURCE_INFO");
-const SHA2_ASM_SOURCE_INFO: &str = env!("SHA2_ASM_SOURCE_INFO");
+const RING_SOURCE_INFO: &str = env!("RING_SOURCE_INFO");
 const SHA1_CHECKED_SOURCE_INFO: &str = env!("SHA1_CHECKED_SOURCE_INFO");
 const BLAKE3_SME2_SOURCE_INFO: &str = env!("BLAKE3_SME2_SOURCE_INFO");
 
@@ -98,6 +98,8 @@ enum Algorithm {
     Blake3Sme2,
     /// Apple's CommonCrypto SHA-256 through CC_SHA256_Init/Update/Final.
     Sha256CommonCrypto,
+    /// ring's SHA-256: BoringSSL's assembly, with runtime CPU detection.
+    Sha256Ring,
 }
 
 /// The hash function a contender implements; "best available" is chosen
@@ -120,12 +122,13 @@ impl Family {
 }
 
 impl Algorithm {
-    const ALL: [Algorithm; 5] = [
+    const ALL: [Algorithm; 6] = [
         Algorithm::Blake3,
         Algorithm::Sha256,
         Algorithm::Sha1Dc,
         Algorithm::Blake3Sme2,
         Algorithm::Sha256CommonCrypto,
+        Algorithm::Sha256Ring,
     ];
 
     /// Command-line key, as in `--contenders blake3,sha256-cc`.
@@ -136,13 +139,14 @@ impl Algorithm {
             Self::Sha1Dc => "sha1dc",
             Self::Blake3Sme2 => "blake3-sme2",
             Self::Sha256CommonCrypto => "sha256-cc",
+            Self::Sha256Ring => "sha256-ring",
         }
     }
 
     fn family(self) -> Family {
         match self {
             Self::Blake3 | Self::Blake3Sme2 => Family::Blake3,
-            Self::Sha256 | Self::Sha256CommonCrypto => Family::Sha256,
+            Self::Sha256 | Self::Sha256CommonCrypto | Self::Sha256Ring => Family::Sha256,
             Self::Sha1Dc => Family::Sha1Dc,
         }
     }
@@ -150,7 +154,7 @@ impl Algorithm {
     /// Whether this contender can run on the current machine, or why not.
     fn availability(self) -> Result<(), String> {
         match self {
-            Self::Blake3 | Self::Sha256 | Self::Sha1Dc => Ok(()),
+            Self::Blake3 | Self::Sha256 | Self::Sha1Dc | Self::Sha256Ring => Ok(()),
             Self::Blake3Sme2 => {
                 let platform = blake3_sme2::platform::Platform::detect();
                 if format!("{platform:?}") == "SME2" {
@@ -178,6 +182,7 @@ impl Algorithm {
             Self::Sha1Dc => "SHA-1DC",
             Self::Blake3Sme2 => "BLAKE3 SME2",
             Self::Sha256CommonCrypto => "SHA-256 CommonCrypto",
+            Self::Sha256Ring => "SHA-256 ring",
         }
     }
 
@@ -192,6 +197,7 @@ impl Algorithm {
             Self::Sha1Dc => "#8a7a1e",
             Self::Blake3Sme2 => "#7c3aed",
             Self::Sha256CommonCrypto => "#0e9aa7",
+            Self::Sha256Ring => "#c2410c",
         }
     }
 
@@ -203,6 +209,7 @@ impl Algorithm {
             Self::Sha1Dc => SHA1_CHECKED_SOURCE_INFO,
             Self::Blake3Sme2 => BLAKE3_SME2_SOURCE_INFO,
             Self::Sha256CommonCrypto => "CommonCrypto CC_SHA256_Init/Update/Final from the running macOS (libSystem); version follows the OS",
+            Self::Sha256Ring => RING_SOURCE_INFO,
         }
     }
 
@@ -210,10 +217,11 @@ impl Algorithm {
     fn mode(self) -> &'static str {
         match self {
             Self::Blake3 => "single-threaded; Rayon not enabled",
-            Self::Sha256 => "assembly backends where available (ARMv8 SHA-256 instructions on AArch64)",
+            Self::Sha256 => "RustCrypto sha2 with its built-in hardware backends (ARMv8 SHA-256 instructions on AArch64, SHA-NI on x86), selected at runtime",
             Self::Sha1Dc => "SHA-1 with collision detection, pure Rust (the construction git uses)",
             Self::Blake3Sme2 => "single-threaded; SME2 kernel for groups of sixteen chunks, integer + NEON hybrid kernels below that; needs a CPU with SME2",
             Self::Sha256CommonCrypto => "Apple CommonCrypto CC_SHA256_Init/Update/Final via FFI, the fastest route into the system's own SHA-256 (corecrypto, ARMv8 SHA-256 instructions on Apple silicon)",
+            Self::Sha256Ring => "ring::digest::digest, BoringSSL's sha256_block_data_order_hw assembly (ARMv8 SHA-256 instructions; SHA-NI on x86), selected at runtime",
         }
     }
 }
@@ -347,7 +355,7 @@ bench-hashes: single-threaded hash throughput by input size
   bench-hashes --contenders K,...  exactly these, in this column order
   bench-hashes --list              contenders and their availability here
 
-Keys: blake3, blake3-sme2, sha256, sha256-cc, sha1dc
+Keys: blake3, blake3-sme2, sha256, sha256-ring, sha256-cc, sha1dc
 ";
 
 fn parse_arguments() -> (Selection, Vec<Algorithm>) {
@@ -609,6 +617,14 @@ fn measure_all(roster: &Roster) -> Results {
                 Sha256::digest(input).as_slice(),
                 &common_crypto::sha256(input)[..],
                 "CommonCrypto SHA-256 must agree with the sha2 crate on a {}-byte input",
+                input.len(),
+            );
+        }
+        if roster.algorithms.contains(&Algorithm::Sha256Ring) {
+            assert_eq!(
+                Sha256::digest(input).as_slice(),
+                ring::digest::digest(&ring::digest::SHA256, input).as_ref(),
+                "ring SHA-256 must agree with the sha2 crate on a {}-byte input",
                 input.len(),
             );
         }
@@ -886,6 +902,12 @@ fn run_batch(
         Algorithm::Sha256CommonCrypto => {
             for _ in 0..iterations {
                 let digest = common_crypto::sha256(black_box(input));
+                let _ = black_box(digest);
+            }
+        }
+        Algorithm::Sha256Ring => {
+            for _ in 0..iterations {
+                let digest = ring::digest::digest(&ring::digest::SHA256, black_box(input));
                 let _ = black_box(digest);
             }
         }
@@ -1294,9 +1316,9 @@ fn detect_blake3_sme2_implementation() -> Implementation {
  */
 fn detect_sha256_implementation() -> Implementation {
     let name = if cfg!(target_arch = "aarch64") {
-        "ARMv8 SHA-256 instructions (sha2-asm)"
+        "sha2 aarch64_sha2 backend (ARMv8 SHA-256 instructions)"
     } else if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
-        "sha2-asm x86-64 assembly (SHA-NI where present)"
+        "sha2 x86_sha backend (SHA-NI where present)"
     } else {
         "sha2 portable"
     };
@@ -1335,6 +1357,25 @@ fn detect_common_crypto_implementation() -> Implementation {
     )
 }
 
+fn detect_ring_implementation() -> Implementation {
+    let name = if cfg!(target_arch = "aarch64") {
+        "sha256_block_data_order_hw (ARMv8 SHA-256 instructions, pipelined schedule)"
+    } else if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
+        "sha256_block_data_order_hw (SHA-NI) or _avx / _ssse3"
+    } else {
+        "sha256_block_data_order_nohw"
+    };
+    Implementation::new(
+        "ring",
+        vec![Regime {
+            first: 0,
+            name,
+            why: "One implementation at every size.",
+            mark: Mark::Circle,
+        }],
+    )
+}
+
 fn detect_implementation(algorithm: Algorithm) -> Implementation {
     match algorithm {
         Algorithm::Blake3 => detect_blake3_implementation(),
@@ -1342,6 +1383,7 @@ fn detect_implementation(algorithm: Algorithm) -> Implementation {
         Algorithm::Sha1Dc => detect_sha1dc_implementation(),
         Algorithm::Blake3Sme2 => detect_blake3_sme2_implementation(),
         Algorithm::Sha256CommonCrypto => detect_common_crypto_implementation(),
+        Algorithm::Sha256Ring => detect_ring_implementation(),
     }
 }
 
@@ -1411,11 +1453,6 @@ fn generate_text(
     for algorithm in &roster.algorithms {
         writeln!(output, "{} source: {}", algorithm.name(), algorithm.source()).unwrap();
     }
-    writeln!(
-        output,
-        "SHA-256 assembly source: {SHA2_ASM_SOURCE_INFO}"
-    )
-        .unwrap();
     for algorithm in &roster.algorithms {
         writeln!(output, "{} mode: {}", algorithm.name(), algorithm.mode()).unwrap();
     }
@@ -1514,6 +1551,7 @@ fn generate_text(
 fn column_heading(algorithm: Algorithm) -> &'static str {
     match algorithm {
         Algorithm::Sha256CommonCrypto => "SHA-256 CC",
+        Algorithm::Sha256Ring => "SHA-256 ring",
         other => other.name(),
     }
 }
@@ -2476,8 +2514,8 @@ fn generate_svg(
         ("sample clock", sample_clock::NAME),
         ("BLAKE3 source", BLAKE3_SOURCE_INFO),
         ("SHA-256 source", SHA2_SOURCE_INFO),
-        ("SHA-256 assembly source", SHA2_ASM_SOURCE_INFO),
         ("SHA-1DC source", SHA1_CHECKED_SOURCE_INFO),
+        ("SHA-256 ring source", RING_SOURCE_INFO),
         ("BLAKE3 SME2 source", BLAKE3_SME2_SOURCE_INFO),
     ] {
         writeln!(
@@ -2672,9 +2710,8 @@ fn contender_provenance_lines(
             implementation.platform,
         )],
         Algorithm::Sha256 => vec![format!(
-            "{name}: {} (+{}) · {}",
+            "{name}: {} · {}",
             package_name_and_version(SHA2_SOURCE_INFO),
-            package_name_and_version(SHA2_ASM_SOURCE_INFO),
             algorithm.mode(),
         )],
         Algorithm::Sha1Dc => vec![format!(
@@ -2687,6 +2724,11 @@ fn contender_provenance_lines(
             format!("{name}: {}", algorithm.mode()),
         ],
         Algorithm::Sha256CommonCrypto => vec![format!("{name}: {}", algorithm.mode())],
+        Algorithm::Sha256Ring => vec![format!(
+            "{name}: {} · {}",
+            package_name_and_version(RING_SOURCE_INFO),
+            algorithm.mode(),
+        )],
     }
 }
 

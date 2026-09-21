@@ -40,7 +40,8 @@ cargo run --release -- --contenders sha256,sha256-cc # exactly these, in this co
 cargo run --release -- --list                        # keys and availability here
 ```
 
-Keys: `blake3`, `blake3-sme2`, `sha256`, `sha256-cc`, `sha1dc`. The
+Keys: `blake3`, `blake3-sme2`, `sha256`, `sha256-ring`, `sha256-cc`,
+`sha1dc`. The
 baseline for ratios is the first BLAKE3 contender in the column order,
 or the first contender when no BLAKE3 is selected.
 
@@ -115,10 +116,17 @@ feature. Rayon is not enabled, and the benchmark uses the one-shot
 blake3::hash function. BLAKE3 may still use SIMD parallelism within the
 calling thread; that is single-threaded execution, not multithreading.
 
-SHA-256 is provided by RustCrypto's sha2 crate with its optimized
-assembly features enabled, including the ARMv8 SHA-256 instructions on
-AArch64 and dedicated implementations on x86-64. Unsupported targets use
-the portable fallback.
+SHA-256 is provided by RustCrypto's sha2 crate (0.11), whose built-in
+backends use the ARMv8 SHA-256 instructions on AArch64 and SHA-NI on
+x86, selected at runtime; other targets use its portable code.
+
+SHA-256 ring is provided by the ring crate: BoringSSL's assembly,
+which interleaves the next block's message schedule with the current
+block's rounds. That pipelining wins about 13% per byte over sha2's
+straightforward per-block loop on Apple silicon, and costs a few
+nanoseconds of setup that sha2 wins back on inputs of one or two
+blocks. The two kernels are the two sides of one design trade-off, so
+the crossover near 128–256 B is structural.
 
 BLAKE3 SME2 is the same crate from the `sme2-bench` branch of
 github.com/johnservil/BLAKE3, built as a git dependency under the crate

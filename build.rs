@@ -45,15 +45,15 @@ fn main() {
         &lock,
         "sha2",
     );
-    emit_optional_package(
-        "SHA2_ASM_SOURCE_INFO",
-        &lock,
-        "sha2-asm",
-    );
     emit_required_package(
         "SHA1_CHECKED_SOURCE_INFO",
         &lock,
         "sha1-checked",
+    );
+    emit_required_package(
+        "RING_SOURCE_INFO",
+        &lock,
+        "ring",
     );
     emit_git_package(
         "BLAKE3_SME2_SOURCE_INFO",
@@ -392,19 +392,6 @@ fn emit_required_package(
             panic!(
                 "{package_name} must be present in Cargo.lock"
             )
-        });
-
-    emit_env(environment_variable, &description);
-}
-
-fn emit_optional_package(
-    environment_variable: &str,
-    lock: &str,
-    package_name: &str,
-) {
-    let description = package_description(lock, package_name)
-        .unwrap_or_else(|| {
-            format!("{package_name} not linked for this target")
         });
 
     emit_env(environment_variable, &description);
