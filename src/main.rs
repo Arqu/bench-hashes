@@ -364,11 +364,32 @@ bench-hashes: single-threaded hash throughput by input size
   bench-hashes --list              contenders and their availability here
 
 Keys: blake3, blake3-sme2, sha256, sha256-ring, sha256-cc, sha1dc
+
+  --trace-clocks PATH              also write one CSV line per sample with
+                                   wall, thread-CPU, and mach_absolute_time
+                                   readings, for clock diagnosis
 ";
 
-fn parse_arguments() -> (Selection, Vec<Algorithm>) {
-    let arguments: Vec<String> = std::env::args().skip(1).collect();
-    match arguments.as_slice() {
+fn parse_arguments() -> (Selection, Vec<Algorithm>, Option<std::path::PathBuf>) {
+    let mut arguments: Vec<String> = std::env::args().skip(1).collect();
+
+    /* --trace-clocks PATH may accompany any selection. */
+    let trace_path = arguments
+        .iter()
+        .position(|argument| argument == "--trace-clocks")
+        .map(|index| {
+            assert!(index + 1 < arguments.len(), "--trace-clocks needs a file path\n\n{USAGE}");
+            let path = std::path::PathBuf::from(&arguments[index + 1]);
+            arguments.drain(index..=index + 1);
+            path
+        });
+
+    let (selection, algorithms) = parse_selection(&arguments);
+    (selection, algorithms, trace_path)
+}
+
+fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
+    match arguments {
         [] => (Selection::Best, Vec::new()),
         [flag] if flag == "--all" => (Selection::All, Vec::new()),
         [flag] if flag == "--list" => {
@@ -408,7 +429,8 @@ fn parse_arguments() -> (Selection, Vec<Algorithm>) {
 }
 
 fn main() {
-    let (selection, explicit) = parse_arguments();
+    let (selection, explicit, trace_path) = parse_arguments();
+    let mut trace = trace_path.map(ClockTrace::new);
     let available: Vec<Algorithm> = Algorithm::ALL
         .into_iter()
         .filter(|algorithm| algorithm.availability().is_ok())
@@ -425,17 +447,17 @@ fn main() {
     let (roster, results, selection_note) = match selection {
         Selection::Explicit => {
             let roster = Roster::new(explicit);
-            let results = measure_all(&roster);
+            let results = measure_all(&roster, trace.as_mut());
             (roster, results, String::from("contenders chosen on the command line"))
         }
         Selection::All => {
             let roster = Roster::new(available);
-            let results = measure_all(&roster);
+            let results = measure_all(&roster, trace.as_mut());
             (roster, results, String::from("every contender available on this machine"))
         }
         Selection::Best => {
             let full = Roster::new(available);
-            let full_results = measure_all(&full);
+            let full_results = measure_all(&full, trace.as_mut());
             let (keep, note) = choose_best_per_family(&full, &full_results);
             let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect());
             let results: Results = full_results
@@ -447,6 +469,10 @@ fn main() {
             (roster, results, note)
         }
     };
+
+    if let Some(trace) = &trace {
+        trace.write();
+    }
 
     let text = generate_text(&roster, &results, &machine, &selection_note);
     let svg = generate_svg(&roster, &results, &machine, &selection_note);
@@ -599,7 +625,7 @@ fn first_crossover(results: &Results, a: usize, b: usize) -> Option<&'static str
         .map(|size_index| INPUT_SIZES[size_index].label)
 }
 
-fn measure_all(roster: &Roster) -> Results {
+fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> Results {
     let inputs: [Vec<u8>; INPUT_COUNT] =
         std::array::from_fn(|index| make_input(INPUT_SIZES[index].bytes));
 
@@ -696,16 +722,39 @@ fn measure_all(roster: &Roster) -> Results {
 
             let input = &inputs[size_index];
 
-            for &algorithm_index in algorithm_order {
+            for (position, &algorithm_index) in algorithm_order.iter().enumerate() {
                 let algorithm = roster.algorithms[algorithm_index];
                 let iterations =
                     batch_iterations[algorithm_index][size_index];
+
+                /* Trace reads bracket the sample; the sample clock sits innermost. */
+                let (trace_cpu0, trace_proc0, trace_mach0) = if trace.is_some() {
+                    (trace_clocks::thread_cpu_ns(), trace_clocks::process_cpu_ns(), trace_clocks::mach_ticks())
+                } else {
+                    (0, 0, 0)
+                };
 
                 let started = sample_clock::now();
 
                 run_batch(algorithm, input, iterations);
 
                 let elapsed_ns = sample_clock::since_ns(started);
+
+                if let Some(trace) = trace.as_deref_mut() {
+                    let mach1 = trace_clocks::mach_ticks();
+                    let proc1 = trace_clocks::process_cpu_ns();
+                    let cpu1 = trace_clocks::thread_cpu_ns();
+                    trace.lines.push(format!(
+                        "{round},{},{},{},{iterations},{elapsed_ns},{},{},{}",
+                        size_offset * algorithm_order.len() + position,
+                        algorithm.key(),
+                        input.len(),
+                        cpu1 - trace_cpu0,
+                        mach1 - trace_mach0,
+                        proc1 - trace_proc0,
+                    ));
+                }
+
                 let total_bytes = input.len() as u64 * iterations as u64;
 
                 /* Rounded to the nearest picosecond per byte. */
@@ -969,6 +1018,76 @@ mod common_crypto {
     pub fn sha256(_input: &[u8]) -> [u8; 32] {
         unreachable!("CommonCrypto SHA-256 is an Apple-only contender")
     }
+}
+
+/*
+ * Optional per-sample trace for clock diagnosis: every sample's wall
+ * nanoseconds, thread CPU nanoseconds, and (on Apple) mach_absolute_time
+ * ticks, with the round, its position in the round, and the contender and
+ * size. One CSV line per sample. Off unless --trace-clocks PATH is given;
+ * the extra clock reads add about 100 ns to each 1 ms sample.
+ */
+struct ClockTrace {
+    lines: Vec<String>,
+    path: std::path::PathBuf,
+}
+
+impl ClockTrace {
+    fn new(path: std::path::PathBuf) -> Self {
+        let mut lines = Vec::with_capacity(8192);
+        lines.push("round,position,contender,size_bytes,iterations,wall_ns,thread_cpu_ns,mach_ticks,process_cpu_ns".to_owned());
+        Self { lines, path }
+    }
+
+    fn write(&self) {
+        let body = self.lines.join("\n") + "\n";
+        fs::write(&self.path, body).unwrap_or_else(|error| {
+            panic!("failed to write {}: {error}", self.path.display())
+        });
+        eprintln!("clock trace: {} samples in {}", self.lines.len() - 1, self.path.display());
+    }
+}
+
+/// Reads for the trace; each is a syscall-free counter or accounting read.
+mod trace_clocks {
+    #[cfg(unix)]
+    fn clock_ns(clock_id: i32) -> u64 {
+        #[repr(C)]
+        struct Timespec {
+            tv_sec: i64,
+            tv_nsec: i64,
+        }
+        unsafe extern "C" {
+            fn clock_gettime(clock_id: i32, tp: *mut Timespec) -> i32;
+        }
+        let mut ts = Timespec { tv_sec: 0, tv_nsec: 0 };
+        let rc = unsafe { clock_gettime(clock_id, &mut ts) };
+        assert_eq!(rc, 0, "clock_gettime({clock_id}) failed");
+        ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64
+    }
+
+    #[cfg(target_vendor = "apple")]
+    pub fn thread_cpu_ns() -> u64 { clock_ns(16) }
+    #[cfg(target_vendor = "apple")]
+    pub fn process_cpu_ns() -> u64 { clock_ns(12) }
+    #[cfg(all(unix, not(target_vendor = "apple")))]
+    pub fn thread_cpu_ns() -> u64 { clock_ns(3) }
+    #[cfg(all(unix, not(target_vendor = "apple")))]
+    pub fn process_cpu_ns() -> u64 { clock_ns(2) }
+    #[cfg(not(unix))]
+    pub fn thread_cpu_ns() -> u64 { 0 }
+    #[cfg(not(unix))]
+    pub fn process_cpu_ns() -> u64 { 0 }
+
+    #[cfg(target_vendor = "apple")]
+    pub fn mach_ticks() -> u64 {
+        unsafe extern "C" {
+            fn mach_absolute_time() -> u64;
+        }
+        unsafe { mach_absolute_time() }
+    }
+    #[cfg(not(target_vendor = "apple"))]
+    pub fn mach_ticks() -> u64 { 0 }
 }
 
 /*

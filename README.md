@@ -50,7 +50,13 @@ cargo run --release -- --list                        # keys and availability her
 ```
 
 Keys: `blake3`, `blake3-sme2`, `sha256`, `sha256-ring`, `sha256-cc`,
-`sha1dc`. The
+`sha1dc`.
+
+`--trace-clocks PATH` writes one CSV line per sample with the wall
+(`Instant`), thread-CPU, process-CPU, and `mach_absolute_time` readings
+taken around the same work, for clock diagnosis;
+`tools/analyze-clock-trace.py PATH` finds windows where the clocks
+disagree and says what shape the disagreement has. The
 baseline for ratios is the first BLAKE3 contender in the column order,
 or the first contender when no BLAKE3 is selected.
 
