@@ -22,7 +22,7 @@
     .divider { stroke: #e0e0de; stroke-width: 1; }
   </style>
   <text x="110" y="44" class="title">Cryptographic Hash Time per Byte</text>
-  <text x="110" y="70" class="takeaway">On this machine: SHA-256 is 1.17× to 2.22× faster than BLAKE3; BLAKE3 is 1.56× to 3.61× faster than SHA-1DC; BLAKE3 SME2 matches BLAKE3 below 16 KiB and is up to 2.30× faster from there</text>
+  <text x="110" y="70" class="takeaway">On this machine: SHA-256 is 1.16× to 2.21× faster than BLAKE3; BLAKE3 is 1.56× to 3.60× faster than SHA-1DC; BLAKE3 SME2 matches BLAKE3 below 16 KiB and is up to 2.30× faster from there</text>
   <text x="110" y="90" class="method">Line and dot: median · shaded band: minimum–maximum across 120 interleaved samples · single-threaded · lower is better</text>
   <line x1="110.0" y1="455.00" x2="1000.0" y2="455.00" class="grid"/>
   <text x="100.0" y="458.50" class="tick-label" text-anchor="end">0.10</text>
@@ -80,231 +80,231 @@
   <text x="555.0" y="501.0" class="axis-title" text-anchor="middle">Input size (logarithmic spacing)</text>
   <line x1="110.0" y1="135.0" x2="110.0" y2="455.0" class="axis"/>
   <line x1="110.0" y1="455.0" x2="1000.0" y2="455.0" class="axis"/>
-  <path d="M 150.00 287.22 L 207.86 280.54 L 265.71 283.43 L 323.57 285.49 L 381.43 287.91 L 439.29 286.60 L 497.14 335.17 L 555.00 335.33 L 612.86 339.13 L 670.71 335.49 L 728.57 332.75 L 786.43 332.94 L 844.29 331.72 L 902.14 335.36 L 960.00 337.41 L 960.00 344.90 L 902.14 344.90 L 844.29 344.87 L 786.43 344.87 L 728.57 344.95 L 670.71 344.80 L 612.86 344.55 L 555.00 344.05 L 497.14 342.81 L 439.29 294.85 L 381.43 296.87 L 323.57 296.71 L 265.71 296.18 L 207.86 294.81 L 150.00 296.44 Z" fill="#3b82f6" fill-opacity="0.16" stroke="none"/>
-  <path d="M 150.00 319.38 L 207.86 339.25 L 265.71 347.11 L 323.57 348.80 L 381.43 347.68 L 439.29 351.80 L 497.14 349.00 L 555.00 351.07 L 612.86 350.46 L 670.71 344.83 L 728.57 344.45 L 786.43 350.92 L 844.29 352.12 L 902.14 351.18 L 960.00 348.90 L 960.00 357.49 L 902.14 357.61 L 844.29 357.64 L 786.43 357.61 L 728.57 357.66 L 670.71 357.65 L 612.86 357.61 L 555.00 357.57 L 497.14 357.51 L 439.29 357.27 L 381.43 356.27 L 323.57 355.89 L 265.71 354.44 L 207.86 345.39 L 150.00 326.21 Z" fill="#e07a45" fill-opacity="0.16" stroke="none"/>
-  <path d="M 150.00 181.80 L 207.86 214.21 L 265.71 223.63 L 323.57 243.90 L 381.43 247.98 L 439.29 251.06 L 497.14 252.07 L 555.00 248.89 L 612.86 251.20 L 670.71 246.25 L 728.57 246.64 L 786.43 243.89 L 844.29 240.69 L 902.14 245.25 L 960.00 243.94 L 960.00 251.61 L 902.14 254.09 L 844.29 255.21 L 786.43 255.42 L 728.57 257.25 L 670.71 257.73 L 612.86 259.82 L 555.00 259.46 L 497.14 259.09 L 439.29 259.26 L 381.43 257.35 L 323.57 252.56 L 265.71 237.67 L 207.86 222.14 L 150.00 191.59 Z" fill="#6b9e3a" fill-opacity="0.16" stroke="none"/>
-  <path d="M 150.00 284.64 L 207.86 282.53 L 265.71 288.20 L 323.57 287.12 L 381.43 289.66 L 439.29 284.50 L 497.14 327.48 L 555.00 336.03 L 612.86 376.97 L 670.71 383.37 L 728.57 392.49 L 786.43 395.30 L 844.29 397.15 L 902.14 406.53 L 960.00 410.84 L 960.00 412.71 L 902.14 407.96 L 844.29 400.52 L 786.43 396.90 L 728.57 395.01 L 670.71 391.61 L 612.86 384.76 L 555.00 342.78 L 497.14 340.39 L 439.29 292.10 L 381.43 297.11 L 323.57 296.62 L 265.71 295.74 L 207.86 294.26 L 150.00 292.85 Z" fill="#7c3aed" fill-opacity="0.16" stroke="none"/>
-  <path d="M 150.00 290.71 L 207.86 289.99 L 265.71 291.72 L 323.57 292.35 L 381.43 293.05 L 439.29 290.73 L 497.14 341.77 L 555.00 343.07 L 612.86 343.46 L 670.71 343.66 L 728.57 343.99 L 786.43 343.83 L 844.29 344.08 L 902.14 343.96 L 960.00 343.81" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M 150.00 324.58 L 207.86 343.82 L 265.71 353.24 L 323.57 354.82 L 381.43 355.29 L 439.29 355.98 L 497.14 356.45 L 555.00 356.77 L 612.86 356.80 L 670.71 356.85 L 728.57 356.83 L 786.43 356.70 L 844.29 356.76 L 902.14 356.67 L 960.00 356.72" fill="none" stroke="#e07a45" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M 150.00 185.75 L 207.86 216.69 L 265.71 232.16 L 323.57 246.52 L 381.43 251.81 L 439.29 254.21 L 497.14 254.69 L 555.00 253.31 L 612.86 255.10 L 670.71 253.93 L 728.57 253.98 L 786.43 252.38 L 844.29 251.21 L 902.14 249.66 L 960.00 248.41" fill="none" stroke="#6b9e3a" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M 150.00 287.88 L 207.86 289.86 L 265.71 291.50 L 323.57 292.34 L 381.43 292.80 L 439.29 288.39 L 497.14 338.21 L 555.00 341.40 L 612.86 383.01 L 670.71 390.78 L 728.57 394.55 L 786.43 396.34 L 844.29 399.07 L 902.14 407.25 L 960.00 412.01" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-  <circle cx="150.00" cy="290.71" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
-    <title>64 B, BLAKE3: median 0.75 ns/B (1.3 GB/s); range 0.69–0.78 ns/B</title>
+  <path d="M 150.00 285.61 L 207.86 282.14 L 265.71 286.85 L 323.57 287.66 L 381.43 288.11 L 439.29 284.06 L 497.14 331.00 L 555.00 333.97 L 612.86 333.94 L 670.71 336.93 L 728.57 335.69 L 786.43 334.88 L 844.29 331.81 L 902.14 335.38 L 960.00 332.77 L 960.00 344.87 L 902.14 344.89 L 844.29 344.87 L 786.43 344.94 L 728.57 344.87 L 670.71 344.75 L 612.86 344.53 L 555.00 344.01 L 497.14 342.98 L 439.29 294.73 L 381.43 296.86 L 323.57 296.31 L 265.71 296.21 L 207.86 294.41 L 150.00 296.79 Z" fill="#3b82f6" fill-opacity="0.16" stroke="none"/>
+  <path d="M 150.00 317.15 L 207.86 335.03 L 265.71 344.12 L 323.57 344.08 L 381.43 347.82 L 439.29 346.52 L 497.14 345.00 L 555.00 345.11 L 612.86 349.14 L 670.71 345.97 L 728.57 349.83 L 786.43 345.09 L 844.29 348.20 L 902.14 348.44 L 960.00 347.78 L 960.00 357.47 L 902.14 357.50 L 844.29 357.56 L 786.43 357.59 L 728.57 357.59 L 670.71 357.61 L 612.86 357.61 L 555.00 357.56 L 497.14 357.45 L 439.29 357.23 L 381.43 356.29 L 323.57 355.89 L 265.71 354.35 L 207.86 345.65 L 150.00 325.88 Z" fill="#e07a45" fill-opacity="0.16" stroke="none"/>
+  <path d="M 150.00 180.04 L 207.86 213.01 L 265.71 227.51 L 323.57 233.12 L 381.43 245.60 L 439.29 249.65 L 497.14 250.46 L 555.00 247.29 L 612.86 247.35 L 670.71 247.16 L 728.57 249.57 L 786.43 245.79 L 844.29 243.69 L 902.14 242.79 L 960.00 242.16 L 960.00 252.33 L 902.14 254.20 L 844.29 254.36 L 786.43 254.85 L 728.57 257.04 L 670.71 256.96 L 612.86 259.16 L 555.00 259.52 L 497.14 259.28 L 439.29 259.60 L 381.43 256.97 L 323.57 251.92 L 265.71 238.41 L 207.86 222.02 L 150.00 190.83 Z" fill="#6b9e3a" fill-opacity="0.16" stroke="none"/>
+  <path d="M 150.00 281.17 L 207.86 285.18 L 265.71 285.73 L 323.57 287.48 L 381.43 286.21 L 439.29 285.27 L 497.14 329.57 L 555.00 334.24 L 612.86 381.88 L 670.71 387.49 L 728.57 393.29 L 786.43 395.92 L 844.29 398.02 L 902.14 405.59 L 960.00 408.82 L 960.00 413.06 L 902.14 408.40 L 844.29 404.30 L 786.43 397.48 L 728.57 395.12 L 670.71 392.30 L 612.86 385.18 L 555.00 343.73 L 497.14 341.99 L 439.29 293.03 L 381.43 297.04 L 323.57 296.60 L 265.71 295.76 L 207.86 294.18 L 150.00 292.36 Z" fill="#7c3aed" fill-opacity="0.16" stroke="none"/>
+  <path d="M 150.00 291.18 L 207.86 290.08 L 265.71 292.15 L 323.57 292.57 L 381.43 293.42 L 439.29 290.93 L 497.14 341.78 L 555.00 342.85 L 612.86 343.53 L 670.71 343.56 L 728.57 343.88 L 786.43 343.81 L 844.29 343.81 L 902.14 343.87 L 960.00 344.03" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M 150.00 324.54 L 207.86 343.83 L 265.71 353.21 L 323.57 354.71 L 381.43 355.21 L 439.29 355.81 L 497.14 356.49 L 555.00 356.63 L 612.86 356.61 L 670.71 356.71 L 728.57 356.60 L 786.43 356.67 L 844.29 356.58 L 902.14 356.60 L 960.00 356.38" fill="none" stroke="#e07a45" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M 150.00 186.50 L 207.86 216.97 L 265.71 232.63 L 323.57 246.82 L 381.43 252.37 L 439.29 254.58 L 497.14 254.92 L 555.00 254.06 L 612.86 255.24 L 670.71 254.00 L 728.57 254.05 L 786.43 252.63 L 844.29 251.43 L 902.14 249.98 L 960.00 248.64" fill="none" stroke="#6b9e3a" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M 150.00 288.58 L 207.86 289.96 L 265.71 291.94 L 323.57 292.52 L 381.43 292.76 L 439.29 290.00 L 497.14 340.82 L 555.00 342.73 L 612.86 383.10 L 670.71 390.89 L 728.57 394.68 L 786.43 397.07 L 844.29 399.28 L 902.14 407.63 L 960.00 412.09" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="150.00" cy="291.18" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
+    <title>64 B, BLAKE3: median 0.74 ns/B (1.3 GB/s); range 0.69–0.79 ns/B</title>
   </circle>
-  <text x="159.00" y="278.71" class="value-label" fill="#3b82f6" text-anchor="start">0.75</text>
-  <circle cx="207.86" cy="289.99" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
-    <title>128 B, BLAKE3: median 0.75 ns/B (1.3 GB/s); range 0.71–0.84 ns/B</title>
+  <text x="159.00" y="279.18" class="value-label" fill="#3b82f6" text-anchor="start">0.74</text>
+  <circle cx="207.86" cy="290.08" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
+    <title>128 B, BLAKE3: median 0.75 ns/B (1.3 GB/s); range 0.71–0.83 ns/B</title>
   </circle>
-  <circle cx="265.71" cy="291.72" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
-    <title>256 B, BLAKE3: median 0.74 ns/B (1.4 GB/s); range 0.70–0.81 ns/B</title>
+  <circle cx="265.71" cy="292.15" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
+    <title>256 B, BLAKE3: median 0.73 ns/B (1.4 GB/s); range 0.70–0.78 ns/B</title>
   </circle>
-  <circle cx="323.57" cy="292.35" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
-    <title>512 B, BLAKE3: median 0.73 ns/B (1.4 GB/s); range 0.69–0.79 ns/B</title>
+  <circle cx="323.57" cy="292.57" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
+    <title>512 B, BLAKE3: median 0.73 ns/B (1.4 GB/s); range 0.70–0.77 ns/B</title>
   </circle>
-  <circle cx="381.43" cy="293.05" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
+  <circle cx="381.43" cy="293.42" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
     <title>1 KiB, BLAKE3: median 0.72 ns/B (1.4 GB/s); range 0.69–0.77 ns/B</title>
   </circle>
-  <text x="381.43" y="281.05" class="value-label" fill="#3b82f6" text-anchor="middle">0.72</text>
-  <circle cx="439.29" cy="290.73" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
-    <title>2 KiB, BLAKE3: median 0.74 ns/B (1.3 GB/s); range 0.71–0.78 ns/B</title>
+  <text x="381.43" y="281.42" class="value-label" fill="#3b82f6" text-anchor="middle">0.72</text>
+  <circle cx="439.29" cy="290.93" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
+    <title>2 KiB, BLAKE3: median 0.74 ns/B (1.3 GB/s); range 0.71–0.81 ns/B</title>
   </circle>
-  <circle cx="497.14" cy="341.77" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
-    <title>4 KiB, BLAKE3: median 0.40 ns/B (2.5 GB/s); range 0.39–0.43 ns/B</title>
+  <circle cx="497.14" cy="341.78" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
+    <title>4 KiB, BLAKE3: median 0.40 ns/B (2.5 GB/s); range 0.39–0.46 ns/B</title>
   </circle>
-  <circle cx="555.00" cy="343.07" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
-    <title>8 KiB, BLAKE3: median 0.39 ns/B (2.5 GB/s); range 0.39–0.43 ns/B</title>
+  <circle cx="555.00" cy="342.85" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
+    <title>8 KiB, BLAKE3: median 0.39 ns/B (2.5 GB/s); range 0.39–0.44 ns/B</title>
   </circle>
-  <circle cx="612.86" cy="343.46" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
-    <title>16 KiB, BLAKE3: median 0.39 ns/B (2.6 GB/s); range 0.39–0.41 ns/B</title>
+  <circle cx="612.86" cy="343.53" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
+    <title>16 KiB, BLAKE3: median 0.39 ns/B (2.6 GB/s); range 0.39–0.44 ns/B</title>
   </circle>
-  <text x="612.86" y="331.46" class="value-label" fill="#3b82f6" text-anchor="middle">0.39</text>
-  <circle cx="670.71" cy="343.66" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
-    <title>32 KiB, BLAKE3: median 0.39 ns/B (2.6 GB/s); range 0.38–0.43 ns/B</title>
+  <text x="612.86" y="331.53" class="value-label" fill="#3b82f6" text-anchor="middle">0.39</text>
+  <circle cx="670.71" cy="343.56" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
+    <title>32 KiB, BLAKE3: median 0.39 ns/B (2.6 GB/s); range 0.38–0.42 ns/B</title>
   </circle>
-  <circle cx="728.57" cy="343.99" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
-    <title>64 KiB, BLAKE3: median 0.39 ns/B (2.6 GB/s); range 0.38–0.45 ns/B</title>
+  <circle cx="728.57" cy="343.88" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
+    <title>64 KiB, BLAKE3: median 0.39 ns/B (2.6 GB/s); range 0.38–0.43 ns/B</title>
   </circle>
-  <circle cx="786.43" cy="343.83" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
-    <title>128 KiB, BLAKE3: median 0.39 ns/B (2.6 GB/s); range 0.38–0.44 ns/B</title>
+  <circle cx="786.43" cy="343.81" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
+    <title>128 KiB, BLAKE3: median 0.39 ns/B (2.6 GB/s); range 0.38–0.43 ns/B</title>
   </circle>
-  <circle cx="844.29" cy="344.08" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
+  <circle cx="844.29" cy="343.81" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
     <title>256 KiB, BLAKE3: median 0.39 ns/B (2.6 GB/s); range 0.38–0.45 ns/B</title>
   </circle>
-  <text x="844.29" y="332.08" class="value-label" fill="#3b82f6" text-anchor="middle">0.39</text>
-  <circle cx="902.14" cy="343.96" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
+  <text x="844.29" y="331.81" class="value-label" fill="#3b82f6" text-anchor="middle">0.39</text>
+  <circle cx="902.14" cy="343.87" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
     <title>512 KiB, BLAKE3: median 0.39 ns/B (2.6 GB/s); range 0.38–0.43 ns/B</title>
   </circle>
-  <circle cx="960.00" cy="343.81" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
-    <title>1 MiB, BLAKE3: median 0.39 ns/B (2.6 GB/s); range 0.38–0.42 ns/B</title>
+  <circle cx="960.00" cy="344.03" r="5" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5">
+    <title>1 MiB, BLAKE3: median 0.39 ns/B (2.6 GB/s); range 0.38–0.45 ns/B</title>
   </circle>
-  <text x="951.00" y="331.81" class="value-label" fill="#3b82f6" text-anchor="end">0.39</text>
-  <circle cx="150.00" cy="324.58" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
-    <title>64 B, SHA-256: median 0.49 ns/B (2.0 GB/s); range 0.48–0.52 ns/B</title>
+  <text x="951.00" y="332.03" class="value-label" fill="#3b82f6" text-anchor="end">0.39</text>
+  <circle cx="150.00" cy="324.54" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
+    <title>64 B, SHA-256: median 0.49 ns/B (2.0 GB/s); range 0.48–0.54 ns/B</title>
   </circle>
-  <text x="159.00" y="344.58" class="value-label" fill="#e07a45" text-anchor="start">0.49</text>
-  <circle cx="207.86" cy="343.82" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
-    <title>128 B, SHA-256: median 0.39 ns/B (2.6 GB/s); range 0.38–0.41 ns/B</title>
+  <text x="159.00" y="344.54" class="value-label" fill="#e07a45" text-anchor="start">0.49</text>
+  <circle cx="207.86" cy="343.83" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
+    <title>128 B, SHA-256: median 0.39 ns/B (2.6 GB/s); range 0.38–0.43 ns/B</title>
   </circle>
-  <circle cx="265.71" cy="353.24" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
-    <title>256 B, SHA-256: median 0.35 ns/B (2.9 GB/s); range 0.34–0.37 ns/B</title>
+  <circle cx="265.71" cy="353.21" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
+    <title>256 B, SHA-256: median 0.35 ns/B (2.9 GB/s); range 0.34–0.39 ns/B</title>
   </circle>
-  <circle cx="323.57" cy="354.82" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
-    <title>512 B, SHA-256: median 0.34 ns/B (2.9 GB/s); range 0.34–0.37 ns/B</title>
+  <circle cx="323.57" cy="354.71" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
+    <title>512 B, SHA-256: median 0.34 ns/B (2.9 GB/s); range 0.34–0.39 ns/B</title>
   </circle>
-  <circle cx="381.43" cy="355.29" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
+  <circle cx="381.43" cy="355.21" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
     <title>1 KiB, SHA-256: median 0.34 ns/B (3.0 GB/s); range 0.33–0.37 ns/B</title>
   </circle>
-  <text x="381.43" y="375.29" class="value-label" fill="#e07a45" text-anchor="middle">0.34</text>
-  <circle cx="439.29" cy="355.98" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
-    <title>2 KiB, SHA-256: median 0.34 ns/B (3.0 GB/s); range 0.33–0.35 ns/B</title>
+  <text x="381.43" y="375.21" class="value-label" fill="#e07a45" text-anchor="middle">0.34</text>
+  <circle cx="439.29" cy="355.81" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
+    <title>2 KiB, SHA-256: median 0.34 ns/B (3.0 GB/s); range 0.33–0.38 ns/B</title>
   </circle>
-  <circle cx="497.14" cy="356.45" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
-    <title>4 KiB, SHA-256: median 0.33 ns/B (3.0 GB/s); range 0.33–0.37 ns/B</title>
+  <circle cx="497.14" cy="356.49" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
+    <title>4 KiB, SHA-256: median 0.33 ns/B (3.0 GB/s); range 0.33–0.38 ns/B</title>
   </circle>
-  <circle cx="555.00" cy="356.77" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
-    <title>8 KiB, SHA-256: median 0.33 ns/B (3.0 GB/s); range 0.33–0.36 ns/B</title>
+  <circle cx="555.00" cy="356.63" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
+    <title>8 KiB, SHA-256: median 0.33 ns/B (3.0 GB/s); range 0.33–0.38 ns/B</title>
   </circle>
-  <circle cx="612.86" cy="356.80" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
+  <circle cx="612.86" cy="356.61" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
     <title>16 KiB, SHA-256: median 0.33 ns/B (3.0 GB/s); range 0.33–0.36 ns/B</title>
   </circle>
-  <text x="612.86" y="376.80" class="value-label" fill="#e07a45" text-anchor="middle">0.33</text>
-  <circle cx="670.71" cy="356.85" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
+  <text x="612.86" y="376.61" class="value-label" fill="#e07a45" text-anchor="middle">0.33</text>
+  <circle cx="670.71" cy="356.71" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
     <title>32 KiB, SHA-256: median 0.33 ns/B (3.0 GB/s); range 0.33–0.38 ns/B</title>
   </circle>
-  <circle cx="728.57" cy="356.83" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
-    <title>64 KiB, SHA-256: median 0.33 ns/B (3.0 GB/s); range 0.33–0.39 ns/B</title>
+  <circle cx="728.57" cy="356.60" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
+    <title>64 KiB, SHA-256: median 0.33 ns/B (3.0 GB/s); range 0.33–0.36 ns/B</title>
   </circle>
-  <circle cx="786.43" cy="356.70" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
-    <title>128 KiB, SHA-256: median 0.33 ns/B (3.0 GB/s); range 0.33–0.36 ns/B</title>
+  <circle cx="786.43" cy="356.67" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
+    <title>128 KiB, SHA-256: median 0.33 ns/B (3.0 GB/s); range 0.33–0.38 ns/B</title>
   </circle>
-  <circle cx="844.29" cy="356.76" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
-    <title>256 KiB, SHA-256: median 0.33 ns/B (3.0 GB/s); range 0.33–0.35 ns/B</title>
+  <circle cx="844.29" cy="356.58" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
+    <title>256 KiB, SHA-256: median 0.33 ns/B (3.0 GB/s); range 0.33–0.37 ns/B</title>
   </circle>
-  <text x="844.29" y="376.76" class="value-label" fill="#e07a45" text-anchor="middle">0.33</text>
-  <circle cx="902.14" cy="356.67" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
-    <title>512 KiB, SHA-256: median 0.33 ns/B (3.0 GB/s); range 0.33–0.36 ns/B</title>
+  <text x="844.29" y="376.58" class="value-label" fill="#e07a45" text-anchor="middle">0.33</text>
+  <circle cx="902.14" cy="356.60" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
+    <title>512 KiB, SHA-256: median 0.33 ns/B (3.0 GB/s); range 0.33–0.37 ns/B</title>
   </circle>
-  <circle cx="960.00" cy="356.72" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
+  <circle cx="960.00" cy="356.38" r="5" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5">
     <title>1 MiB, SHA-256: median 0.33 ns/B (3.0 GB/s); range 0.33–0.37 ns/B</title>
   </circle>
-  <text x="951.00" y="376.72" class="value-label" fill="#e07a45" text-anchor="end">0.33</text>
-  <circle cx="150.00" cy="185.75" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
-    <title>64 B, SHA-1DC: median 2.69 ns/B (0.4 GB/s); range 2.50–2.82 ns/B</title>
+  <text x="951.00" y="376.38" class="value-label" fill="#e07a45" text-anchor="end">0.33</text>
+  <circle cx="150.00" cy="186.50" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
+    <title>64 B, SHA-1DC: median 2.66 ns/B (0.4 GB/s); range 2.53–2.88 ns/B</title>
   </circle>
-  <text x="159.00" y="217.75" class="value-label" fill="#6b9e3a" text-anchor="start">2.69</text>
-  <circle cx="207.86" cy="216.69" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
-    <title>128 B, SHA-1DC: median 1.84 ns/B (0.5 GB/s); range 1.72–1.90 ns/B</title>
+  <text x="159.00" y="218.50" class="value-label" fill="#6b9e3a" text-anchor="start">2.66</text>
+  <circle cx="207.86" cy="216.97" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
+    <title>128 B, SHA-1DC: median 1.84 ns/B (0.5 GB/s); range 1.73–1.93 ns/B</title>
   </circle>
-  <circle cx="265.71" cy="232.16" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
-    <title>256 B, SHA-1DC: median 1.52 ns/B (0.7 GB/s); range 1.43–1.69 ns/B</title>
+  <circle cx="265.71" cy="232.63" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
+    <title>256 B, SHA-1DC: median 1.52 ns/B (0.7 GB/s); range 1.41–1.61 ns/B</title>
   </circle>
-  <circle cx="323.57" cy="246.52" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
-    <title>512 B, SHA-1DC: median 1.28 ns/B (0.8 GB/s); range 1.19–1.32 ns/B</title>
+  <circle cx="323.57" cy="246.82" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
+    <title>512 B, SHA-1DC: median 1.27 ns/B (0.8 GB/s); range 1.20–1.51 ns/B</title>
   </circle>
-  <circle cx="381.43" cy="251.81" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
-    <title>1 KiB, SHA-1DC: median 1.20 ns/B (0.8 GB/s); range 1.12–1.26 ns/B</title>
+  <circle cx="381.43" cy="252.37" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
+    <title>1 KiB, SHA-1DC: median 1.19 ns/B (0.8 GB/s); range 1.13–1.29 ns/B</title>
   </circle>
-  <text x="381.43" y="283.81" class="value-label" fill="#6b9e3a" text-anchor="middle">1.20</text>
-  <circle cx="439.29" cy="254.21" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
-    <title>2 KiB, SHA-1DC: median 1.16 ns/B (0.9 GB/s); range 1.09–1.21 ns/B</title>
+  <text x="381.43" y="284.37" class="value-label" fill="#6b9e3a" text-anchor="middle">1.19</text>
+  <circle cx="439.29" cy="254.58" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
+    <title>2 KiB, SHA-1DC: median 1.16 ns/B (0.9 GB/s); range 1.09–1.23 ns/B</title>
   </circle>
-  <circle cx="497.14" cy="254.69" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
-    <title>4 KiB, SHA-1DC: median 1.16 ns/B (0.9 GB/s); range 1.10–1.20 ns/B</title>
+  <circle cx="497.14" cy="254.92" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
+    <title>4 KiB, SHA-1DC: median 1.15 ns/B (0.9 GB/s); range 1.09–1.22 ns/B</title>
   </circle>
-  <circle cx="555.00" cy="253.31" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
-    <title>8 KiB, SHA-1DC: median 1.18 ns/B (0.8 GB/s); range 1.09–1.24 ns/B</title>
+  <circle cx="555.00" cy="254.06" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
+    <title>8 KiB, SHA-1DC: median 1.17 ns/B (0.9 GB/s); range 1.09–1.27 ns/B</title>
   </circle>
-  <circle cx="612.86" cy="255.10" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
-    <title>16 KiB, SHA-1DC: median 1.15 ns/B (0.9 GB/s); range 1.09–1.21 ns/B</title>
+  <circle cx="612.86" cy="255.24" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
+    <title>16 KiB, SHA-1DC: median 1.15 ns/B (0.9 GB/s); range 1.10–1.27 ns/B</title>
   </circle>
-  <text x="612.86" y="287.10" class="value-label" fill="#6b9e3a" text-anchor="middle">1.15</text>
-  <circle cx="670.71" cy="253.93" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
-    <title>32 KiB, SHA-1DC: median 1.17 ns/B (0.9 GB/s); range 1.12–1.28 ns/B</title>
+  <text x="612.86" y="287.24" class="value-label" fill="#6b9e3a" text-anchor="middle">1.15</text>
+  <circle cx="670.71" cy="254.00" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
+    <title>32 KiB, SHA-1DC: median 1.17 ns/B (0.9 GB/s); range 1.13–1.27 ns/B</title>
   </circle>
-  <circle cx="728.57" cy="253.98" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
-    <title>64 KiB, SHA-1DC: median 1.17 ns/B (0.9 GB/s); range 1.12–1.28 ns/B</title>
+  <circle cx="728.57" cy="254.05" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
+    <title>64 KiB, SHA-1DC: median 1.17 ns/B (0.9 GB/s); range 1.12–1.23 ns/B</title>
   </circle>
-  <circle cx="786.43" cy="252.38" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
-    <title>128 KiB, SHA-1DC: median 1.19 ns/B (0.8 GB/s); range 1.15–1.32 ns/B</title>
+  <circle cx="786.43" cy="252.63" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
+    <title>128 KiB, SHA-1DC: median 1.19 ns/B (0.8 GB/s); range 1.16–1.29 ns/B</title>
   </circle>
-  <circle cx="844.29" cy="251.21" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
-    <title>256 KiB, SHA-1DC: median 1.21 ns/B (0.8 GB/s); range 1.15–1.37 ns/B</title>
+  <circle cx="844.29" cy="251.43" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
+    <title>256 KiB, SHA-1DC: median 1.20 ns/B (0.8 GB/s); range 1.16–1.32 ns/B</title>
   </circle>
-  <text x="844.29" y="283.21" class="value-label" fill="#6b9e3a" text-anchor="middle">1.21</text>
-  <circle cx="902.14" cy="249.66" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
-    <title>512 KiB, SHA-1DC: median 1.23 ns/B (0.8 GB/s); range 1.17–1.30 ns/B</title>
+  <text x="844.29" y="283.43" class="value-label" fill="#6b9e3a" text-anchor="middle">1.20</text>
+  <circle cx="902.14" cy="249.98" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
+    <title>512 KiB, SHA-1DC: median 1.23 ns/B (0.8 GB/s); range 1.16–1.34 ns/B</title>
   </circle>
-  <circle cx="960.00" cy="248.41" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
-    <title>1 MiB, SHA-1DC: median 1.25 ns/B (0.8 GB/s); range 1.20–1.32 ns/B</title>
+  <circle cx="960.00" cy="248.64" r="5" fill="#6b9e3a" stroke="#fdfdfc" stroke-width="1.5">
+    <title>1 MiB, SHA-1DC: median 1.25 ns/B (0.8 GB/s); range 1.19–1.35 ns/B</title>
   </circle>
-  <text x="951.00" y="280.41" class="value-label" fill="#6b9e3a" text-anchor="end">1.25</text>
-  <circle cx="150.00" cy="287.88" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
-    <title>64 B, BLAKE3 SME2: median 0.77 ns/B (1.3 GB/s); range 0.73–0.80 ns/B</title>
+  <text x="951.00" y="280.64" class="value-label" fill="#6b9e3a" text-anchor="end">1.25</text>
+  <circle cx="150.00" cy="288.58" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
+    <title>64 B, BLAKE3 SME2: median 0.76 ns/B (1.3 GB/s); range 0.73–0.84 ns/B</title>
   </circle>
-  <text x="159.00" y="331.88" class="value-label" fill="#7c3aed" text-anchor="start">0.77</text>
-  <circle cx="207.86" cy="289.86" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
-    <title>128 B, BLAKE3 SME2: median 0.75 ns/B (1.3 GB/s); range 0.71–0.82 ns/B</title>
+  <text x="159.00" y="332.58" class="value-label" fill="#7c3aed" text-anchor="start">0.76</text>
+  <circle cx="207.86" cy="289.96" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
+    <title>128 B, BLAKE3 SME2: median 0.75 ns/B (1.3 GB/s); range 0.71–0.80 ns/B</title>
   </circle>
-  <circle cx="265.71" cy="291.50" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
-    <title>256 B, BLAKE3 SME2: median 0.74 ns/B (1.4 GB/s); range 0.70–0.77 ns/B</title>
+  <circle cx="265.71" cy="291.94" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
+    <title>256 B, BLAKE3 SME2: median 0.73 ns/B (1.4 GB/s); range 0.70–0.79 ns/B</title>
   </circle>
-  <circle cx="323.57" cy="292.34" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
+  <circle cx="323.57" cy="292.52" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
     <title>512 B, BLAKE3 SME2: median 0.73 ns/B (1.4 GB/s); range 0.69–0.78 ns/B</title>
   </circle>
-  <circle cx="381.43" cy="292.80" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
-    <title>1 KiB, BLAKE3 SME2: median 0.73 ns/B (1.4 GB/s); range 0.69–0.75 ns/B</title>
+  <circle cx="381.43" cy="292.76" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
+    <title>1 KiB, BLAKE3 SME2: median 0.73 ns/B (1.4 GB/s); range 0.69–0.79 ns/B</title>
   </circle>
-  <text x="381.43" y="336.80" class="value-label" fill="#7c3aed" text-anchor="middle">0.73</text>
-  <circle cx="439.29" cy="288.39" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
-    <title>2 KiB, BLAKE3 SME2: median 0.77 ns/B (1.3 GB/s); range 0.73–0.80 ns/B</title>
+  <text x="381.43" y="336.76" class="value-label" fill="#7c3aed" text-anchor="middle">0.73</text>
+  <circle cx="439.29" cy="290.00" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
+    <title>2 KiB, BLAKE3 SME2: median 0.75 ns/B (1.3 GB/s); range 0.72–0.80 ns/B</title>
   </circle>
-  <circle cx="497.14" cy="338.21" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
-    <title>4 KiB, BLAKE3 SME2: median 0.42 ns/B (2.4 GB/s); range 0.41–0.48 ns/B</title>
+  <circle cx="497.14" cy="340.82" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
+    <title>4 KiB, BLAKE3 SME2: median 0.40 ns/B (2.5 GB/s); range 0.40–0.46 ns/B</title>
   </circle>
-  <circle cx="555.00" cy="341.40" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
-    <title>8 KiB, BLAKE3 SME2: median 0.40 ns/B (2.5 GB/s); range 0.39–0.43 ns/B</title>
+  <circle cx="555.00" cy="342.73" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
+    <title>8 KiB, BLAKE3 SME2: median 0.39 ns/B (2.5 GB/s); range 0.39–0.44 ns/B</title>
   </circle>
-  <circle cx="612.86" cy="383.01" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
-    <title>16 KiB, BLAKE3 SME2: median 0.24 ns/B (4.1 GB/s); range 0.24–0.26 ns/B</title>
+  <circle cx="612.86" cy="383.10" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
+    <title>16 KiB, BLAKE3 SME2: median 0.24 ns/B (4.2 GB/s); range 0.23–0.24 ns/B</title>
   </circle>
-  <text x="612.86" y="427.01" class="value-label" fill="#7c3aed" text-anchor="middle">0.24</text>
-  <circle cx="670.71" cy="390.78" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
-    <title>32 KiB, BLAKE3 SME2: median 0.22 ns/B (4.6 GB/s); range 0.22–0.24 ns/B</title>
+  <text x="612.86" y="427.10" class="value-label" fill="#7c3aed" text-anchor="middle">0.24</text>
+  <circle cx="670.71" cy="390.89" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
+    <title>32 KiB, BLAKE3 SME2: median 0.22 ns/B (4.6 GB/s); range 0.22–0.23 ns/B</title>
   </circle>
-  <circle cx="728.57" cy="394.55" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
+  <circle cx="728.57" cy="394.68" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
     <title>64 KiB, BLAKE3 SME2: median 0.21 ns/B (4.8 GB/s); range 0.21–0.21 ns/B</title>
   </circle>
-  <circle cx="786.43" cy="396.34" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
+  <circle cx="786.43" cy="397.07" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
     <title>128 KiB, BLAKE3 SME2: median 0.20 ns/B (4.9 GB/s); range 0.20–0.21 ns/B</title>
   </circle>
-  <circle cx="844.29" cy="399.07" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
-    <title>256 KiB, BLAKE3 SME2: median 0.20 ns/B (5.0 GB/s); range 0.19–0.20 ns/B</title>
+  <circle cx="844.29" cy="399.28" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
+    <title>256 KiB, BLAKE3 SME2: median 0.20 ns/B (5.1 GB/s); range 0.19–0.20 ns/B</title>
   </circle>
-  <text x="844.29" y="443.07" class="value-label" fill="#7c3aed" text-anchor="middle">0.20</text>
-  <circle cx="902.14" cy="407.25" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
+  <text x="844.29" y="443.28" class="value-label" fill="#7c3aed" text-anchor="middle">0.20</text>
+  <circle cx="902.14" cy="407.63" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
     <title>512 KiB, BLAKE3 SME2: median 0.18 ns/B (5.6 GB/s); range 0.18–0.18 ns/B</title>
   </circle>
-  <circle cx="960.00" cy="412.01" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
-    <title>1 MiB, BLAKE3 SME2: median 0.17 ns/B (5.9 GB/s); range 0.17–0.17 ns/B</title>
+  <circle cx="960.00" cy="412.09" r="5" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5">
+    <title>1 MiB, BLAKE3 SME2: median 0.17 ns/B (5.9 GB/s); range 0.17–0.18 ns/B</title>
   </circle>
-  <text x="951.00" y="456.01" class="value-label" fill="#7c3aed" text-anchor="end">0.17</text>
-  <text x="1014.0" y="252.41" class="series-name" fill="#6b9e3a">SHA-1DC</text>
-  <text x="1014.0" y="266.41" class="series-detail">1.25 ns/B · 0.8 GB/s at 1 MiB</text>
-  <text x="1014.0" y="347.81" class="series-name" fill="#3b82f6">BLAKE3</text>
-  <text x="1014.0" y="361.81" class="series-detail">0.39 ns/B · 2.6 GB/s at 1 MiB</text>
-  <text x="1014.0" y="391.81" class="series-name" fill="#e07a45">SHA-256</text>
-  <text x="1014.0" y="405.81" class="series-detail">0.33 ns/B · 3.0 GB/s at 1 MiB</text>
-  <text x="1014.0" y="435.81" class="series-name" fill="#7c3aed">BLAKE3 SME2</text>
-  <text x="1014.0" y="449.81" class="series-detail">0.17 ns/B · 5.9 GB/s at 1 MiB</text>
-  <line x1="158.00" y1="282.71" x2="192.00" y2="242.71" stroke="#bbbbbb" stroke-width="1"/>
-  <text x="196.00" y="238.71" class="annotation">BLAKE3: 64 B fits one chunk → portable compression</text>
-  <text x="196.00" y="250.71" class="annotation">(bulk sizes use NEON hash_many)</text>
+  <text x="951.00" y="456.09" class="value-label" fill="#7c3aed" text-anchor="end">0.17</text>
+  <text x="1014.0" y="252.64" class="series-name" fill="#6b9e3a">SHA-1DC</text>
+  <text x="1014.0" y="266.64" class="series-detail">1.25 ns/B · 0.8 GB/s at 1 MiB</text>
+  <text x="1014.0" y="348.03" class="series-name" fill="#3b82f6">BLAKE3</text>
+  <text x="1014.0" y="362.03" class="series-detail">0.39 ns/B · 2.6 GB/s at 1 MiB</text>
+  <text x="1014.0" y="392.03" class="series-name" fill="#e07a45">SHA-256</text>
+  <text x="1014.0" y="406.03" class="series-detail">0.33 ns/B · 3.0 GB/s at 1 MiB</text>
+  <text x="1014.0" y="436.03" class="series-name" fill="#7c3aed">BLAKE3 SME2</text>
+  <text x="1014.0" y="450.03" class="series-detail">0.17 ns/B · 5.9 GB/s at 1 MiB</text>
+  <line x1="158.00" y1="283.18" x2="192.00" y2="243.18" stroke="#bbbbbb" stroke-width="1"/>
+  <text x="196.00" y="239.18" class="annotation">BLAKE3: 64 B fits one chunk → portable compression</text>
+  <text x="196.00" y="251.18" class="annotation">(bulk sizes use NEON hash_many)</text>
   <metadata>
-    timestamp: 2026-09-21 00:14:08 UTC
+    timestamp: 2026-09-21 00:21:25 UTC
     git source: https://github.com/johnservil/bench-hashes
-    git commit: e870cd4c8d6f4250c7c5abc98fe7beb8ee7ef967
-    git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+6 commits)
-    git clean status: dirty-c5623cc6e3c93f355bc29be7f9b0b44e50d1cc1962603060cfbd408c185ccf57
+    git commit: 6e82fc32f64a85093fa24b3162cb5c307d51ccf8
+    git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+8 commits)
+    git clean status: dirty-ed615fc58946228f6e0a57aa5db1497f7ced349fc10ddf0dca4b9f44a7e53616
     bench-hashes version: 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f
     CPU type: aarch64
     OS type: linux6.18.52-0-virt
@@ -315,16 +315,16 @@
     SHA-256 source: sha2 0.10.9; crate archive SHA-256 a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283; source registry+https://github.com/rust-lang/crates.io-index
     SHA-256 assembly source: sha2-asm 0.6.4; crate archive SHA-256 b845214d6175804686b2bd482bcffe96651bb2d1200742b712003504a2dac1ab; source registry+https://github.com/rust-lang/crates.io-index
     SHA-1DC source: sha1-checked 0.10.0; crate archive SHA-256 89f599ac0c323ebb1c6082821a54962b839832b03984598375bff3975b804423; source registry+https://github.com/rust-lang/crates.io-index
-    BLAKE3 SME2 source: blake3_sme2 (path dependency); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit 11047479e94cd5033dc23de2a9753c5edfe92a79; working tree clean
+    BLAKE3 SME2 source: blake3_sme2 (git dependency); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit 11047479e94cd5033dc23de2a9753c5edfe92a79
   </metadata>
   <line x1="110.0" y1="540.0" x2="1090.0" y2="540.0" class="divider"/>
   <text x="110.0" y="560.0" class="prov-head">PROVENANCE</text>
-  <text x="110.0" y="580.0" class="prov">Run: 2026-09-21 00:14:08 UTC · bench-hashes 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f</text>
+  <text x="110.0" y="580.0" class="prov">Run: 2026-09-21 00:21:25 UTC · bench-hashes 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f</text>
   <text x="110.0" y="595.0" class="prov">Machine: aarch64 · 2 logical CPUs · linux6.18.52-0-virt</text>
   <text x="110.0" y="610.0" class="prov">Toolchain: rustc 1.98.1 (48a229cea 2026-09-01) · aarch64-unknown-linux-gnu</text>
-  <text x="110.0" y="625.0" class="prov">Source: https://github.com/johnservil/bench-hashes @ e870cd4c8d6f4250c7c5abc98fe7beb8ee7ef967</text>
-  <text x="110.0" y="640.0" class="prov">Tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+6 commits) · Working tree: dirty-c5623cc6e3c93f355bc29be7f9b0b44e50d1cc1962603060cfbd408c185ccf57</text>
+  <text x="110.0" y="625.0" class="prov">Source: https://github.com/johnservil/bench-hashes @ 6e82fc32f64a85093fa24b3162cb5c307d51ccf8</text>
+  <text x="110.0" y="640.0" class="prov">Tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+8 commits) · Working tree: dirty-ed615fc58946228f6e0a57aa5db1497f7ced349fc10ddf0dca4b9f44a7e53616</text>
   <text x="110.0" y="655.0" class="prov">Crates: blake3 1.8.7 · sha2 0.10.9 (+sha2-asm 0.6.4) · sha1-checked 0.10.0</text>
-  <text x="110.0" y="670.0" class="prov">BLAKE3 SME2: source https://github.com/johnservil/BLAKE3 · branch sme2-bench · commit 11047479e94c · working tree clean</text>
+  <text x="110.0" y="670.0" class="prov">BLAKE3 SME2: source https://github.com/johnservil/BLAKE3 · branch sme2-bench · commit 11047479e94c</text>
   <text x="110.0" y="685.0" class="prov">BLAKE3: single-threaded, Rayon not enabled · platform NEON · full crate checksums embedded in this file&apos;s metadata element</text>
 </svg>

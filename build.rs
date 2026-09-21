@@ -55,9 +55,9 @@ fn main() {
         &lock,
         "sha1-checked",
     );
-    emit_path_package_git(
+    emit_git_package(
         "BLAKE3_SME2_SOURCE_INFO",
-        &manifest_dir.join("../upstream/BLAKE3"),
+        &lock,
         "blake3_sme2",
     );
 
@@ -338,35 +338,48 @@ fn git_output(repository: &Path, arguments: &[&str]) -> Output {
 }
 
 /*
- * A path dependency has no registry checksum; identify it by its git commit
- * and working-tree state instead, the same way this repository identifies
- * itself.
+ * A git dependency has no registry checksum; Cargo.lock identifies it by
+ * its source URL, the branch it was resolved from, and the exact commit,
+ * as `git+https://host/repo?branch=B#COMMIT`. Emit those three pieces in
+ * the same shape this repository uses to identify itself.
  */
-fn emit_path_package_git(
+fn emit_git_package(
     environment_variable: &str,
-    repository: &Path,
+    lock: &str,
     package_name: &str,
 ) {
-    let commit = git_text(repository, &["rev-parse", "HEAD"]);
-    let branch = git_text_allow_failure(repository, &["rev-parse", "--abbrev-ref", "HEAD"])
-        .unwrap_or_else(|| "(detached)".to_owned());
-    let source = git_text_allow_failure(repository, &["remote", "get-url", "origin"])
-        .map(|url| normalize_git_source(&url))
-        .unwrap_or_else(|| "(no origin remote)".to_owned());
-    let status = git_bytes(repository, &["status", "--porcelain=v1", "-z", "--untracked-files=no"]);
-    let tree = if status.is_empty() { "clean".to_owned() } else { "dirty".to_owned() };
+    let source = package_source(lock, package_name)
+        .unwrap_or_else(|| {
+            panic!("{package_name} must be present in Cargo.lock with a source")
+        });
 
-    for entry in ["HEAD", "index"] {
-        println!(
-            "cargo:rerun-if-changed={}",
-            repository.join(".git").join(entry).display()
-        );
-    }
+    let locator = source.strip_prefix("git+").unwrap_or_else(|| {
+        panic!("{package_name} must be a git dependency; Cargo.lock has source {source:?}")
+    });
+
+    let (url_and_query, commit) = locator
+        .split_once('#')
+        .expect("a git source in Cargo.lock ends with #COMMIT");
+    let (url, query) = url_and_query
+        .split_once('?')
+        .unwrap_or((url_and_query, ""));
+
+    let branch = query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("branch="))
+        .unwrap_or("(default branch)");
 
     emit_env(
         environment_variable,
-        &format!("{package_name} (path dependency); source {source}; branch {branch}; commit {commit}; working tree {tree}"),
+        &format!("{package_name} (git dependency); source {url}; branch {branch}; commit {commit}"),
     );
+}
+
+fn package_source(lock: &str, requested_name: &str) -> Option<String> {
+    lock.split("[[package]]")
+        .skip(1)
+        .find(|package| quoted_field(package, "name").as_deref() == Some(requested_name))
+        .and_then(|package| quoted_field(package, "source"))
 }
 
 fn emit_required_package(

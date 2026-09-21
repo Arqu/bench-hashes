@@ -29,9 +29,12 @@ sha2 = { version = "0.10" }
 
 # BLAKE3 with the SME2 kernels (Apple M4 and later), from the sme2-bench
 # branch of the fork. Same single-threaded blake3::hash API; the crate
-# selects Platform::SME2 at runtime and falls back to NEON elsewhere.
+# requires SME2 at build time and run time and fails stop otherwise.
+# Cargo.lock pins the exact commit; `cargo update -p blake3_sme2` moves to
+# the branch tip.
 [dependencies.blake3_sme2]
-path = "../upstream/BLAKE3"
+git = "https://github.com/johnservil/BLAKE3"
+branch = "sme2-bench"
 default-features = false
 features = ["std"]
 

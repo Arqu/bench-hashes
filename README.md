@@ -24,16 +24,11 @@ cargo run --release
 
 ### Requirements
 
-The BLAKE3 SME2 contender is a path dependency: a checkout of the
-`sme2-bench` branch of github.com/johnservil/BLAKE3 must sit beside this
-repository at `../upstream/BLAKE3`, for example:
-
-```sh
-git clone --branch sme2-bench https://github.com/johnservil/BLAKE3 ../upstream/BLAKE3
-```
-
-Without it, Cargo fails at dependency resolution before compiling
-anything.
+The BLAKE3 SME2 contender is a git dependency on the `sme2-bench`
+branch of github.com/johnservil/BLAKE3. Cargo fetches it on the first
+build, and `Cargo.lock` pins the exact commit, so a fresh clone builds
+with network access and nothing else. `cargo update -p blake3_sme2`
+moves the pin to the branch tip.
 
 The fork's SME2 kernels are assembly, so building them needs a C
 toolchain whose assembler understands `-march=armv9-a+sme2`: Clang/LLVM
@@ -95,7 +90,7 @@ AArch64 and dedicated implementations on x86-64. Unsupported targets use
 the portable fallback.
 
 BLAKE3 SME2 is the same crate from the `sme2-bench` branch of
-github.com/johnservil/BLAKE3, built as a path dependency under the crate
+github.com/johnservil/BLAKE3, built as a git dependency under the crate
 name `blake3_sme2` so it links beside the crates.io crate. It selects
 its SME2 kernels at runtime and requires a CPU that reports SME2 with a
 512-bit streaming vector length; the build requires a toolchain that

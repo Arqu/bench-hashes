@@ -1519,7 +1519,7 @@ fn generate_svg(
     svg
 }
 
-/// "source URL; branch B; commit C" for a path-dependency provenance line.
+/// "source URL · branch B · commit C" for a git-dependency provenance line.
 fn short_git_source(description: &str) -> String {
     let mut fields = description.split("; ");
     let _name = fields.next();
