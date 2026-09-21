@@ -76,7 +76,7 @@ const INPUT_SIZES: [InputSize; INPUT_COUNT] = [
 
 /// results[contender_index][size_index], contenders in the roster's order.
 type Results = Vec<[Statistics; INPUT_COUNT]>;
-type Samples = Vec<[Vec<f64>; INPUT_COUNT]>;
+type Samples = Vec<[Vec<PsPerByte>; INPUT_COUNT]>;
 
 #[derive(Clone, Copy)]
 struct InputSize {
@@ -218,18 +218,27 @@ impl Algorithm {
     }
 }
 
+/*
+ * Time per byte in integer picoseconds. A sample of 1 ms over 64 bytes of
+ * input repeated ~20 000 times resolves to better than 1 ps/B, and 1 MiB
+ * at 0.17 ns/B is 170 000 ps/B, so u64 has room to spare. Integers keep
+ * every median, ratio, and spread exact and reproducible.
+ */
+type PsPerByte = u64;
+const PS_PER_NS: u64 = 1_000;
+
 #[derive(Clone, Copy)]
 struct Statistics {
-    minimum: f64,
-    median: f64,
-    maximum: f64,
+    minimum: PsPerByte,
+    median: PsPerByte,
+    maximum: PsPerByte,
 }
 
 impl Statistics {
     const ZERO: Self = Self {
-        minimum: 0.0,
-        median: 0.0,
-        maximum: 0.0,
+        minimum: 0,
+        median: 0,
+        maximum: 0,
     };
 }
 
@@ -674,26 +683,26 @@ fn measure_all(roster: &Roster) -> Results {
                 let iterations =
                     batch_iterations[algorithm_index][size_index];
 
-                let started = Instant::now();
+                let started = sample_clock::now_ns();
 
                 run_batch(algorithm, input, iterations);
 
-                let elapsed = started.elapsed();
-                let total_bytes =
-                    input.len() as f64 * iterations as f64;
+                let elapsed_ns = sample_clock::since_ns(started);
+                let total_bytes = input.len() as u64 * iterations as u64;
 
-                let nanoseconds_per_byte =
-                    elapsed.as_secs_f64() * 1_000_000_000.0
-                    / total_bytes;
+                /* Rounded to the nearest picosecond per byte. */
+                let elapsed_ps = elapsed_ns
+                    .checked_mul(PS_PER_NS)
+                    .expect("a sample of under a second fits in picoseconds");
+                let picoseconds_per_byte = (elapsed_ps + total_bytes / 2) / total_bytes;
 
                 assert!(
-                    nanoseconds_per_byte.is_finite()
-                        && nanoseconds_per_byte > 0.0,
-                    "every timing sample must be finite and positive"
+                    picoseconds_per_byte > 0,
+                    "every timing sample must be positive"
                 );
 
                 samples[algorithm_index][size_index]
-                    .push(nanoseconds_per_byte);
+                    .push(picoseconds_per_byte);
             }
         }
     }
@@ -812,8 +821,8 @@ fn running_medians(roster: &Roster, samples: &Samples, size_index: usize) -> Str
     let parts: Vec<String> = (0..roster.len())
         .map(|algorithm_index| {
             let mut sorted = samples[algorithm_index][size_index].clone();
-            sorted.sort_by(f64::total_cmp);
-            format!("{} {:.3}", roster.algorithms[algorithm_index].name(), median_of_sorted(&sorted))
+            sorted.sort_unstable();
+            format!("{} {}", roster.algorithms[algorithm_index].name(), format_ps(median_of_sorted(&sorted)))
         })
         .collect();
 
@@ -938,6 +947,73 @@ mod common_crypto {
     }
 }
 
+/*
+ * The clock for timed samples. Samples read the calling thread's CPU time,
+ * so time the thread spends descheduled (preemption, another process on
+ * the core) does not land in the sample. measure-clocks3 on an M4 Max
+ * measured the same medians as wall clocks with a 4–8× smaller spread and
+ * a 20× smaller worst case. Wall-clock Instant stays in use for progress
+ * and the ETA, where wall time is the point.
+ *
+ * Thread CPU time still counts kernel work the thread does for itself
+ * (page faults on the input, say) and still slows if the scheduler moves
+ * the thread to an efficiency core; both are real costs of the work, and
+ * the interleaving spreads the second across contenders equally.
+ */
+mod sample_clock {
+    #[cfg(target_vendor = "apple")]
+    pub const NAME: &str = "clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID): thread CPU time";
+    #[cfg(all(unix, not(target_vendor = "apple")))]
+    pub const NAME: &str = "clock_gettime(CLOCK_THREAD_CPUTIME_ID): thread CPU time";
+    #[cfg(not(unix))]
+    pub const NAME: &str = "std::time::Instant: wall clock";
+
+    /// Nanoseconds on the sample clock. Only differences are meaningful.
+    #[inline(always)]
+    pub fn now_ns() -> u64 {
+        #[cfg(target_vendor = "apple")]
+        {
+            unsafe extern "C" {
+                fn clock_gettime_nsec_np(clock_id: u32) -> u64;
+            }
+            const CLOCK_THREAD_CPUTIME_ID: u32 = 16;
+            let ns = unsafe { clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) };
+            assert!(ns != 0, "clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) failed");
+            ns
+        }
+        #[cfg(all(unix, not(target_vendor = "apple")))]
+        {
+            #[repr(C)]
+            struct Timespec {
+                tv_sec: i64,
+                tv_nsec: i64,
+            }
+            unsafe extern "C" {
+                fn clock_gettime(clock_id: i32, tp: *mut Timespec) -> i32;
+            }
+            const CLOCK_THREAD_CPUTIME_ID: i32 = 3;
+            let mut ts = Timespec { tv_sec: 0, tv_nsec: 0 };
+            let rc = unsafe { clock_gettime(CLOCK_THREAD_CPUTIME_ID, &mut ts) };
+            assert_eq!(rc, 0, "clock_gettime(CLOCK_THREAD_CPUTIME_ID) failed");
+            ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64
+        }
+        #[cfg(not(unix))]
+        {
+            use std::sync::OnceLock;
+            static EPOCH: OnceLock<std::time::Instant> = OnceLock::new();
+            EPOCH.get_or_init(std::time::Instant::now).elapsed().as_nanos() as u64
+        }
+    }
+
+    /// Elapsed nanoseconds since `start`, on the sample clock.
+    #[inline(always)]
+    pub fn since_ns(start: u64) -> u64 {
+        let now = now_ns();
+        assert!(now >= start, "the sample clock ran backwards: {start} → {now}");
+        now - start
+    }
+}
+
 fn calibrate_batch(
     algorithm: Algorithm,
     input: &[u8],
@@ -945,9 +1021,9 @@ fn calibrate_batch(
     let mut iterations = 1usize;
 
     loop {
-        let started = Instant::now();
+        let started = sample_clock::now_ns();
         run_batch(algorithm, input, iterations);
-        let elapsed_ns = started.elapsed().as_nanos();
+        let elapsed_ns = u128::from(sample_clock::since_ns(started));
 
         /*
          * A sufficiently short interval can be below a platform timer's
@@ -994,20 +1070,23 @@ fn calibrate_batch(
     }
 }
 
-/* Requires a non-empty, ascending slice. */
-fn median_of_sorted(sorted: &[f64]) -> f64 {
+/*
+ * Requires a non-empty, ascending slice. For an even count the median is
+ * the mean of the two middle values, rounded half up.
+ */
+fn median_of_sorted(sorted: &[PsPerByte]) -> PsPerByte {
     assert!(!sorted.is_empty(), "median requires at least one sample");
     debug_assert!(sorted.windows(2).all(|pair| pair[0] <= pair[1]));
 
     let middle = sorted.len() / 2;
     if sorted.len() % 2 == 0 {
-        (sorted[middle - 1] + sorted[middle]) / 2.0
+        (sorted[middle - 1] + sorted[middle] + 1) / 2
     } else {
         sorted[middle]
     }
 }
 
-fn summarize(samples: &mut [f64]) -> Statistics {
+fn summarize(samples: &mut [PsPerByte]) -> Statistics {
     assert_eq!(
         samples.len(),
         SAMPLE_ROUNDS,
@@ -1015,13 +1094,11 @@ fn summarize(samples: &mut [f64]) -> Statistics {
     );
 
     assert!(
-        samples
-            .iter()
-            .all(|sample| sample.is_finite() && *sample > 0.0),
-        "all samples must be finite and positive"
+        samples.iter().all(|sample| *sample > 0),
+        "all samples must be positive"
     );
 
-    samples.sort_by(f64::total_cmp);
+    samples.sort_unstable();
 
     let median = median_of_sorted(samples);
 
@@ -1331,6 +1408,7 @@ fn generate_text(
     writeln!(output, "Rust compiler: {RUSTC_VERSION}").unwrap();
     writeln!(output, "Build target: {BUILD_TARGET}").unwrap();
     writeln!(output, "Target features: {TARGET_FEATURES}").unwrap();
+    writeln!(output, "Sample clock: {}", sample_clock::NAME).unwrap();
     writeln!(output, "Contenders: {}", selection_note).unwrap();
     for algorithm in &roster.algorithms {
         writeln!(output, "{} source: {}", algorithm.name(), algorithm.source()).unwrap();
@@ -1383,8 +1461,8 @@ fn generate_text(
         for algorithm_index in 0..roster.len() {
             write!(
                 output,
-                "  {:>13.3}",
-                results[algorithm_index][size_index].median,
+                "  {:>13}",
+                format_ps(results[algorithm_index][size_index].median),
             )
                 .unwrap();
         }
@@ -1394,11 +1472,11 @@ fn generate_text(
         for algorithm_index in 0..roster.len() {
             let statistics = results[algorithm_index][size_index];
             /* A trailing mark flags a wide spread; the legend below explains it. */
-            let flag = if spread(statistics) >= SPREAD_WIDE { "!" } else { " " };
+            let flag = if spread_permille(statistics) >= SPREAD_WIDE_PERMILLE { "!" } else { " " };
             write!(
                 output,
                 "  {:>12}{flag}",
-                format!("{:.3}–{:.3}", statistics.minimum, statistics.maximum),
+                format!("{}–{}", format_ps(statistics.minimum), format_ps(statistics.maximum)),
             )
                 .unwrap();
         }
@@ -1408,22 +1486,22 @@ fn generate_text(
     let wide_cells = results
         .iter()
         .flatten()
-        .filter(|statistics| spread(**statistics) >= SPREAD_WIDE)
+        .filter(|statistics| spread_permille(**statistics) >= SPREAD_WIDE_PERMILLE)
         .count();
     writeln!(output).unwrap();
     if wide_cells > 0 {
         writeln!(
             output,
-            "!  marks a cell whose minimum–maximum spread is at least {:.0}% of its median: {wide_cells} of {} cells; treat those medians as low precision.",
-            SPREAD_WIDE * 100.0,
+            "!  marks a cell whose minimum–maximum spread is at least {}% of its median: {wide_cells} of {} cells; treat those medians as low precision.",
+            SPREAD_WIDE_PERMILLE / 10,
             INPUT_COUNT * roster.len(),
         )
             .unwrap();
     } else {
         writeln!(
             output,
-            "Every cell's minimum–maximum spread is under {:.0}% of its median.",
-            SPREAD_WIDE * 100.0,
+            "Every cell's minimum–maximum spread is under {}% of its median.",
+            SPREAD_WIDE_PERMILLE / 10,
         )
             .unwrap();
     }
@@ -1558,15 +1636,34 @@ fn x_fraction(bytes: usize) -> f64 {
     ((bytes as f64).log2() - smallest) / (largest - smallest)
 }
 
-fn gigabytes_per_second(ns_per_byte: f64) -> String {
-    assert!(ns_per_byte > 0.0);
+/// Picoseconds per byte as an f64 of nanoseconds, for the SVG's log axis only.
+fn ps_to_ns(ps: PsPerByte) -> f64 {
+    ps as f64 / PS_PER_NS as f64
+}
 
-    let throughput = 1.0 / ns_per_byte;
+/// Picoseconds per byte as nanoseconds with three decimals: 437 → "0.437".
+fn format_ps(ps: PsPerByte) -> String {
+    format!("{}.{:03}", ps / PS_PER_NS, ps % PS_PER_NS)
+}
 
-    if throughput >= 10.0 {
-        format!("{throughput:.0} GB/s")
+/// Picoseconds per byte as nanoseconds with two decimals, rounded: 437 → "0.44".
+fn format_ps_2(ps: PsPerByte) -> String {
+    let centi = (ps + 5) / 10;
+    format!("{}.{:02}", centi / 100, centi % 100)
+}
+
+/*
+ * Throughput from picoseconds per byte: 1 B/ps = 1000 GB/s, so GB/s =
+ * 1000 / ps. Shown to one decimal below 10 GB/s, whole numbers above.
+ */
+fn gigabytes_per_second(ps_per_byte: PsPerByte) -> String {
+    assert!(ps_per_byte > 0);
+    /* tenths of a GB/s, rounded */
+    let tenths = (10_000 + ps_per_byte / 2) / ps_per_byte;
+    if tenths >= 100 {
+        format!("{} GB/s", (tenths + 5) / 10)
     } else {
-        format!("{throughput:.1} GB/s")
+        format!("{}.{} GB/s", tenths / 10, tenths % 10)
     }
 }
 
@@ -1575,16 +1672,33 @@ fn gigabytes_per_second(ns_per_byte: f64) -> String {
  * time divided by contender time. Above 1.0 means the contender is faster
  * than the baseline; the baseline's own ratio is exactly 1.0.
  */
-/// ratios[contender][size] = baseline median / contender median.
-fn median_ratios(roster: &Roster, results: &Results) -> Vec<[f64; INPUT_COUNT]> {
+/*
+ * ratios[contender][size] = 1000 × baseline median / contender median,
+ * rounded. 1000 means equal speed; 2000 means the contender takes half
+ * the time.
+ */
+fn median_ratios_permille(roster: &Roster, results: &Results) -> Vec<[u64; INPUT_COUNT]> {
     (0..roster.len())
         .map(|algorithm_index| {
             std::array::from_fn(|size_index| {
-                results[roster.baseline][size_index].median
-                    / results[algorithm_index][size_index].median
+                let baseline = results[roster.baseline][size_index].median;
+                let contender = results[algorithm_index][size_index].median;
+                (baseline * 1000 + contender / 2) / contender
             })
         })
         .collect()
+}
+
+/// A permille ratio as "1.35×", rounded to two decimals.
+fn format_ratio(permille: u64) -> String {
+    let centi = (permille + 5) / 10;
+    format!("{}.{:02}×", centi / 100, centi % 100)
+}
+
+/// The reciprocal of a permille ratio, in permille, rounded.
+fn invert_permille(permille: u64) -> u64 {
+    assert!(permille > 0);
+    (1_000_000 + permille / 2) / permille
 }
 
 fn generate_takeaway(roster: &Roster, results: &Results) -> String {
@@ -1622,62 +1736,67 @@ fn wrap_takeaway(takeaway: &str) -> Vec<String> {
 fn takeaway_clause(roster: &Roster, results: &Results, algorithm_index: usize) -> String {
     assert_ne!(algorithm_index, roster.baseline, "the baseline has no clause of its own");
 
-    let ratios = median_ratios(roster, results);
+    let ratios = median_ratios_permille(roster, results);
     let baseline = roster.algorithms[roster.baseline].name();
 
-    {
-        let name = roster.algorithms[algorithm_index].name();
-        let column: Vec<f64> = ratios[algorithm_index].to_vec();
-        let lowest = column.iter().copied().fold(f64::INFINITY, f64::min);
-        let highest = column.iter().copied().fold(0.0_f64, f64::max);
+    let name = roster.algorithms[algorithm_index].name();
+    let column: &[u64; INPUT_COUNT] = &ratios[algorithm_index];
+    let lowest = *column.iter().min().expect("sixteen sizes");
+    let highest = *column.iter().max().expect("sixteen sizes");
 
-        /*
-         * ratio = baseline time / contender time. Above 1.0 the contender is
-         * faster than the baseline; below 1.0 the baseline is faster.
-         */
-        /*
-         * Within a few percent the two are indistinguishable at this
-         * benchmark's precision; say so rather than pick a winner.
-         */
-        const TIE: f64 = 0.05;
-        let tied_low = lowest > 1.0 - TIE;
-        let tied_high = highest < 1.0 + TIE;
+    /*
+     * ratio = baseline time / contender time, in permille. Above 1000 the
+     * contender is faster than the baseline; below 1000 the baseline is
+     * faster. Within 5% the two are indistinguishable at this benchmark's
+     * precision; say so rather than pick a winner.
+     */
+    const TIE: u64 = 50;
+    let tied_low = lowest > 1000 - TIE;
+    let tied_high = highest < 1000 + TIE;
 
-        let clause = if tied_low && tied_high {
-            format!("{name} matches {baseline} at every size")
-        } else if lowest > 1.0 + TIE {
-            format!("{name} is {lowest:.2}× to {highest:.2}× faster than {baseline}")
-        } else if highest < 1.0 - TIE {
-            format!(
-                "{baseline} is {:.2}× to {:.2}× faster than {name}",
-                1.0 / highest,
-                1.0 / lowest,
-            )
-        } else if tied_low {
-            /* Never slower than the baseline; faster from some size up. */
-            let first_faster = column.iter().position(|r| *r > 1.0 + TIE).expect("some ratio is above the tie band");
-            format!(
-                "{name} matches {baseline} below {} and is up to {highest:.2}× faster from there",
-                INPUT_SIZES[first_faster].label,
-            )
-        } else if tied_high {
-            let last_slower = column.iter().rposition(|r| *r < 1.0 - TIE).expect("some ratio is below the tie band");
-            format!(
-                "{baseline} is up to {:.2}× faster than {name} through {}, then they match",
-                1.0 / lowest,
-                INPUT_SIZES[last_slower].label,
-            )
-        } else {
-            let first = if column[0] > 1.0 { name } else { baseline };
-            let last = if column[INPUT_COUNT - 1] > 1.0 { name } else { baseline };
-            format!(
-                "{first} is faster at {}, {last} at {}",
-                INPUT_SIZES[0].label,
-                INPUT_SIZES[INPUT_COUNT - 1].label,
-            )
-        };
-
-        clause
+    if tied_low && tied_high {
+        format!("{name} matches {baseline} at every size")
+    } else if lowest > 1000 + TIE {
+        format!(
+            "{name} is {} to {} faster than {baseline}",
+            format_ratio(lowest),
+            format_ratio(highest),
+        )
+    } else if highest < 1000 - TIE {
+        format!(
+            "{baseline} is {} to {} faster than {name}",
+            format_ratio(invert_permille(highest)),
+            format_ratio(invert_permille(lowest)),
+        )
+    } else if tied_low {
+        /* Never slower than the baseline; faster from some size up. */
+        let first_faster = column
+            .iter()
+            .position(|&r| r > 1000 + TIE)
+            .expect("some ratio is above the tie band");
+        format!(
+            "{name} matches {baseline} below {} and is up to {} faster from there",
+            INPUT_SIZES[first_faster].label,
+            format_ratio(highest),
+        )
+    } else if tied_high {
+        let last_slower = column
+            .iter()
+            .rposition(|&r| r < 1000 - TIE)
+            .expect("some ratio is below the tie band");
+        format!(
+            "{baseline} is up to {} faster than {name} through {}, then they match",
+            format_ratio(invert_permille(lowest)),
+            INPUT_SIZES[last_slower].label,
+        )
+    } else {
+        let first = if column[0] > 1000 { name } else { baseline };
+        let last = if column[INPUT_COUNT - 1] > 1000 { name } else { baseline };
+        format!(
+            "{first} is faster at {}, {last} at {}",
+            INPUT_SIZES[0].label,
+            INPUT_SIZES[INPUT_COUNT - 1].label,
+        )
     }
 }
 
@@ -1756,29 +1875,43 @@ fn generate_svg(
         "the takeaway needs a baseline and at least one other contender"
     );
 
+    /*
+     * From here down the SVG needs pixel positions on a log axis, which is
+     * where floating point earns its place: the values are drawn, never
+     * compared or reported. Everything above this point is integer.
+     */
     let observed_max = results
         .iter()
         .flatten()
         .map(|statistics| statistics.maximum)
-        .fold(0.0_f64, f64::max);
+        .max()
+        .expect("there are results");
 
     let observed_min = results
         .iter()
         .flatten()
         .map(|statistics| statistics.minimum)
-        .fold(f64::INFINITY, f64::min);
+        .min()
+        .expect("there are results");
 
-    let (axis_min, axis_max) = log_axis_bounds(observed_min, observed_max);
+    let (axis_min, axis_max) = log_axis_bounds(ps_to_ns(observed_min), ps_to_ns(observed_max));
 
     let log_min = axis_min.ln();
     let log_max = axis_max.ln();
 
-    let map_y = |value: f64| {
+    /* Pixel y for a nanoseconds-per-byte value on the log axis. */
+    let map_ns = |value: f64| {
         assert!(value > 0.0);
 
         PLOT_BOTTOM
             - (value.ln() - log_min) / (log_max - log_min)
             * (PLOT_BOTTOM - PLOT_TOP)
+    };
+
+    /* Pixel y for a measured value. */
+    let map_y = |ps: PsPerByte| {
+        assert!(ps > 0);
+        map_ns(ps_to_ns(ps))
     };
 
     let x_positions: [f64; INPUT_COUNT] =
@@ -1896,7 +2029,7 @@ fn generate_svg(
 
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="108" class="method">Line and dot: median · shaded band: minimum–maximum across {SAMPLE_ROUNDS} interleaved samples; a deeper tint or dashed outline marks a wide spread, meaning lower precision · single-threaded · lower is better</text>"##
+        r##"  <text x="{PLOT_LEFT:.0}" y="108" class="method">Line and dot: median · shaded band: minimum–maximum across {SAMPLE_ROUNDS} interleaved samples of thread CPU time; a deeper tint or dashed outline marks a wide spread, meaning lower precision · single-threaded · lower is better</text>"##
     )
         .unwrap();
     writeln!(
@@ -1908,7 +2041,7 @@ fn generate_svg(
     /* Horizontal grid and y-axis tick labels; the script rebuilds these. */
     writeln!(svg, r##"  <g id="y-axis">"##).unwrap();
     for value in log_ticks(axis_min, axis_max) {
-        let y = map_y(value);
+        let y = map_ns(value);
         writeln!(
             svg,
             r##"    <line x1="{PLOT_LEFT:.1}" y1="{y:.2}" x2="{PLOT_RIGHT:.1}" y2="{y:.2}" class="grid"/>"##
@@ -2088,13 +2221,14 @@ fn generate_svg(
          * dashed outline appears, so a broad band cannot pass as decor.
          */
         let worst_spread = (0..INPUT_COUNT)
-            .map(|size_index| spread(results[algorithm_index][size_index]))
-            .fold(0.0_f64, f64::max);
-        let (opacity, outline) = band_style(worst_spread);
+            .map(|size_index| spread_permille(results[algorithm_index][size_index]))
+            .max()
+            .expect("there is at least one size");
+        let (opacity_hundredths, outline) = band_style(worst_spread);
 
         writeln!(
             svg,
-            r##"      <path class="band" d="{band}" fill="{color}" fill-opacity="{opacity:.2}" stroke="{color}" stroke-opacity="{}" stroke-width="1" stroke-dasharray="4,3"/>"##,
+            r##"      <path class="band" d="{band}" fill="{color}" fill-opacity="0.{opacity_hundredths:02}" stroke="{color}" stroke-opacity="{}" stroke-width="1" stroke-dasharray="4,3"/>"##,
             if outline { "0.6" } else { "0" },
         )
             .unwrap();
@@ -2341,6 +2475,7 @@ fn generate_svg(
         ("Rust compiler", RUSTC_VERSION),
         ("build target", BUILD_TARGET),
         ("target features", TARGET_FEATURES),
+        ("sample clock", sample_clock::NAME),
         ("BLAKE3 source", BLAKE3_SOURCE_INFO),
         ("SHA-256 source", SHA2_SOURCE_INFO),
         ("SHA-256 assembly source", SHA2_ASM_SOURCE_INFO),
@@ -2400,31 +2535,34 @@ fn generate_svg(
 }
 
 /*
- * Relative spread of one cell: (max − min) / median. Zero for a perfectly
- * repeatable measurement; 0.10 means the extremes differ by a tenth of the
- * median.
+ * Relative spread of one cell in permille: 1000 × (max − min) / median,
+ * rounded. Zero for a perfectly repeatable measurement; 100 means the
+ * extremes differ by a tenth of the median.
  */
-fn spread(statistics: Statistics) -> f64 {
-    (statistics.maximum - statistics.minimum) / statistics.median
+fn spread_permille(statistics: Statistics) -> u64 {
+    let range = statistics.maximum - statistics.minimum;
+    (range * 1000 + statistics.median / 2) / statistics.median
 }
 
 /*
  * Band fill opacity and whether to outline it, from the worst spread. The
  * script applies the same thresholds. Spread under 10% is a routine run;
- * 10–25% earns a deeper tint; over 25% adds the dashed outline.
+ * 10–25% earns a deeper tint; 25% and over adds the dashed outline.
  */
-const SPREAD_NOTICEABLE: f64 = 0.10;
-const SPREAD_WIDE: f64 = 0.25;
+const SPREAD_NOTICEABLE_PERMILLE: u64 = 100;
+const SPREAD_WIDE_PERMILLE: u64 = 250;
 
-fn band_style(worst_spread: f64) -> (f64, bool) {
-    let opacity = if worst_spread < SPREAD_NOTICEABLE {
-        0.16
-    } else if worst_spread < SPREAD_WIDE {
-        0.16 + 0.14 * (worst_spread - SPREAD_NOTICEABLE) / (SPREAD_WIDE - SPREAD_NOTICEABLE)
+/// Fill opacity in hundredths (16 → 0.16) and whether to outline.
+fn band_style(worst_spread_permille: u64) -> (u64, bool) {
+    let opacity_hundredths = if worst_spread_permille < SPREAD_NOTICEABLE_PERMILLE {
+        16
+    } else if worst_spread_permille < SPREAD_WIDE_PERMILLE {
+        16 + 14 * (worst_spread_permille - SPREAD_NOTICEABLE_PERMILLE)
+            / (SPREAD_WIDE_PERMILLE - SPREAD_NOTICEABLE_PERMILLE)
     } else {
-        0.30
+        30
     };
-    (opacity, worst_spread >= SPREAD_WIDE)
+    (opacity_hundredths, worst_spread_permille >= SPREAD_WIDE_PERMILLE)
 }
 
 /*
@@ -2440,13 +2578,13 @@ const VALUE_LABEL_HEIGHT: f64 = 11.0;
 fn place_value_labels(
     roster: &Roster,
     results: &Results,
-    map_y: &dyn Fn(f64) -> f64,
+    map_y: &dyn Fn(PsPerByte) -> f64,
 ) -> Vec<[f64; INPUT_COUNT]> {
     let mut placed = vec![[0.0_f64; INPUT_COUNT]; roster.len()];
     for size_index in 0..INPUT_COUNT {
         let mut order: Vec<usize> = (0..roster.len()).collect();
         order.sort_by(|&a, &b| {
-            results[a][size_index].median.total_cmp(&results[b][size_index].median).reverse()
+            results[b][size_index].median.cmp(&results[a][size_index].median)
         });
         /* Smallest y (fastest, highest on the plot) first. */
         order.reverse();
@@ -2515,6 +2653,7 @@ fn shared_provenance_lines(machine: &MachineMetadata, selection_note: &str) -> V
             machine.cpu_type, machine.cpu_count, machine.os_type,
         ),
         format!("Toolchain: {RUSTC_VERSION} · {BUILD_TARGET}"),
+        format!("Sample clock: {}", sample_clock::NAME),
         format!("Source: {GIT_SOURCE} @ {GIT_COMMIT}"),
         format!("Tag: {GIT_TAG} · Working tree: {GIT_CLEAN_STATUS}"),
         "Full crate checksums are in this file's metadata element".to_owned(),
@@ -2591,17 +2730,17 @@ fn write_interaction_script(
         data.push_str("],\"min\":[");
         for size_index in 0..INPUT_COUNT {
             if size_index > 0 { data.push(','); }
-            write!(data, "{}", results[algorithm_index][size_index].minimum).unwrap();
+            write!(data, "{}", format_ps(results[algorithm_index][size_index].minimum)).unwrap();
         }
         data.push_str("],\"med\":[");
         for size_index in 0..INPUT_COUNT {
             if size_index > 0 { data.push(','); }
-            write!(data, "{}", results[algorithm_index][size_index].median).unwrap();
+            write!(data, "{}", format_ps(results[algorithm_index][size_index].median)).unwrap();
         }
         data.push_str("],\"max\":[");
         for size_index in 0..INPUT_COUNT {
             if size_index > 0 { data.push(','); }
-            write!(data, "{}", results[algorithm_index][size_index].maximum).unwrap();
+            write!(data, "{}", format_ps(results[algorithm_index][size_index].maximum)).unwrap();
         }
         data.push_str("]}");
     }
@@ -2627,7 +2766,7 @@ fn write_interaction_script(
     }
     write!(
         data,
-        "],\"baseline\":{},\"sharedProv\":{shared_count},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"plotTop\":{PLOT_TOP},\"plotBottom\":{PLOT_BOTTOM},\"labelGap\":{SERIES_LABEL_GAP},\"labelAbove\":{VALUE_LABEL_ABOVE},\"labelBelow\":{VALUE_LABEL_BELOW},\"labelHeight\":{VALUE_LABEL_HEIGHT},\"spreadNoticeable\":{SPREAD_NOTICEABLE},\"spreadWide\":{SPREAD_WIDE},\"provTop\":{PROVENANCE_TOP},\"provLine\":{PROVENANCE_LINE_HEIGHT},\"takeaway\":\"{}\"}}",
+        "],\"baseline\":{},\"sharedProv\":{shared_count},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"plotTop\":{PLOT_TOP},\"plotBottom\":{PLOT_BOTTOM},\"labelGap\":{SERIES_LABEL_GAP},\"labelAbove\":{VALUE_LABEL_ABOVE},\"labelBelow\":{VALUE_LABEL_BELOW},\"labelHeight\":{VALUE_LABEL_HEIGHT},\"spreadNoticeable\":0.{SPREAD_NOTICEABLE_PERMILLE:03},\"spreadWide\":0.{SPREAD_WIDE_PERMILLE:03},\"provTop\":{PROVENANCE_TOP},\"provLine\":{PROVENANCE_LINE_HEIGHT},\"takeaway\":\"{}\"}}",
         roster.baseline,
         generate_takeaway(roster, results).replace('\\', "\\\\").replace('"', "\\\""),
     )
@@ -3075,8 +3214,8 @@ fn format_tick(value: f64) -> String {
     }
 }
 
-fn format_result_value(value: f64) -> String {
-    format!("{value:.2}")
+fn format_result_value(ps: PsPerByte) -> String {
+    format_ps_2(ps)
 }
 
 fn xml_escape(input: &str) -> String {

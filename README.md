@@ -15,8 +15,10 @@ a BLAKE3 input is one chunk; from 2 KiB to 16 KiB its SIMD paths fill
 bulk rate settles. 3 KiB is where the SME2 fork's integer + NEON hybrid
 kernels first overtake hardware SHA-256.
 
-It reports median, minimum, and maximum time per byte, measured with
-`std::time::Instant`. Lower is better.
+It reports median, minimum, and maximum time per byte in integer
+picoseconds, measured on the calling thread's CPU-time clock
+(`CLOCK_THREAD_CPUTIME_ID`) so time spent descheduled stays out of the
+samples. Lower is better. The clock is named in the report's provenance.
 
 ## Build and run
 
