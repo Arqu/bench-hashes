@@ -2273,6 +2273,12 @@ fn generate_svg(
     .series[data-on="false"] .series-prov { display: none; }
     .series[data-on="false"] .series-swatch { fill: #fdfdfc; }
     .series-swatch { stroke-width: 2; transition: fill 0.3s ease; }
+    .unit-pill { cursor: pointer; }
+    .unit-pill rect { fill: #fdfdfc; stroke: #b8b8b4; stroke-width: 1; }
+    .unit-pill text { font-size: 10px; font-weight: 600; fill: #777777; }
+    .unit-pill:hover rect { stroke: #55555a; }
+    .unit-pill.unit-on rect { fill: #55555a; stroke: #55555a; }
+    .unit-pill.unit-on text { fill: #fdfdfc; }
     .dot { cursor: crosshair; }
     .dot-ring { stroke-width: 1.5; stroke-opacity: 0.55; }
     .dot:hover .dot-ring { stroke-opacity: 1; }
@@ -2316,13 +2322,13 @@ fn generate_svg(
         let y = map_ns(value);
         writeln!(
             svg,
-            r##"    <line x1="{PLOT_LEFT:.1}" y1="{y:.2}" x2="{PLOT_RIGHT:.1}" y2="{y:.2}" class="grid"/>"##
+            r##"    <line x1="{PLOT_LEFT:.1}" y1="{y:.2}" x2="{PLOT_RIGHT:.1}" y2="{y:.2}" class="grid" data-ns="{value}"/>"##
         )
             .unwrap();
 
         writeln!(
             svg,
-            r##"    <text x="{:.1}" y="{:.2}" class="tick-label" text-anchor="end">{}</text>"##,
+            r##"    <text x="{:.1}" y="{:.2}" class="tick-label" text-anchor="end" data-ns="{value}">{}</text>"##,
             PLOT_LEFT - 10.0,
             y + 3.5,
             format_tick(value),
@@ -2333,11 +2339,27 @@ fn generate_svg(
 
     writeln!(
         svg,
-        r##"  <text x="30" y="{:.1}" class="axis-title" text-anchor="middle" transform="rotate(-90 30 {:.1})">Nanoseconds per byte</text>"##,
+        r##"  <text id="y-title" x="30" y="{:.1}" class="axis-title" text-anchor="middle" transform="rotate(-90 30 {:.1})">Nanoseconds per byte · lower is better</text>"##,
         (PLOT_TOP + PLOT_BOTTOM) / 2.0,
         (PLOT_TOP + PLOT_BOTTOM) / 2.0,
     )
         .unwrap();
+
+    /*
+     * Unit toggle, above the y axis: two pills, the active one filled. The
+     * script redraws everything in the chosen unit; without script the
+     * graph stays in ns/B and the pills are inert.
+     */
+    writeln!(
+        svg,
+        r##"  <g id="unit-toggle" transform="translate({:.1} {:.1})">"##,
+        PLOT_LEFT - 96.0,
+        PLOT_TOP - 30.0,
+    )
+        .unwrap();
+    writeln!(svg, r##"    <g class="unit-pill unit-on" data-unit="ns" onclick="setUnit('ns')"><rect x="0" y="0" width="44" height="18" rx="9"/><text x="22" y="13" text-anchor="middle">ns/B</text></g>"##).unwrap();
+    writeln!(svg, r##"    <g class="unit-pill" data-unit="gbps" onclick="setUnit('gbps')"><rect x="46" y="0" width="44" height="18" rx="9"/><text x="68" y="13" text-anchor="middle">GB/s</text></g>"##).unwrap();
+    writeln!(svg, "  </g>").unwrap();
 
     /*
      * Vertical guides and x-axis labels at each tested size. Where a label
@@ -3057,6 +3079,75 @@ fn write_interaction_script(
 
 const INTERACTION_SCRIPT: &str = r##"
 const on = DATA.series.map(() => true);
+
+/*
+ * Display unit. Data is stored as ns/B; GB/s is its reciprocal × 1000, so on
+ * the log axis switching units mirrors the plot: the fastest contender moves
+ * from the bottom to the top. Every drawn or printed value goes through
+ * val() and fmt(); ratios between contenders are unitless and stay put.
+ */
+let unit = "ns";
+
+/*
+ * Blend between the units. 1 ns/B is 1 GB/s, so GB/s is the reciprocal of
+ * ns/B. `blend` runs from 0 (ns/B) to 1 (GB/s), and the plotted value is
+ * the log-space interpolation of the two readings, so during a switch
+ * every point travels a straight line on the log axis and the whole plot
+ * mirrors through its middle. Text follows the unit from the midpoint; the
+ * two axes cross-fade.
+ */
+let blend = 0;
+const valAt = (ns, b) => Math.exp((1 - 2 * b) * Math.log(ns));
+const val = ns => valAt(ns, blend);
+/* Values in the settled unit, for text. */
+const settled = ns => unit === "ns" ? ns : 1 / ns;
+function fmt(ns, digits) {
+  const v = settled(ns);
+  if (unit === "ns") return v.toFixed(digits === undefined ? 3 : digits);
+  return v >= 10 ? v.toFixed(digits === undefined ? 0 : Math.max(0, digits - 2)) : v.toFixed(digits === undefined ? 1 : Math.max(1, digits - 1));
+}
+const unitLabel = () => unit === "ns" ? "ns/B" : "GB/s";
+const otherUnitLabel = () => unit === "ns" ? "GB/s" : "ns/B";
+const fmtOther = ns => unit === "ns" ? gbps(ns) : ns.toFixed(3) + " ns/B";
+
+let animation = null;
+function setUnit(u) {
+  const target = u === "ns" ? 0 : 1;
+  if (animation) cancelAnimationFrame(animation);
+  const pills = document.getElementById("unit-toggle").querySelectorAll(".unit-pill");
+  pills.forEach(p => p.setAttribute("class", "unit-pill" + (p.getAttribute("data-unit") === u ? " unit-on" : "")));
+
+  const start = blend, startTime = performance.now(), DURATION = 700;
+  const ease = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  /* Prepare the incoming axis so it can fade in while the old one fades out. */
+  const outgoing = document.getElementById("y-axis");
+  outgoing.setAttribute("id", "y-axis-old");
+  const incoming = document.createElementNS(NS, "g");
+  incoming.setAttribute("id", "y-axis");
+  incoming.setAttribute("opacity", "0");
+  outgoing.parentNode.insertBefore(incoming, outgoing.nextSibling);
+
+  const step = now => {
+    const raw = Math.min(1, (now - startTime) / DURATION);
+    const e = ease(raw);
+    blend = start + (target - start) * e;
+    /* Text follows the unit once the plot is past halfway. */
+    unit = blend >= 0.5 ? "gbps" : "ns";
+    document.getElementById("y-title").textContent =
+      unit === "ns" ? "Nanoseconds per byte · lower is better" : "Gigabytes per second · higher is better";
+    outgoing.setAttribute("opacity", (1 - e).toFixed(3));
+    incoming.setAttribute("opacity", e.toFixed(3));
+    relayout();
+    if (hovered) showHover(hovered[0], hovered[1]);
+    if (raw < 1) {
+      animation = requestAnimationFrame(step);
+    } else {
+      outgoing.parentNode.removeChild(outgoing);
+      animation = null;
+    }
+  };
+  animation = requestAnimationFrame(step);
+}
 const NS = "http://www.w3.org/2000/svg";
 
 function niceBelow(v) {
@@ -3095,26 +3186,51 @@ function relayout() {
     hi = Math.max(hi, ...DATA.series[i].max);
   }
   if (visible.length === 0) { lo = 0.1; hi = 1; }
-  const axMin = niceBelow(lo * 0.92), axMax = niceAbove(hi * 1.08);
-  const lMin = Math.log(axMin), lMax = Math.log(axMax);
-  const mapY = v => DATA.plotBottom - (Math.log(v) - lMin) / (lMax - lMin) * (DATA.plotBottom - DATA.plotTop);
+  /*
+   * Axis bounds at both ends of the blend, then interpolated in log space
+   * alongside the data, so the axis and the points move together.
+   */
+  const boundsAt = b => {
+    const a = valAt(lo, b), c = valAt(hi, b);
+    const dLo = Math.min(a, c), dHi = Math.max(a, c);
+    return [Math.log(niceBelow(dLo * 0.92)), Math.log(niceAbove(dHi * 1.08))];
+  };
+  const [n0, n1] = boundsAt(0), [g0, g1] = boundsAt(1);
+  const lMin = (1 - blend) * n0 + blend * g0, lMax = (1 - blend) * n1 + blend * g1;
+  /* mapY takes ns/B, as stored; the unit transform happens inside. */
+  const mapY = ns => DATA.plotBottom - (Math.log(val(ns)) - lMin) / (lMax - lMin) * (DATA.plotBottom - DATA.plotTop);
   currentMapY = mapY;
-
-  /* Y axis: grid lines and tick labels. */
+  /*
+   * Y axis for the settled unit. Each tick is a value in that unit; its
+   * ns/B equivalent is placed with the blended mapY, so mid-animation the
+   * ticks ride the same mirroring motion as the data, while the outgoing
+   * axis (still in the old unit, in its own group) fades out and this one
+   * fades in.
+   */
   const axis = document.getElementById("y-axis");
   while (axis.firstChild) axis.removeChild(axis.firstChild);
-  for (const v of ticks(axMin, axMax)) {
-    const y = mapY(v);
+  const [tMin, tMax] = unit === "ns" ? [n0, n1] : [g0, g1];
+  const tickToNs = v => unit === "ns" ? v : 1 / v;
+  for (const v of ticks(Math.exp(tMin), Math.exp(tMax))) {
+    const y = mapY(tickToNs(v));
     const line = document.createElementNS(NS, "line");
     line.setAttribute("x1", DATA.plotLeft); line.setAttribute("x2", DATA.plotRight);
     line.setAttribute("y1", y.toFixed(2)); line.setAttribute("y2", y.toFixed(2));
     line.setAttribute("class", "grid");
     axis.appendChild(line);
+    line.setAttribute("data-ns", tickToNs(v));
     const t = document.createElementNS(NS, "text");
     t.setAttribute("x", (DATA.plotLeft - 10).toFixed(1)); t.setAttribute("y", (y + 3.5).toFixed(2));
     t.setAttribute("class", "tick-label"); t.setAttribute("text-anchor", "end");
-    t.textContent = fmtTick(v);
+    t.setAttribute("data-ns", tickToNs(v));
+    t.textContent = unit === "ns" ? fmtTick(v) : (v >= 10 ? v.toFixed(0) : v.toFixed(1));
     axis.appendChild(t);
+  }
+  /* The outgoing axis, if one is fading, rides the same motion. */
+  const old = document.getElementById("y-axis-old");
+  if (old) {
+    old.querySelectorAll("line").forEach(l => { const y = mapY(+l.getAttribute("data-ns")); l.setAttribute("y1", y.toFixed(2)); l.setAttribute("y2", y.toFixed(2)); });
+    old.querySelectorAll("text").forEach(t => { t.setAttribute("y", (mapY(+t.getAttribute("data-ns")) + 3.5).toFixed(2)); });
   }
 
   /* Each series: band, median line, dots, value labels. */
@@ -3140,7 +3256,7 @@ function relayout() {
 
   /* Value labels: above the dot unless that collides within the column. */
   for (let k = 0; k < DATA.x.length; k++) {
-    const order = visible.slice().sort((a, b) => DATA.series[a].med[k] - DATA.series[b].med[k]);
+    const order = visible.slice().sort((a, b) => mapY(DATA.series[a].med[k]) - mapY(DATA.series[b].med[k]));
     const taken = [];
     const clear = y => taken.every(t => Math.abs(t - y) >= DATA.labelHeight);
     for (const i of order) {
@@ -3149,7 +3265,10 @@ function relayout() {
       if (!clear(y)) { y = dotY + DATA.labelBelow; while (!clear(y)) y += DATA.labelHeight; }
       taken.push(y);
       document.getElementById("series-" + i).querySelectorAll(".value-label").forEach(t => {
-        if (+t.getAttribute("data-size") === k) t.setAttribute("y", y.toFixed(2));
+        if (+t.getAttribute("data-size") === k) {
+          t.setAttribute("y", y.toFixed(2));
+          t.textContent = fmt(DATA.series[i].med[k], 2);
+        }
       });
     }
   }
@@ -3172,6 +3291,9 @@ function relayout() {
   for (const [i, y] of slots) {
     const lab = document.getElementById("series-" + i).querySelector(".series-label");
     lab.setAttribute("transform", `translate(0 ${(y - overrun).toFixed(2)})`);
+    const detail = lab.querySelector(".series-detail");
+    const m = DATA.series[i].med[last];
+    detail.textContent = `${fmt(m, 2)} ${unitLabel()} · ${fmtOther(m)} at ${DATA.sizes[last]}`;
   }
 
   /* Provenance: visible contenders' lines close ranks after the shared lines. */
@@ -3250,8 +3372,10 @@ function showHover(focus, k) {
   const spread = (f.max[k] - f.min[k]) / f.med[k];
   const spreadNote = spread >= DATA.spreadWide ? " · wide spread, low precision"
     : spread >= DATA.spreadNoticeable ? " · noticeable spread" : "";
+  /* In GB/s the fastest sample (min time) is the top of the range. */
+  const rLo = unit === "ns" ? f.min[k] : f.max[k], rHi = unit === "ns" ? f.max[k] : f.min[k];
   const rangeRow = textEl(PAD, y, "hover-sub",
-    `median ${f.med[k].toFixed(3)} ns/B (${gbps(f.med[k])}) · range ${f.min[k].toFixed(3)}–${f.max[k].toFixed(3)} (±${(spread * 50).toFixed(0)}%)${spreadNote}`);
+    `median ${fmt(f.med[k])} ${unitLabel()} (${fmtOther(f.med[k])}) · range ${fmt(rLo)}–${fmt(rHi)} (±${(spread * 50).toFixed(0)}%)${spreadNote}`);
   if (spread >= DATA.spreadWide) rangeRow.setAttribute("fill", "#b45309");
   body.appendChild(rangeRow);
 
@@ -3280,8 +3404,8 @@ function showHover(focus, k) {
   if (rows.length > 1) {
     y += LINE;
     body.appendChild(textEl(PAD, y, "hover-sub", "contender"));
-    body.appendChild(textEl(PAD + 150, y, "hover-sub", "ns/B", { "text-anchor": "end" }));
-    body.appendChild(textEl(PAD + 215, y, "hover-sub", "GB/s", { "text-anchor": "end" }));
+    body.appendChild(textEl(PAD + 150, y, "hover-sub", unitLabel(), { "text-anchor": "end" }));
+    body.appendChild(textEl(PAD + 215, y, "hover-sub", otherUnitLabel(), { "text-anchor": "end" }));
     body.appendChild(textEl(W - PAD, y, "hover-sub", `relative to ${f.name}`, { "text-anchor": "end" }));
     y += 4;
     for (const [i, med] of rows) {
@@ -3297,8 +3421,8 @@ function showHover(focus, k) {
       body.appendChild(sw);
       const cls = "hover-row" + (i === focus ? " hover-row-focus" : "");
       body.appendChild(textEl(PAD + 15, y, cls, s.name));
-      body.appendChild(textEl(PAD + 150, y, cls, med.toFixed(3), { "text-anchor": "end" }));
-      body.appendChild(textEl(PAD + 215, y, cls, gbps(med).replace(" GB/s", ""), { "text-anchor": "end" }));
+      body.appendChild(textEl(PAD + 150, y, cls, fmt(med), { "text-anchor": "end" }));
+      body.appendChild(textEl(PAD + 215, y, cls, fmtOther(med).replace(/ (GB\/s|ns\/B)$/, ""), { "text-anchor": "end" }));
       let rel, color;
       if (i === focus) { rel = "—"; color = "#9a9a9a"; }
       else {
@@ -3339,6 +3463,7 @@ function hideHover() {
 window.toggleSeries = toggleSeries;
 window.showHover = showHover;
 window.hideHover = hideHover;
+window.setUnit = setUnit;
 relayout();
 "##;
 

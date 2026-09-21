@@ -243,6 +243,14 @@ wide, and the text report marks wide cells with `!` and counts them.
 
 The SVG shows median lines with min–max bands on a log-log grid.
 
+Two pills above the y axis switch the graph between ns/B (the default;
+lower is better) and GB/s (higher is better). GB/s is the reciprocal of
+ns/B, so on the log axis the plot mirrors through its middle: the
+switch animates each point along a straight line to its mirrored
+position over 0.7 s while the two axes cross-fade, and every label,
+value, and hover figure follows the chosen unit. Ratios between
+contenders are unitless and stay put.
+
 Hovering a dot opens a panel for that input size: the hovered
 contender's median, range, and code path, then every visible contender ranked
 fastest first with its ns/B, GB/s, and speed relative to the hovered
