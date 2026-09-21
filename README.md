@@ -22,6 +22,48 @@ It reports median, minimum, and maximum time per byte, measured with
 cargo run --release
 ```
 
+### Requirements
+
+The BLAKE3 SME2 contender is a path dependency: a checkout of the
+`sme2-bench` branch of github.com/johnservil/BLAKE3 must sit beside this
+repository at `../upstream/BLAKE3`, for example:
+
+```sh
+git clone --branch sme2-bench https://github.com/johnservil/BLAKE3 ../upstream/BLAKE3
+```
+
+Without it, Cargo fails at dependency resolution before compiling
+anything.
+
+The fork's SME2 kernels are assembly, so building them needs a C
+toolchain whose assembler understands `-march=armv9-a+sme2`: Clang/LLVM
+17 or later (Xcode 15 or later on macOS), or GNU binutils 2.41 or later
+with GCC 14 or later. The fork's build script fails when the probe
+fails, naming the compiler and the fix, so a successful build always
+contains the kernel. On Debian 12 and similar distributions, whose
+system `cc` is GCC 12 with binutils 2.40, point the `cc` crate at a
+newer compiler:
+
+```sh
+CC=clang-19 cargo run --release
+```
+
+Apple's clang from Xcode 15 or later works out of the box.
+
+At run time the fork's `Platform::detect()` requires a CPU that reports
+SME2 with a 512-bit streaming vector length (Apple M4 and later, or a
+Linux 6.4+ kernel exposing `HWCAP2_SME2`) and panics otherwise, and the
+benchmark asserts that selection at startup. The BLAKE3 SME2 column
+therefore always measures the SME2 kernel; on other hardware the
+benchmark stops with a message instead of timing NEON under that
+heading.
+
+The build script also runs `git` on the repository to record the commit
+and clean status. If the tree is owned by a different user than the one
+building (as with a mounted volume in a VM or container), git refuses
+with "dubious ownership" and the build fails; allow it with
+`git config --global --add safe.directory <path-to-this-repo>`.
+
 ## Output layout
 
 Results are written to a machine-specific subdirectory:
@@ -55,10 +97,12 @@ the portable fallback.
 BLAKE3 SME2 is the same crate from the `sme2-bench` branch of
 github.com/johnservil/BLAKE3, built as a path dependency under the crate
 name `blake3_sme2` so it links beside the crates.io crate. It selects
-SME2 kernels at runtime when the CPU reports SME2 with a 512-bit
-streaming vector length, and uses NEON otherwise, so on a machine
-without SME2 it measures the fork's NEON path. Its provenance line gives
-the branch and commit instead of a registry checksum.
+its SME2 kernels at runtime and requires a CPU that reports SME2 with a
+512-bit streaming vector length; the build requires a toolchain that
+assembles SME2 (see Requirements above). Both requirements fail stop,
+so this column measures the SME2 kernel on every machine where the
+benchmark runs. Its provenance line gives the branch and commit instead
+of a registry checksum.
 
 SHA-1DC is provided by RustCrypto's sha1-checked crate: SHA-1 with the
 collision-detection pass that git applies to every object hash. The
@@ -81,6 +125,12 @@ hash_many implementation: AVX-512, AVX2, SSE4.1, or SSE2 selected at
 runtime on x86, and four-way NEON on AArch64. Wider implementations fall
 through to narrower ones when an input does not fill a complete SIMD
 batch.
+
+A second section reports the BLAKE3 SME2 crate's selection, taken from
+the fork's `Platform::detect()` rather than inferred. Single chunks (up
+to 1 KiB) use the portable compressor, inputs of fewer than sixteen
+chunks (2 KiB to 8 KiB) are handed to NEON because they do not fill a
+sixteen-lane group, and 16 KiB and above run the SME2 chunk kernel.
 
 ## Interleaving
 

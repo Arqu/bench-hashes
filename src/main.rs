@@ -176,6 +176,21 @@ fn main() {
         "SAMPLE_ROUNDS must use every input-size position equally"
     );
 
+    /*
+     * The BLAKE3 SME2 column measures the SME2 kernel. The fork's build
+     * script fails without an SME2-capable assembler and its
+     * Platform::detect() panics on a CPU without SME2, so reaching this
+     * line with any other platform means the fork's contract changed
+     * underneath this benchmark. Stop rather than time NEON under the
+     * SME2 heading.
+     */
+    let sme2_platform = blake3_sme2::platform::Platform::detect();
+    assert_eq!(
+        format!("{sme2_platform:?}"),
+        "SME2",
+        "the blake3_sme2 crate must select its SME2 kernel on this machine",
+    );
+
     let machine = machine_metadata();
     let results = measure_all();
 
@@ -598,6 +613,53 @@ fn append_blake3_backend_report(output: &mut String) {
     writeln!(output).unwrap();
 }
 
+/*
+ * The SME2 fork exposes its runtime platform choice directly, so this
+ * report asks the crate rather than inferring from CPU features. main()
+ * has already asserted that the platform is SME2, so this section
+ * describes the SME2 kernel's per-size behaviour.
+ *
+ * Backend inferences follow the fork's src/ffi_sme2.rs: single chunks stay
+ * on the portable compression, groups of sixteen whole 1 KiB chunks go to
+ * the SME2 kernel, and any shorter run of inputs is handed to NEON.
+ */
+fn append_blake3_sme2_backend_report(output: &mut String) {
+    let platform = blake3_sme2::platform::Platform::detect();
+    let degree = platform.simd_degree();
+
+    writeln!(output, "BLAKE3 SME2 implementation selection:").unwrap();
+    writeln!(
+        output,
+        "  selected platform: {platform:?} (512-bit streaming vectors, \
+         sixteen-lane groups, hash_many degree {degree})",
+    )
+        .unwrap();
+
+    let implementation = Blake3Implementation {
+        platform: "SME2",
+        one_chunk:
+        "portable compression (one chunk; SME2 kernel not used)",
+        four_chunks:
+        "NEON hash_many (fewer than sixteen chunks; SME2 group not filled)",
+        bulk: "SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors)",
+    };
+
+    for input_size in INPUT_SIZES {
+        writeln!(
+            output,
+            "  {:>7}: {}",
+            input_size.label,
+            blake3_backend_for_input(
+                implementation,
+                input_size.bytes,
+            ),
+        )
+            .unwrap();
+    }
+
+    writeln!(output).unwrap();
+}
+
 fn generate_text(
     results: &Results,
     machine: &MachineMetadata,
@@ -638,6 +700,7 @@ fn generate_text(
     writeln!(output).unwrap();
 
     append_blake3_backend_report(&mut output);
+    append_blake3_sme2_backend_report(&mut output);
 
     writeln!(
         output,

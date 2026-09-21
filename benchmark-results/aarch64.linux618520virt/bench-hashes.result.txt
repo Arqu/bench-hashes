@@ -1,0 +1,98 @@
+TIMESTAMP: 2026-09-21 00:08:54 UTC
+git source: https://github.com/johnservil/bench-hashes
+git commit: 03dc9b68897195ce63f6b11a6076a5369cc3d9c8
+git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+5 commits)
+git clean status: dirty-b0040dafa50795fbb4f068982f760e69311f11470077ca276f0bd1694c26b993
+bench-hashes version: 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f
+CPU type: aarch64
+CPU count: 2
+OS type: linux6.18.52-0-virt
+Rust compiler: rustc 1.98.1 (48a229cea 2026-09-01)
+Build target: aarch64-unknown-linux-gnu
+Target features: aes,crc,lse,neon,sha2,sha3
+BLAKE3 source: blake3 1.8.7; crate archive SHA-256 6d9e454fc11f76977dc803893aff6304ed33d6a26efae8696573bea74baa27ae; source registry+https://github.com/rust-lang/crates.io-index
+SHA-256 source: sha2 0.10.9; crate archive SHA-256 a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283; source registry+https://github.com/rust-lang/crates.io-index
+SHA-1DC source: sha1-checked 0.10.0; crate archive SHA-256 89f599ac0c323ebb1c6082821a54962b839832b03984598375bff3975b804423; source registry+https://github.com/rust-lang/crates.io-index
+BLAKE3 SME2 source: blake3_sme2 (path dependency); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit 11047479e94cd5033dc23de2a9753c5edfe92a79; working tree clean
+SHA-256 assembly source: sha2-asm 0.6.4; crate archive SHA-256 b845214d6175804686b2bd482bcffe96651bb2d1200742b712003504a2dac1ab; source registry+https://github.com/rust-lang/crates.io-index
+BLAKE3 mode: single-threaded; Rayon not enabled
+SHA-256 mode: sha2 crate, assembly backends where available (ARMv8 SHA-256 instructions on AArch64)
+SHA-1DC mode: sha1-checked crate: SHA-1 with collision detection, pure Rust (the construction git uses)
+BLAKE3 SME2 mode: single-threaded; SME2 kernels (512-bit streaming vectors) selected at runtime when the CPU reports SME2, NEON otherwise
+
+BLAKE3 implementation selection:
+  selected platform: NEON
+     64 B: portable compression (one chunk; NEON bulk path not used)
+    128 B: portable compression (one chunk; NEON bulk path not used)
+    256 B: portable compression (one chunk; NEON bulk path not used)
+    512 B: portable compression (one chunk; NEON bulk path not used)
+    1 KiB: portable compression (one chunk; NEON bulk path not used)
+    2 KiB: NEON hash_many (4-way SIMD)
+    4 KiB: NEON hash_many (4-way SIMD)
+    8 KiB: NEON hash_many (4-way SIMD)
+   16 KiB: NEON hash_many (4-way SIMD)
+   32 KiB: NEON hash_many (4-way SIMD)
+   64 KiB: NEON hash_many (4-way SIMD)
+  128 KiB: NEON hash_many (4-way SIMD)
+  256 KiB: NEON hash_many (4-way SIMD)
+  512 KiB: NEON hash_many (4-way SIMD)
+    1 MiB: NEON hash_many (4-way SIMD)
+
+BLAKE3 SME2 implementation selection:
+  selected platform: SME2 (512-bit streaming vectors, sixteen-lane groups, hash_many degree 128)
+     64 B: portable compression (one chunk; SME2 kernel not used)
+    128 B: portable compression (one chunk; SME2 kernel not used)
+    256 B: portable compression (one chunk; SME2 kernel not used)
+    512 B: portable compression (one chunk; SME2 kernel not used)
+    1 KiB: portable compression (one chunk; SME2 kernel not used)
+    2 KiB: NEON hash_many (fewer than sixteen chunks; SME2 group not filled)
+    4 KiB: NEON hash_many (fewer than sixteen chunks; SME2 group not filled)
+    8 KiB: NEON hash_many (fewer than sixteen chunks; SME2 group not filled)
+   16 KiB: SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors)
+   32 KiB: SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors)
+   64 KiB: SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors)
+  128 KiB: SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors)
+  256 KiB: SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors)
+  512 KiB: SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors)
+    1 MiB: SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors)
+
+============================================================
+BENCHMARK SUMMARY
+============================================================
+
+Time per byte in ns/B: median, with minimum–maximum beneath; lower is better.
+
+  size             BLAKE3        SHA-256        SHA-1DC    BLAKE3 SME2
+  64 B              0.745          0.495          2.669          0.768
+              0.702–0.814    0.486–0.629    2.497–2.898    0.723–0.917
+  128 B             0.750          0.391          1.835          0.751
+              0.705–0.841    0.381–0.435    1.725–1.958    0.713–0.880
+  256 B             0.735          0.349          1.514          0.738
+              0.698–0.795    0.342–0.386    1.424–1.730    0.698–0.798
+  512 B             0.730          0.342          1.274          0.729
+              0.696–0.792    0.336–0.374    1.191–1.339    0.693–0.780
+  1 KiB             0.727          0.340          1.190          0.727
+              0.689–0.796    0.334–0.377    1.105–1.249    0.691–0.793
+  2 KiB             0.744          0.337          1.158          0.756
+              0.713–0.798    0.330–0.377    1.091–1.244    0.724–0.821
+  4 KiB             0.403          0.335          1.153          0.408
+              0.395–0.439    0.330–0.379    1.089–1.214    0.400–0.447
+  8 KiB             0.396          0.335          1.163          0.397
+              0.389–0.517    0.329–0.387    1.103–1.423    0.391–0.493
+  16 KiB            0.392          0.334          1.144          0.242
+              0.386–0.447    0.329–0.385    1.079–1.220    0.236–0.251
+  32 KiB            0.391          0.333          1.161          0.220
+              0.385–0.433    0.329–0.374    1.110–1.252    0.217–0.229
+  64 KiB            0.391          0.334          1.166          0.213
+              0.384–0.428    0.329–0.376    1.119–1.301    0.211–0.220
+  128 KiB           0.390          0.334          1.188          0.207
+              0.384–0.453    0.329–0.375    1.133–1.329    0.206–0.212
+  256 KiB           0.391          0.334          1.203          0.201
+              0.384–0.445    0.329–0.411    1.144–1.490    0.187–0.203
+  512 KiB           0.391          0.336          1.225          0.194
+              0.384–0.446    0.329–0.384    1.178–1.375    0.181–0.200
+  1 MiB             0.391          0.335          1.249          0.179
+              0.384–0.437    0.329–0.390    1.176–1.493    0.173–0.192
+
+On this machine: SHA-256 is 1.17× to 2.21× faster than BLAKE3; BLAKE3 is 1.56× to 3.58× faster than SHA-1DC; BLAKE3 SME2 matches BLAKE3 below 16 KiB and is up to 2.18× faster from there
+
