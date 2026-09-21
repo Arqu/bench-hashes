@@ -62,16 +62,17 @@ cargo run --release -- --contenders sha256,sha256-cc # exactly these, in this co
 cargo run --release -- --list                        # keys and availability here
 ```
 
-Keys: `blake3`, `blake3-sme2`, `sha256`, `sha256-ring`, `sha256-cc`,
-`sha1dc`.
+Keys: `blake3`, `blake3-sme2`, `sha256`, `sha256-ring`, `sha1dc`; and
+`sha256-cc`, which runs only when named with `--contenders`. It stays
+available for direct comparison; on Apple silicon the ring and sha2
+crates are each faster than CommonCrypto at every size, so the default
+and `--all` runs leave it out.
 
 `--trace-clocks PATH` writes one CSV line per sample with the wall
 (`Instant`), thread-CPU, process-CPU, and `mach_absolute_time` readings
 taken around the same work, for clock diagnosis;
 `tools/analyze-clock-trace.py PATH` finds windows where the clocks
-disagree and says what shape the disagreement has. The
-baseline for ratios is the first BLAKE3 contender in the column order,
-or the first contender when no BLAKE3 is selected.
+disagree and says what shape the disagreement has.
 
 ### Requirements
 
@@ -240,9 +241,7 @@ wide, and the text report marks wide cells with `!` and counts them.
 
 ## The graph
 
-The SVG shows median lines with min–max bands on a log-log grid. The
-headline sentence beneath the title states each contender's speed
-relative to BLAKE3 across the size range.
+The SVG shows median lines with min–max bands on a log-log grid.
 
 Hovering a dot opens a panel for that input size: the hovered
 contender's median, range, and code path, then every visible contender ranked
@@ -253,8 +252,7 @@ Hidden contenders stay out of the ranking.
 
 The names at the right edge are toggles. Clicking one hides that
 contender: its marks fade out, the y axis rescales to the contenders
-still showing, the headline sentence restates itself for that set, and
-its provenance line drops out of the block below. The name stays in
+still showing, and its provenance line drops out of the block below. The name stays in
 place, greyed with a hollow swatch and a "hidden · click to show" hint,
 anchored toward where its line would sit on the current axis. A viewer
 without script support shows every contender, laid out identically.

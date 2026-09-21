@@ -153,6 +153,16 @@ impl Algorithm {
         }
     }
 
+    /*
+     * Contenders that run only when named on the command line. They are
+     * kept for direct comparison; measured on the machines this benchmark
+     * targets, another member of the same family beats them at every size,
+     * so a default or --all run gains nothing from them.
+     */
+    fn on_request_only(self) -> bool {
+        matches!(self, Self::Sha256CommonCrypto)
+    }
+
     /// Whether this contender can run on the current machine, or why not.
     fn availability(self) -> Result<(), String> {
         match self {
@@ -446,11 +456,12 @@ bench-hashes: single-threaded hash throughput by input size
   bench-hashes                     SHA-1DC plus the best available BLAKE3 and
                                    SHA-256 on this machine (best = Pareto-better
                                    at every size; the run says so if none is)
-  bench-hashes --all               every contender this machine can run
+  bench-hashes --all               every contender this machine can run,
+                                   apart from those marked on-request in --list
   bench-hashes --contenders K,...  exactly these, in this column order
   bench-hashes --list              contenders and their availability here
 
-Keys: blake3, blake3-sme2, sha256, sha256-ring, sha256-cc, sha1dc
+Keys: blake3, blake3-sme2, sha256, sha256-ring, sha1dc; sha256-cc on request
 
   --trace-clocks PATH              also write one CSV line per sample with
                                    wall, thread-CPU, mach_absolute_time, and
@@ -484,6 +495,7 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
         [flag] if flag == "--list" => {
             for algorithm in Algorithm::ALL {
                 let status = match algorithm.availability() {
+                    Ok(()) if algorithm.on_request_only() => "available; runs only when named with --contenders".to_owned(),
                     Ok(()) => "available".to_owned(),
                     Err(reason) => format!("unavailable: {reason}"),
                 };
@@ -522,7 +534,7 @@ fn main() {
     let mut trace = trace_path.map(ClockTrace::new);
     let available: Vec<Algorithm> = Algorithm::ALL
         .into_iter()
-        .filter(|algorithm| algorithm.availability().is_ok())
+        .filter(|algorithm| algorithm.availability().is_ok() && !algorithm.on_request_only())
         .collect();
 
     let machine = machine_metadata();
