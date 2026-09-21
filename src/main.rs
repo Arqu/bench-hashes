@@ -998,17 +998,15 @@ fn generate_svg(
     machine: &MachineMetadata,
 ) -> String {
     const WIDTH: f64 = 1200.0;
-    const HEIGHT: f64 = 860.0;
+    const HEIGHT: f64 = 725.0;
     const PLOT_LEFT: f64 = 110.0;
     const PLOT_RIGHT: f64 = 1000.0;
     const PLOT_TOP: f64 = 135.0;
     const PLOT_BOTTOM: f64 = 455.0;
-    const RATIO_TOP: f64 = 500.0;
-    const RATIO_BOTTOM: f64 = 590.0;
 
     assert!(
         ALGORITHM_COUNT >= 2,
-        "the ratio panel needs a baseline and at least one other contender"
+        "the takeaway needs a baseline and at least one other contender"
     );
 
     let observed_max = results
@@ -1160,7 +1158,7 @@ fn generate_svg(
         writeln!(
             svg,
             r##"  <text x="{x:.2}" y="{:.1}" class="size-label" text-anchor="middle">{}</text>"##,
-            RATIO_BOTTOM + 24.0,
+            PLOT_BOTTOM + 24.0,
             xml_escape(INPUT_SIZES[size_index].label),
         )
             .unwrap();
@@ -1170,7 +1168,7 @@ fn generate_svg(
         svg,
         r##"  <text x="{:.1}" y="{:.1}" class="axis-title" text-anchor="middle">Input size (logarithmic spacing)</text>"##,
         (PLOT_LEFT + PLOT_RIGHT) / 2.0,
-        RATIO_BOTTOM + 46.0,
+        PLOT_BOTTOM + 46.0,
     )
         .unwrap();
 
@@ -1374,170 +1372,6 @@ fn generate_svg(
     }
 
     /*
-     * Ratio panel: baseline median divided by each other contender's
-     * median at each size, on a log scale so equal ratios are equal
-     * distances. Above the dashed line the contender is faster than the
-     * baseline. One line per contender, in its color.
-     */
-    {
-        let ratios = median_ratios(results);
-
-        let all_ratios = ratios
-            .iter()
-            .flat_map(|row| row.iter().copied());
-
-        let ratio_low = all_ratios
-            .clone()
-            .fold(1.0_f64, f64::min)
-            * 0.94;
-
-        let ratio_high = all_ratios
-            .fold(1.0_f64, f64::max)
-            * 1.06;
-
-        let ratio_log_low = ratio_low.ln();
-        let ratio_log_high = ratio_high.ln();
-
-        let map_ratio_y = |ratio: f64| {
-            assert!(ratio > 0.0);
-
-            RATIO_BOTTOM
-                - (ratio.ln() - ratio_log_low)
-                / (ratio_log_high - ratio_log_low)
-                * (RATIO_BOTTOM - RATIO_TOP)
-        };
-
-        writeln!(
-            svg,
-            r##"  <text x="{PLOT_LEFT:.1}" y="{:.1}" class="axis-title">Speed relative to {}: {} time ÷ contender time — above the dashed line, the contender is faster than {}</text>"##,
-            RATIO_TOP - 10.0,
-            xml_escape(ALGORITHMS[BASELINE].name()),
-            xml_escape(ALGORITHMS[BASELINE].name()),
-            xml_escape(ALGORITHMS[BASELINE].name()),
-        )
-            .unwrap();
-
-        /* Panel frame and per-size guides. */
-        writeln!(
-            svg,
-            r##"  <line x1="{PLOT_LEFT:.1}" y1="{RATIO_TOP:.1}" x2="{PLOT_LEFT:.1}" y2="{RATIO_BOTTOM:.1}" class="axis"/>"##
-        )
-            .unwrap();
-
-        writeln!(
-            svg,
-            r##"  <line x1="{PLOT_LEFT:.1}" y1="{RATIO_BOTTOM:.1}" x2="{PLOT_RIGHT:.1}" y2="{RATIO_BOTTOM:.1}" class="axis"/>"##
-        )
-            .unwrap();
-
-        for x in x_positions {
-            writeln!(
-                svg,
-                r##"  <line x1="{x:.2}" y1="{RATIO_TOP:.1}" x2="{x:.2}" y2="{RATIO_BOTTOM:.1}" class="grid-x"/>"##
-            )
-                .unwrap();
-        }
-
-        /* Equal-speed reference line: the baseline itself. */
-        let equal_y = map_ratio_y(1.0);
-
-        writeln!(
-            svg,
-            r##"  <line x1="{PLOT_LEFT:.1}" y1="{equal_y:.2}" x2="{PLOT_RIGHT:.1}" y2="{equal_y:.2}" stroke="{}" stroke-width="1.5" stroke-dasharray="5,4"/>"##,
-            ALGORITHMS[BASELINE].color(),
-        )
-            .unwrap();
-
-        writeln!(
-            svg,
-            r##"  <text x="{:.1}" y="{:.2}" class="tick-label" text-anchor="end">1.0×</text>"##,
-            PLOT_LEFT - 10.0,
-            equal_y + 3.5,
-        )
-            .unwrap();
-
-        for algorithm_index in 0..ALGORITHM_COUNT {
-            if algorithm_index == BASELINE {
-                continue;
-            }
-
-            let algorithm = ALGORITHMS[algorithm_index];
-            let mut path = String::new();
-
-            for size_index in 0..INPUT_COUNT {
-                let x = x_positions[size_index];
-                let y = map_ratio_y(ratios[size_index][algorithm_index]);
-
-                if size_index == 0 {
-                    write!(path, "M {x:.2} {y:.2}").unwrap();
-                } else {
-                    write!(path, " L {x:.2} {y:.2}").unwrap();
-                }
-            }
-
-            writeln!(
-                svg,
-                r##"  <path d="{path}" fill="none" stroke="{}" stroke-width="1.5" stroke-linejoin="round"/>"##,
-                algorithm.color(),
-            )
-                .unwrap();
-
-            for size_index in 0..INPUT_COUNT {
-                let x = x_positions[size_index];
-                let ratio = ratios[size_index][algorithm_index];
-                let y = map_ratio_y(ratio);
-
-                writeln!(
-                    svg,
-                    r##"  <circle cx="{x:.2}" cy="{y:.2}" r="4.5" fill="{}" stroke="#fdfdfc" stroke-width="1.5"><title>{} vs {} at {}: {ratio:.2}×</title></circle>"##,
-                    algorithm.color(),
-                    xml_escape(algorithm.name()),
-                    xml_escape(ALGORITHMS[BASELINE].name()),
-                    xml_escape(INPUT_SIZES[size_index].label),
-                )
-                    .unwrap();
-
-                let labeled = size_index == 0
-                    || size_index == INPUT_COUNT - 1
-                    || size_index % 4 == 0;
-
-                if !labeled {
-                    continue;
-                }
-
-                let (label_x, anchor) = if size_index == 0 {
-                    (x + 8.0, "start")
-                } else if size_index == INPUT_COUNT - 1 {
-                    (x - 8.0, "end")
-                } else {
-                    (x, "middle")
-                };
-
-                /*
-                 * Label on the side of the dot away from the dashed line,
-                 * clamped inside the panel.
-                 */
-                let above = y - 9.0;
-                let below = y + 18.0;
-                let label_y = if ratio >= 1.0 {
-                    if above < RATIO_TOP + 12.0 { below } else { above }
-                } else if below > RATIO_BOTTOM - 4.0 {
-                    above
-                } else {
-                    below
-                };
-
-                writeln!(
-                    svg,
-                    r##"  <text x="{label_x:.2}" y="{label_y:.2}" class="value-label" fill="{}" text-anchor="{anchor}">{ratio:.2}×</text>"##,
-                    algorithm.color(),
-                )
-                    .unwrap();
-            }
-        }
-    }
-
-    /*
      * Annotate the BLAKE3 single-chunk elbow: the 64 B point uses a
      * different code path than the bulk sizes, and that is the whole story
      * of its shape.
@@ -1621,7 +1455,7 @@ fn generate_svg(
     writeln!(svg, "  </metadata>").unwrap();
 
     /* Human-readable provenance: left-aligned, compact, de-emphasized. */
-    let provenance_top = RATIO_BOTTOM + 85.0;
+    let provenance_top = PLOT_BOTTOM + 85.0;
 
     writeln!(
         svg,

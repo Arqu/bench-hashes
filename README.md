@@ -142,10 +142,9 @@ blocks have approximately equal durations.
 
 ## The graph
 
-The SVG shows median lines with min–max bands on a log-log grid, plus a
-ratio panel giving each contender's speed relative to BLAKE3 at each
-input size (BLAKE3 time ÷ contender time; above 1.0 the contender is
-faster).
+The SVG shows median lines with min–max bands on a log-log grid. The
+headline sentence beneath the title states each contender's speed
+relative to BLAKE3 across the size range.
 
 ## Native optimization
 
