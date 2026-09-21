@@ -1394,6 +1394,7 @@ fn generate_svg(
     .axis-title { font-size: 12px; fill: #666666; }
     .tick-label { font-size: 11px; fill: #777777; }
     .size-label { font-size: 11px; font-weight: 600; fill: #333333; }
+    .size-tick { stroke: #bbbbbb; stroke-width: 1; }
     .value-label { font-size: 10px; font-weight: 700; }
     .series-name { font-size: 13px; font-weight: 700; }
     .series-detail { font-size: 10px; fill: #777777; }
@@ -1498,9 +1499,24 @@ fn generate_svg(
     )
         .unwrap();
 
-    /* Vertical guides and x-axis labels at each tested size. */
+    /*
+     * Vertical guides and x-axis labels at each tested size. Where a label
+     * would run into its left neighbour (3 KiB sits 24 px from 4 KiB on the
+     * log axis), it drops to a second row with a short tick joining it to
+     * its column.
+     */
+    const SIZE_LABEL_WIDTH: f64 = 34.0;
+    let mut label_rows = [0u8; INPUT_COUNT];
+    for size_index in 1..INPUT_COUNT {
+        let gap = x_positions[size_index] - x_positions[size_index - 1];
+        if gap < SIZE_LABEL_WIDTH && label_rows[size_index - 1] == 0 {
+            label_rows[size_index] = 1;
+        }
+    }
     for size_index in 0..INPUT_COUNT {
         let x = x_positions[size_index];
+        let row = label_rows[size_index];
+        let label_y = PLOT_BOTTOM + 24.0 + 13.0 * f64::from(row);
 
         writeln!(
             svg,
@@ -1508,10 +1524,19 @@ fn generate_svg(
         )
             .unwrap();
 
+        if row == 1 {
+            writeln!(
+                svg,
+                r##"  <line x1="{x:.2}" y1="{:.1}" x2="{x:.2}" y2="{:.1}" class="size-tick"/>"##,
+                PLOT_BOTTOM + 4.0,
+                label_y - 10.0,
+            )
+                .unwrap();
+        }
+
         writeln!(
             svg,
-            r##"  <text x="{x:.2}" y="{:.1}" class="size-label" text-anchor="middle">{}</text>"##,
-            PLOT_BOTTOM + 24.0,
+            r##"  <text x="{x:.2}" y="{label_y:.1}" class="size-label" text-anchor="middle">{}</text>"##,
             xml_escape(INPUT_SIZES[size_index].label),
         )
             .unwrap();
@@ -1521,7 +1546,7 @@ fn generate_svg(
         svg,
         r##"  <text x="{:.1}" y="{:.1}" class="axis-title" text-anchor="middle">Input size (logarithmic spacing)</text>"##,
         (PLOT_LEFT + PLOT_RIGHT) / 2.0,
-        PLOT_BOTTOM + 46.0,
+        PLOT_BOTTOM + 52.0,
     )
         .unwrap();
 
@@ -2275,12 +2300,15 @@ function relayout() {
 
 function toggleSeries(i) {
   on[i] = !on[i];
-  hideHover();
   relayout();
+  if (hovered) showHover(hovered[0], hovered[1]);
 }
 
 /* Current y mapping, kept by relayout() so the hover panel places itself. */
 let currentMapY = null;
+
+/* The dot under the pointer, so a toggle can rebuild the panel in place. */
+let hovered = null;
 
 function gbps(nsPerByte) {
   const t = 1 / nsPerByte;
@@ -2321,7 +2349,8 @@ function textEl(x, y, cls, content, extra) {
  * relative to the hovered one. Hidden contenders stay out of the ranking.
  */
 function showHover(focus, k) {
-  if (!on[focus] || !currentMapY) return;
+  hovered = [focus, k];
+  if (!on[focus] || !currentMapY) { document.getElementById("hover").style.display = "none"; return; }
   const body = document.getElementById("hover-body");
   while (body.firstChild) body.removeChild(body.firstChild);
 
@@ -2367,9 +2396,13 @@ function showHover(focus, k) {
     for (const [i, med] of rows) {
       y += LINE;
       const s = DATA.series[i];
-      const sw = document.createElementNS(NS, "circle");
-      sw.setAttribute("cx", PAD + 5); sw.setAttribute("cy", y - 4); sw.setAttribute("r", 4.5);
-      sw.setAttribute("fill", DATA.colors[i]);
+      /* Swatch: this contender's mark at this size, in its own colour. */
+      let rj = 0;
+      s.regimes.forEach((r, j) => { if (k >= r.from) rj = j; });
+      const sw = markGlyph(s.regimes[rj].mark, DATA.colors[i]);
+      sw.setAttribute("class", "hover-swatch");
+      sw.setAttribute("style", `fill: ${DATA.colors[i]}`);
+      sw.setAttribute("transform", `translate(${PAD + 5} ${y - 4}) scale(0.85)`);
       body.appendChild(sw);
       const cls = "hover-row" + (i === focus ? " hover-row-focus" : "");
       body.appendChild(textEl(PAD + 15, y, cls, s.name));
@@ -2408,6 +2441,7 @@ function showHover(focus, k) {
 }
 
 function hideHover() {
+  hovered = null;
   document.getElementById("hover").style.display = "none";
 }
 
