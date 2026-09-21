@@ -151,6 +151,12 @@ The SVG shows median lines with min–max bands on a log-log grid. The
 headline sentence beneath the title states each contender's speed
 relative to BLAKE3 across the size range.
 
+Hovering a dot opens a panel for that input size: the hovered
+contender's median and range, then every visible contender ranked
+fastest first with its ns/B, GB/s, and speed relative to the hovered
+one ("1.35× faster", "about the same", "3.22× slower"). Hidden
+contenders stay out of the ranking.
+
 The names at the right edge are toggles. Clicking one hides that
 contender: its marks fade out, the y axis rescales to the contenders
 still showing, the headline sentence restates itself for that set, and

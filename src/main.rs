@@ -1264,6 +1264,16 @@ fn generate_svg(
     .series[data-on="false"] .series-prov { display: none; }
     .series[data-on="false"] .series-swatch { fill: #fdfdfc; }
     .series-swatch { stroke-width: 2; transition: fill 0.3s ease; }
+    .dot { cursor: crosshair; }
+    #hover { pointer-events: none; }
+    #hover-guide { stroke: #9a9a9a; stroke-width: 1; stroke-dasharray: 3,3; }
+    #hover-box { fill: #ffffff; fill-opacity: 0.97; stroke: #c8c8c4; stroke-width: 1; }
+    .hover-head { font-size: 12px; font-weight: 700; fill: #1a1a1a; }
+    .hover-sub { font-size: 10px; fill: #777777; }
+    .hover-row { font-size: 11px; fill: #333333; }
+    .hover-row-focus { font-weight: 700; }
+    .hover-ratio { font-size: 11px; font-weight: 600; }
+    .hover-note { font-size: 9px; font-style: italic; fill: #9a9a9a; }
   </style>
 "##,
     );
@@ -1283,7 +1293,7 @@ fn generate_svg(
 
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="90" class="method">Line and dot: median · shaded band: minimum–maximum across {SAMPLE_ROUNDS} interleaved samples · single-threaded · lower is better · click a name at right to hide or show that contender</text>"##
+        r##"  <text x="{PLOT_LEFT:.0}" y="90" class="method">Line and dot: median · shaded band: minimum–maximum across {SAMPLE_ROUNDS} interleaved samples · single-threaded · lower is better · hover a dot to compare contenders at that size · click a name at right to hide or show that contender</text>"##
     )
         .unwrap();
 
@@ -1465,22 +1475,15 @@ fn generate_svg(
 
             writeln!(
                 svg,
-                r##"      <circle class="dot" data-size="{size_index}" cx="{x:.2}" cy="{median_y:.2}" r="5" fill="{color}" stroke="#fdfdfc" stroke-width="1.5">"##
+                r##"      <circle class="dot" data-size="{size_index}" cx="{x:.2}" cy="{median_y:.2}" r="5" fill="{color}" stroke="#fdfdfc" stroke-width="1.5" onmouseenter="showHover({algorithm_index},{size_index})" onmouseleave="hideHover()">"##
             )
                 .unwrap();
 
-            writeln!(
-                svg,
-                r##"        <title>{}, {}: median {} ns/B ({}); range {}–{} ns/B</title>"##,
-                xml_escape(INPUT_SIZES[size_index].label),
-                xml_escape(algorithm.name()),
-                format_result_value(statistics.median),
-                gigabytes_per_second(statistics.median),
-                format_result_value(statistics.minimum),
-                format_result_value(statistics.maximum),
-            )
-                .unwrap();
-
+            /*
+             * A native <title> would pop over the hover panel, so the panel
+             * alone carries the numbers. The value labels below stay for
+             * viewers without script.
+             */
             svg.push_str("      </circle>\n");
 
             /*
@@ -1636,6 +1639,20 @@ fn generate_svg(
 
         writeln!(svg, "  </g>").unwrap();
     }
+
+    /*
+     * Hover panel, filled by the script when a dot is hovered. Last among
+     * the drawn elements so it paints over every series.
+     */
+    writeln!(svg, r##"  <g id="hover" style="display:none">"##).unwrap();
+    writeln!(
+        svg,
+        r##"    <line id="hover-guide" x1="0" y1="{PLOT_TOP:.1}" x2="0" y2="{PLOT_BOTTOM:.1}"/>"##
+    )
+        .unwrap();
+    writeln!(svg, r##"    <rect id="hover-box" x="0" y="0" width="0" height="0" rx="4"/>"##).unwrap();
+    writeln!(svg, r##"    <g id="hover-body"></g>"##).unwrap();
+    writeln!(svg, "  </g>").unwrap();
 
     /* Machine-readable provenance, complete and untruncated. */
     writeln!(svg, "  <metadata>").unwrap();
@@ -1811,6 +1828,11 @@ fn write_interaction_script(
         if index > 0 { data.push(','); }
         write!(data, "{y:.2}").unwrap();
     }
+    data.push_str("],\"colors\":[");
+    for (index, algorithm) in ALGORITHMS.iter().enumerate() {
+        if index > 0 { data.push(','); }
+        write!(data, "\"{}\"", algorithm.color()).unwrap();
+    }
     data.push_str("],\"sizes\":[");
     for (index, size) in INPUT_SIZES.iter().enumerate() {
         if index > 0 { data.push(','); }
@@ -1908,6 +1930,7 @@ function relayout() {
   const axMin = niceBelow(lo * 0.92), axMax = niceAbove(hi * 1.08);
   const lMin = Math.log(axMin), lMax = Math.log(axMax);
   const mapY = v => DATA.plotBottom - (Math.log(v) - lMin) / (lMax - lMin) * (DATA.plotBottom - DATA.plotTop);
+  currentMapY = mapY;
 
   /* Y axis: grid lines and tick labels. */
   const axis = document.getElementById("y-axis");
@@ -1989,9 +2012,105 @@ function relayout() {
 
 function toggleSeries(i) {
   on[i] = !on[i];
+  hideHover();
   relayout();
 }
+
+/* Current y mapping, kept by relayout() so the hover panel places itself. */
+let currentMapY = null;
+
+function gbps(nsPerByte) {
+  const t = 1 / nsPerByte;
+  return (t >= 10 ? t.toFixed(0) : t.toFixed(1)) + " GB/s";
+}
+
+function textEl(x, y, cls, content, extra) {
+  const t = document.createElementNS(NS, "text");
+  t.setAttribute("x", x); t.setAttribute("y", y); t.setAttribute("class", cls);
+  if (extra) for (const k in extra) t.setAttribute(k, extra[k]);
+  t.textContent = content;
+  return t;
+}
+
+/*
+ * Hovering a dot: the hovered contender's median and range at that size,
+ * then every visible contender ranked fastest first, each with its speed
+ * relative to the hovered one. Hidden contenders stay out of the ranking.
+ */
+function showHover(focus, k) {
+  if (!on[focus] || !currentMapY) return;
+  const body = document.getElementById("hover-body");
+  while (body.firstChild) body.removeChild(body.firstChild);
+
+  const f = DATA.series[focus];
+  const rows = DATA.series.map((s, i) => [i, s.med[k]]).filter(([i]) => on[i]).sort((a, b) => a[1] - b[1]);
+
+  const PAD = 10, LINE = 16, W = 330;
+  let y = PAD + 12;
+  body.appendChild(textEl(PAD, y, "hover-head", `${f.name} at ${DATA.sizes[k]}`));
+  y += 14;
+  body.appendChild(textEl(PAD, y, "hover-sub",
+    `median ${f.med[k].toFixed(3)} ns/B (${gbps(f.med[k])}) · range ${f.min[k].toFixed(3)}–${f.max[k].toFixed(3)}`));
+  y += 10;
+
+  if (rows.length > 1) {
+    y += LINE;
+    body.appendChild(textEl(PAD, y, "hover-sub", "contender"));
+    body.appendChild(textEl(PAD + 150, y, "hover-sub", "ns/B", { "text-anchor": "end" }));
+    body.appendChild(textEl(PAD + 215, y, "hover-sub", "GB/s", { "text-anchor": "end" }));
+    body.appendChild(textEl(W - PAD, y, "hover-sub", `relative to ${f.name}`, { "text-anchor": "end" }));
+    y += 4;
+    for (const [i, med] of rows) {
+      y += LINE;
+      const s = DATA.series[i];
+      const sw = document.createElementNS(NS, "circle");
+      sw.setAttribute("cx", PAD + 5); sw.setAttribute("cy", y - 4); sw.setAttribute("r", 4.5);
+      sw.setAttribute("fill", DATA.colors[i]);
+      body.appendChild(sw);
+      const cls = "hover-row" + (i === focus ? " hover-row-focus" : "");
+      body.appendChild(textEl(PAD + 15, y, cls, s.name));
+      body.appendChild(textEl(PAD + 150, y, cls, med.toFixed(3), { "text-anchor": "end" }));
+      body.appendChild(textEl(PAD + 215, y, cls, gbps(med).replace(" GB/s", ""), { "text-anchor": "end" }));
+      let rel, color;
+      if (i === focus) { rel = "—"; color = "#9a9a9a"; }
+      else {
+        const r = f.med[k] / med;
+        if (Math.abs(r - 1) < 0.05) { rel = "about the same"; color = "#777777"; }
+        else if (r > 1) { rel = r.toFixed(2) + "\u00d7 faster"; color = "#2f7d32"; }
+        else { rel = (1 / r).toFixed(2) + "\u00d7 slower"; color = "#b3261e"; }
+      }
+      body.appendChild(textEl(W - PAD, y, "hover-ratio", rel, { "text-anchor": "end", fill: color }));
+    }
+    y += 12;
+    body.appendChild(textEl(PAD, y, "hover-note", `each row's speed compared with ${f.name}; medians, ranked fastest first`));
+    y += 4;
+  }
+  const H = y + PAD - 6;
+
+  /* Place beside the column, flipping left near the right edge. */
+  const x = DATA.x[k];
+  const dotY = currentMapY(f.med[k]);
+  let bx = x + 14;
+  if (bx + W > DATA.plotRight + 10) bx = x - 14 - W;
+  let by = Math.min(Math.max(dotY - H / 2, DATA.plotTop - 30), DATA.plotBottom + 30 - H);
+
+  const box = document.getElementById("hover-box");
+  box.setAttribute("x", bx); box.setAttribute("y", by);
+  box.setAttribute("width", W); box.setAttribute("height", H);
+  body.setAttribute("transform", `translate(${bx} ${by})`);
+  const guide = document.getElementById("hover-guide");
+  guide.setAttribute("x1", x); guide.setAttribute("x2", x);
+  document.getElementById("hover").style.display = "";
+}
+
+function hideHover() {
+  document.getElementById("hover").style.display = "none";
+}
+
 window.toggleSeries = toggleSeries;
+window.showHover = showHover;
+window.hideHover = hideHover;
+relayout();
 "##;
 
 /// "source URL · branch B · commit C" for a git-dependency provenance line.
