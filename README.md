@@ -25,7 +25,7 @@ median over every sample of cycles ÷ elapsed time; and each sample's
 cycles per byte is divided by that rate. A core boost or throttle during
 a sample stretches or shrinks its elapsed time and leaves its cycles
 alone, so the reported time is unmoved. On an M4 Max this took the
-median cell's min–max spread from 11% to 1.3%, with medians unchanged;
+median cell's sample spread from 11% to 1.3%, with medians unchanged;
 what remains in the band is the code's own variation, cache effects,
 and the cycles a preempted thread spends warming back up. The result
 reads in the unit a stopwatch gives, with the machine's frequency
@@ -59,6 +59,7 @@ so it costs the same as `--all`.
 ```sh
 cargo run --release -- --all                         # every contender this machine can run
 cargo run --release -- --contenders sha256,sha256-cc # exactly these, in this column order
+cargo run --release -- --thorough                    # three times the rounds, narrower bands
 cargo run --release -- --list                        # keys and availability here
 ```
 
@@ -225,23 +226,39 @@ separately so its timed samples last about 1 ms each.
 Each combination collects about 80 samples: the exact count is the
 smallest multiple of both the size count and the order count at or
 above 80, so every order and every size position recurs equally often
-(80 for two, four, or five contenders; 96 for three or six). The runtime budget favours sample
-count over sample length: fewer samples thin the evidence behind the
-min–max band and let it look tight while the true spread is wider,
-whereas shorter samples keep the count and let any disturbance widen
-the band honestly. A whole run takes about six seconds on this
-benchmark's development machines.
+(80 for two, four, or five contenders; 96 for three or six). The
+runtime budget favours sample count over sample length: the median's
+interval narrows with the square root of the count, and a 1 ms sample
+is long enough that the clock's resolution is far below noise. A whole
+run takes about six seconds on this benchmark's development machines.
 
-The band's appearance reports precision. Spread is (maximum − minimum)
-÷ median at a size; a contender's band takes its worst spread across
-sizes. Under 10% the band is a faint tint; from 10% to 25% the tint
-deepens; at 25% and above a dashed outline appears. The hover panel
-prints each point's spread as ±% and names it when it is noticeable or
-wide, and the text report marks wide cells with `!` and counts them.
+The band around each median line is the **95% bootstrap confidence
+interval of the median**: the cell's samples are resampled with
+replacement 400 times, each resample's median taken, and the 2.5th and
+97.5th percentiles of those medians drawn. That interval says how well
+the median is known. On an M4 Max with 80 rounds the typical cell's
+interval is ±0.1–0.2%, and adjacent contenders' bands touch at one
+size in sixty-four; `--thorough` triples the rounds and narrows the
+intervals by about 1/√3. The extremes are still reported in the text
+table and in the hover panel, where they belong: a minimum and maximum
+describe the run's environment, the interval describes the number.
+
+Some cells run at two speeds. On an M4 Max, ring's SHA-256 at 128 B
+spends a third of its samples near 82% of the median and the rest near
+104%, a real effect of which contender ran just before. A single
+median cannot express that, so when a cell's sorted samples split at a
+gap of 4% or more with at least a tenth of the samples on each side,
+the hover panel reports both clusters and their sizes. The band widens
+honestly around the median, which sits between the modes.
+
+The band's appearance reports the interval's width relative to the
+median: under 2% a faint tint; 2–5% a deeper tint; 5% and over a
+dashed outline, and the hover panel says the median is poorly
+determined. The text report marks such cells with `!`.
 
 ## The graph
 
-The SVG shows median lines with min–max bands on a log-log grid.
+The SVG shows median lines with confidence bands on a log-log grid.
 
 A switch above the y axis flips the graph between ns/B (the default;
 lower is better) and GB/s (higher is better). GB/s is the reciprocal of

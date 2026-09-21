@@ -27,6 +27,8 @@ compile_error!("bench-hashes currently supports native targets only");
  * Rounds are a multiple of the sixteen sizes and of the order count.
  */
 const SAMPLE_ROUNDS_TARGET: usize = 80;
+/// --thorough multiplies the rounds; the median's interval narrows as 1/√n.
+const THOROUGH_MULTIPLIER: usize = 3;
 const CALIBRATION_PROBE_NS: u128 = 500_000;
 const TARGET_SAMPLE_NS: u128 = 1_000_000;
 
@@ -256,20 +258,56 @@ const PS_PER_NS: u64 = 1_000;
  */
 type MilliCyclesPerByte = u64;
 
+/*
+ * Summary of one cell's samples. `low` and `high` bound the band the graph
+ * draws: a 95% bootstrap confidence interval of the median. That interval
+ * says how well the median is known; it narrows as 1/√n with more rounds,
+ * and outliers barely move it. `minimum` and `maximum` are the extremes
+ * seen, for the text report.
+ *
+ * `modes` is set when the samples split into two clusters at least 4%
+ * apart with a tenth or more of the samples on each side. That is a real
+ * two-speed behaviour of the code in this context (the interleaving's
+ * neighbours, branch predictor state), which a single median cannot
+ * express; the hover panel reports both clusters.
+ */
 #[derive(Clone, Copy)]
 struct Statistics {
     minimum: u64,
+    low: u64,
     median: u64,
+    high: u64,
     maximum: u64,
+    modes: Option<Modes>,
+}
+
+/// Two clusters within one cell: each cluster's median and sample count.
+#[derive(Clone, Copy)]
+struct Modes {
+    lower_median: u64,
+    lower_count: usize,
+    upper_median: u64,
+    upper_count: usize,
 }
 
 impl Statistics {
     const ZERO: Self = Self {
         minimum: 0,
+        low: 0,
         median: 0,
+        high: 0,
         maximum: 0,
+        modes: None,
     };
 }
+
+/// Bootstrap resamples per cell. 400 gives the 2.5th and 97.5th percentiles
+/// to within about one rank; the cost is microseconds per cell.
+const BOOTSTRAP_RESAMPLES: usize = 400;
+/// Consecutive sorted samples this far apart (permille of the median) split
+/// the cell into modes, when both sides hold at least MODE_MIN_SHARE.
+const MODE_GAP_PERMILLE: u64 = 40;
+const MODE_MIN_SHARE_PERMILLE: usize = 100;
 
 /// One (contender, size) cell: the reported time per byte (see TimeBasis).
 #[derive(Clone, Copy)]
@@ -378,7 +416,7 @@ struct Roster {
 }
 
 impl Roster {
-    fn new(algorithms: Vec<Algorithm>) -> Self {
+    fn new(algorithms: Vec<Algorithm>, thorough: bool) -> Self {
         assert!(
             (2..=6).contains(&algorithms.len()),
             "a run compares two to six contenders; {} were selected",
@@ -396,7 +434,8 @@ impl Roster {
         }
         let orders = williams_orders(algorithms.len());
         let step = lcm(INPUT_COUNT, orders.len());
-        let rounds = SAMPLE_ROUNDS_TARGET.div_ceil(step) * step;
+        let target = SAMPLE_ROUNDS_TARGET * if thorough { THOROUGH_MULTIPLIER } else { 1 };
+        let rounds = target.div_ceil(step) * step;
         Self { algorithms, orders, rounds }
     }
 
@@ -463,6 +502,8 @@ bench-hashes: single-threaded hash throughput by input size
 
 Keys: blake3, blake3-servil, sha256, sha256-ring, sha1dc; sha256-cc on request
 
+  --thorough                       three times the sample rounds, for narrower
+                                   bands; about three times the run time
   --trace-clocks PATH              also write one CSV line per sample with
                                    wall, thread-CPU, mach_absolute_time, and
                                    (on Apple) per-core-kind cycles and
@@ -470,8 +511,24 @@ Keys: blake3, blake3-servil, sha256, sha256-ring, sha1dc; sha256-cc on request
                                    diagnosis
 ";
 
-fn parse_arguments() -> (Selection, Vec<Algorithm>, Option<std::path::PathBuf>) {
+struct Options {
+    selection: Selection,
+    explicit: Vec<Algorithm>,
+    trace_path: Option<std::path::PathBuf>,
+    thorough: bool,
+}
+
+fn parse_arguments() -> Options {
     let mut arguments: Vec<String> = std::env::args().skip(1).collect();
+
+    /* --thorough may accompany any selection. */
+    let thorough = arguments
+        .iter()
+        .position(|argument| argument == "--thorough")
+        .map(|index| {
+            arguments.remove(index);
+        })
+        .is_some();
 
     /* --trace-clocks PATH may accompany any selection. */
     let trace_path = arguments
@@ -484,8 +541,8 @@ fn parse_arguments() -> (Selection, Vec<Algorithm>, Option<std::path::PathBuf>) 
             path
         });
 
-    let (selection, algorithms) = parse_selection(&arguments);
-    (selection, algorithms, trace_path)
+    let (selection, explicit) = parse_selection(&arguments);
+    Options { selection, explicit, trace_path, thorough }
 }
 
 fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
@@ -530,7 +587,7 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
 }
 
 fn main() {
-    let (selection, explicit, trace_path) = parse_arguments();
+    let Options { selection, explicit, trace_path, thorough } = parse_arguments();
     let mut trace = trace_path.map(ClockTrace::new);
     let available: Vec<Algorithm> = Algorithm::ALL
         .into_iter()
@@ -547,20 +604,20 @@ fn main() {
      */
     let (roster, results, basis, selection_note) = match selection {
         Selection::Explicit => {
-            let roster = Roster::new(explicit);
+            let roster = Roster::new(explicit, thorough);
             let (results, basis) = measure_all(&roster, trace.as_mut());
             (roster, results, basis, String::from("contenders chosen on the command line"))
         }
         Selection::All => {
-            let roster = Roster::new(available);
+            let roster = Roster::new(available, thorough);
             let (results, basis) = measure_all(&roster, trace.as_mut());
             (roster, results, basis, String::from("every contender available on this machine"))
         }
         Selection::Best => {
-            let full = Roster::new(available);
+            let full = Roster::new(available, thorough);
             let (full_results, basis) = measure_all(&full, trace.as_mut());
             let (keep, note) = choose_best_per_family(&full, &full_results);
-            let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect());
+            let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect(), thorough);
             let results: Results = full_results
                 .iter()
                 .enumerate()
@@ -1509,12 +1566,72 @@ fn summarize(samples: &mut [u64]) -> Statistics {
     samples.sort_unstable();
 
     let median = median_of_sorted(samples);
+    let (low, high) = bootstrap_median_interval(samples);
 
     Statistics {
         minimum: samples[0],
+        low,
         median,
+        high,
         maximum: samples[samples.len() - 1],
+        modes: find_modes(samples, median),
     }
+}
+
+/*
+ * 95% percentile-bootstrap interval of the median: resample with
+ * replacement BOOTSTRAP_RESAMPLES times, take each resample's median, and
+ * report the 2.5th and 97.5th percentiles of those. A fixed-seed
+ * xorshift makes the result reproducible run to run for the same samples.
+ * Requires a sorted, non-empty slice.
+ */
+fn bootstrap_median_interval(sorted: &[u64]) -> (u64, u64) {
+    let n = sorted.len();
+    let mut state: u64 = 0x9E37_79B9_7F4A_7C15 ^ (n as u64);
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut medians = Vec::with_capacity(BOOTSTRAP_RESAMPLES);
+    let mut resample = vec![0u64; n];
+    for _ in 0..BOOTSTRAP_RESAMPLES {
+        for slot in resample.iter_mut() {
+            *slot = sorted[(next() % n as u64) as usize];
+        }
+        resample.sort_unstable();
+        medians.push(median_of_sorted(&resample));
+    }
+    medians.sort_unstable();
+    (
+        medians[BOOTSTRAP_RESAMPLES * 25 / 1000],
+        medians[BOOTSTRAP_RESAMPLES * 975 / 1000],
+    )
+}
+
+/*
+ * Two clusters, if the sorted samples have a gap of MODE_GAP_PERMILLE of
+ * the median between consecutive values with at least MODE_MIN_SHARE on
+ * each side. The widest such gap splits them. Requires a sorted slice.
+ */
+fn find_modes(sorted: &[u64], median: u64) -> Option<Modes> {
+    let n = sorted.len();
+    let min_side = (n * MODE_MIN_SHARE_PERMILLE).div_ceil(1000).max(1);
+    let threshold = median * MODE_GAP_PERMILLE / 1000;
+    let mut best: Option<(usize, u64)> = None;
+    for split in min_side..=n - min_side {
+        let gap = sorted[split] - sorted[split - 1];
+        if gap >= threshold && best.is_none_or(|(_, g)| gap > g) {
+            best = Some((split, gap));
+        }
+    }
+    best.map(|(split, _)| Modes {
+        lower_median: median_of_sorted(&sorted[..split]),
+        lower_count: split,
+        upper_median: median_of_sorted(&sorted[split..]),
+        upper_count: n - split,
+    })
 }
 
 /*
@@ -1869,7 +1986,7 @@ fn generate_text(
 
     writeln!(
         output,
-        "Time per byte in ns/B: median, with minimum–maximum beneath; lower is better."
+        "Time per byte in ns/B: median, with minimum–maximum beneath; lower is better. Bands in the graph are the 95% interval of each median."
     )
         .unwrap();
     writeln!(output).unwrap();
@@ -1917,7 +2034,7 @@ fn generate_text(
     if wide_cells > 0 {
         writeln!(
             output,
-            "!  marks a cell whose minimum–maximum spread is at least {}% of its median: {wide_cells} of {} cells; treat those medians as low precision.",
+            "!  marks a cell whose 95% median interval is at least {}% of its median: {wide_cells} of {} cells; those medians are poorly determined.",
             SPREAD_WIDE_PERMILLE / 10,
             INPUT_COUNT * roster.len(),
         )
@@ -1925,7 +2042,7 @@ fn generate_text(
     } else {
         writeln!(
             output,
-            "Every cell's minimum–maximum spread is under {}% of its median.",
+            "Every cell's median is known to within {}% (95% bootstrap interval).",
             SPREAD_WIDE_PERMILLE / 10,
         )
             .unwrap();
@@ -2172,14 +2289,14 @@ fn generate_svg(
     let observed_max = results
         .iter()
         .flatten()
-        .map(|cell| cell.time.maximum)
+        .map(|cell| cell.time.high)
         .max()
         .expect("there are results");
 
     let observed_min = results
         .iter()
         .flatten()
-        .map(|cell| cell.time.minimum)
+        .map(|cell| cell.time.low)
         .min()
         .expect("there are results");
 
@@ -2306,7 +2423,7 @@ fn generate_svg(
 
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Line and dot: median · shaded band: minimum–maximum across {} interleaved samples; a deeper tint or dashed outline marks a wide spread, meaning lower precision · single-threaded · lower is better</text>"##,
+        r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Line and dot: median of {} interleaved samples · shaded band: 95% confidence interval of that median; a deeper tint or dashed outline marks a median that is less certain · single-threaded</text>"##,
         roster.rounds,
     )
         .unwrap();
@@ -2499,7 +2616,7 @@ fn generate_svg(
         let mut band = String::new();
         for size_index in 0..INPUT_COUNT {
             let x = x_positions[size_index];
-            let y = map_y(results[algorithm_index][size_index].time.maximum);
+            let y = map_y(results[algorithm_index][size_index].time.high);
             if size_index == 0 {
                 write!(band, "M {x:.2} {y:.2}").unwrap();
             } else {
@@ -2508,7 +2625,7 @@ fn generate_svg(
         }
         for size_index in (0..INPUT_COUNT).rev() {
             let x = x_positions[size_index];
-            let y = map_y(results[algorithm_index][size_index].time.minimum);
+            let y = map_y(results[algorithm_index][size_index].time.low);
             write!(band, " L {x:.2} {y:.2}").unwrap();
         }
         band.push_str(" Z");
@@ -2837,22 +2954,24 @@ fn generate_svg(
 }
 
 /*
- * Relative spread of one cell in permille: 1000 × (max − min) / median,
- * rounded. Zero for a perfectly repeatable measurement; 100 means the
- * extremes differ by a tenth of the median.
+ * Relative width of one cell's median interval in permille: 1000 × (high −
+ * low) / median, rounded. Zero when every resample agrees on the median;
+ * 20 means the median is known to within 2%.
  */
 fn spread_permille(statistics: Statistics) -> u64 {
-    let range = statistics.maximum - statistics.minimum;
+    let range = statistics.high - statistics.low;
     (range * 1000 + statistics.median / 2) / statistics.median
 }
 
 /*
- * Band fill opacity and whether to outline it, from the worst spread. The
- * script applies the same thresholds. Spread under 10% is a routine run;
- * 10–25% earns a deeper tint; 25% and over adds the dashed outline.
+ * Band fill opacity and whether to outline it, from the worst interval
+ * width. The script applies the same thresholds. Under 2% is a well-known
+ * median; 2–5% earns a deeper tint; 5% and over adds the dashed outline,
+ * which with 80 rounds means the samples disagree with each other well
+ * beyond ordinary noise (a two-mode cell, or heavy interference).
  */
-const SPREAD_NOTICEABLE_PERMILLE: u64 = 100;
-const SPREAD_WIDE_PERMILLE: u64 = 250;
+const SPREAD_NOTICEABLE_PERMILLE: u64 = 20;
+const SPREAD_WIDE_PERMILLE: u64 = 50;
 
 /// Fill opacity in hundredths (16 → 0.16) and whether to outline.
 fn band_style(worst_spread_permille: u64) -> (u64, bool) {
@@ -3034,20 +3153,31 @@ fn write_interaction_script(
             )
                 .unwrap();
         }
-        data.push_str("],\"min\":[");
-        for size_index in 0..INPUT_COUNT {
-            if size_index > 0 { data.push(','); }
-            write!(data, "{}", format_ps(results[algorithm_index][size_index].time.minimum)).unwrap();
+        for (key, pick) in [
+            ("min", (|t: Statistics| t.minimum) as fn(Statistics) -> u64),
+            ("low", |t| t.low),
+            ("med", |t| t.median),
+            ("high", |t| t.high),
+            ("max", |t| t.maximum),
+        ] {
+            write!(data, "],\"{key}\":[").unwrap();
+            for size_index in 0..INPUT_COUNT {
+                if size_index > 0 { data.push(','); }
+                write!(data, "{}", format_ps(pick(results[algorithm_index][size_index].time))).unwrap();
+            }
         }
-        data.push_str("],\"med\":[");
+        data.push_str("],\"modes\":[");
         for size_index in 0..INPUT_COUNT {
             if size_index > 0 { data.push(','); }
-            write!(data, "{}", format_ps(results[algorithm_index][size_index].time.median)).unwrap();
-        }
-        data.push_str("],\"max\":[");
-        for size_index in 0..INPUT_COUNT {
-            if size_index > 0 { data.push(','); }
-            write!(data, "{}", format_ps(results[algorithm_index][size_index].time.maximum)).unwrap();
+            match results[algorithm_index][size_index].time.modes {
+                Some(m) => write!(
+                    data,
+                    "[{},{},{},{}]",
+                    format_ps(m.lower_median), m.lower_count, format_ps(m.upper_median), m.upper_count
+                )
+                .unwrap(),
+                None => data.push_str("null"),
+            }
         }
         data.push_str("]}");
     }
@@ -3073,7 +3203,8 @@ fn write_interaction_script(
     }
     write!(
         data,
-        "],\"sharedProv\":{shared_count},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"plotTop\":{PLOT_TOP},\"plotBottom\":{PLOT_BOTTOM},\"labelGap\":{SERIES_LABEL_GAP},\"labelAbove\":{VALUE_LABEL_ABOVE},\"labelBelow\":{VALUE_LABEL_BELOW},\"labelHeight\":{VALUE_LABEL_HEIGHT},\"spreadNoticeable\":0.{SPREAD_NOTICEABLE_PERMILLE:03},\"spreadWide\":0.{SPREAD_WIDE_PERMILLE:03},\"provTop\":{PROVENANCE_TOP},\"provLine\":{PROVENANCE_LINE_HEIGHT}}}",
+        "],\"sharedProv\":{shared_count},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"plotTop\":{PLOT_TOP},\"plotBottom\":{PLOT_BOTTOM},\"labelGap\":{SERIES_LABEL_GAP},\"rounds\":{},\"labelAbove\":{VALUE_LABEL_ABOVE},\"labelBelow\":{VALUE_LABEL_BELOW},\"labelHeight\":{VALUE_LABEL_HEIGHT},\"spreadNoticeable\":0.{SPREAD_NOTICEABLE_PERMILLE:03},\"spreadWide\":0.{SPREAD_WIDE_PERMILLE:03},\"provTop\":{PROVENANCE_TOP},\"provLine\":{PROVENANCE_LINE_HEIGHT}}}",
+        roster.rounds,
     )
         .unwrap();
 
@@ -3192,8 +3323,8 @@ function relayout() {
   const visible = DATA.series.map((_, i) => i).filter(i => on[i]);
   let lo = Infinity, hi = 0;
   for (const i of visible) {
-    lo = Math.min(lo, ...DATA.series[i].min);
-    hi = Math.max(hi, ...DATA.series[i].max);
+    lo = Math.min(lo, ...DATA.series[i].low);
+    hi = Math.max(hi, ...DATA.series[i].high);
   }
   if (visible.length === 0) { lo = 0.1; hi = 1; }
   /*
@@ -3252,8 +3383,8 @@ function relayout() {
     if (!on[i]) return;
     const X = DATA.x;
     let band = "";
-    X.forEach((x, k) => { band += (k ? " L " : "M ") + x + " " + mapY(s.max[k]).toFixed(2); });
-    for (let k = X.length - 1; k >= 0; k--) band += " L " + X[k] + " " + mapY(s.min[k]).toFixed(2);
+    X.forEach((x, k) => { band += (k ? " L " : "M ") + x + " " + mapY(s.high[k]).toFixed(2); });
+    for (let k = X.length - 1; k >= 0; k--) band += " L " + X[k] + " " + mapY(s.low[k]).toFixed(2);
     g.querySelector(".band").setAttribute("d", band + " Z");
     let med = "";
     X.forEach((x, k) => { med += (k ? " L " : "M ") + x + " " + mapY(s.med[k]).toFixed(2); });
@@ -3379,15 +3510,29 @@ function showHover(focus, k) {
   let y = PAD + 12;
   body.appendChild(textEl(PAD, y, "hover-head", `${f.name} at ${DATA.sizes[k]}`));
   y += 14;
-  const spread = (f.max[k] - f.min[k]) / f.med[k];
-  const spreadNote = spread >= DATA.spreadWide ? " · wide spread, low precision"
-    : spread >= DATA.spreadNoticeable ? " · noticeable spread" : "";
+  const spread = (f.high[k] - f.low[k]) / f.med[k];
+  const spreadNote = spread >= DATA.spreadWide ? " · median poorly determined"
+    : spread >= DATA.spreadNoticeable ? " · median less certain" : "";
   /* In GB/s the fastest sample (min time) is the top of the range. */
-  const rLo = unit === "ns" ? f.min[k] : f.max[k], rHi = unit === "ns" ? f.max[k] : f.min[k];
+  const asc = (a, b) => unit === "ns" ? [a, b] : [b, a];
+  const [cLo, cHi] = asc(f.low[k], f.high[k]);
+  const [rLo, rHi] = asc(f.min[k], f.max[k]);
   const rangeRow = textEl(PAD, y, "hover-sub",
-    `median ${fmt(f.med[k])} ${unitLabel()} (${fmtOther(f.med[k])}) · range ${fmt(rLo)}–${fmt(rHi)} (±${(spread * 50).toFixed(0)}%)${spreadNote}`);
+    `median ${fmt(f.med[k])} ${unitLabel()} (${fmtOther(f.med[k])}) · 95% interval ${fmt(cLo)}–${fmt(cHi)} (±${(spread * 50).toFixed(1)}%)${spreadNote}`);
   if (spread >= DATA.spreadWide) rangeRow.setAttribute("fill", "#b45309");
   body.appendChild(rangeRow);
+  y += 13;
+  const modes = f.modes[k];
+  if (modes) {
+    const [mLo, mHi] = asc(modes[0], modes[2]);
+    const [nLo, nHi] = asc(modes[1], modes[3]);
+    const modeRow = textEl(PAD, y, "hover-sub",
+      `two speeds: ${nLo} samples near ${fmt(mLo)}, ${nHi} near ${fmt(mHi)} ${unitLabel()} · extremes ${fmt(rLo)}–${fmt(rHi)}`);
+    modeRow.setAttribute("fill", "#b45309");
+    body.appendChild(modeRow);
+  } else {
+    body.appendChild(textEl(PAD, y, "hover-sub", `extremes ${fmt(rLo)}–${fmt(rHi)} ${unitLabel()} over ${DATA.rounds} samples`));
+  }
 
   /* Code path at this size; the first size of a new path explains why. */
   let ri = 0;
