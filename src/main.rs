@@ -299,18 +299,43 @@ struct Sample {
 #[derive(Clone, Copy)]
 enum TimeBasis {
     Measured,
-    /// Cycles per byte divided by this rate, in kHz.
-    NormalisedToKhz(u64),
+    /// Cycles per byte divided by this rate, in kHz, for samples whose own
+    /// cycles ÷ elapsed matches the rate; measured time for the rest.
+    NormalisedToKhz {
+        khz: u64,
+        /// Samples whose cycle count fell short of the rate and were
+        /// reported as measured time instead.
+        measured_samples: usize,
+        total_samples: usize,
+    },
 }
+
+/*
+ * A sample's cycles ÷ elapsed is the core clock when the counter saw every
+ * cycle. Work on an execution engine the counter misses (Apple's SME2
+ * streaming mode counts at 70–75% of the core rate) reads low. A sample
+ * more than this far below the run's rate keeps its measured time.
+ */
+const CYCLE_COUNTER_TOLERANCE_PERMILLE: u64 = 60;
 
 impl TimeBasis {
     fn describe(self) -> String {
         match self {
             Self::Measured => "measured elapsed time on the hardware counter".to_owned(),
-            Self::NormalisedToKhz(khz) => format!(
-                "per-thread cycles at the run's sustained clock, {} GHz (median of cycles ÷ elapsed time over every sample)",
-                format_khz_as_ghz(khz),
-            ),
+            Self::NormalisedToKhz { khz, measured_samples, total_samples } => {
+                let mut text = format!(
+                    "per-thread cycles at the run's sustained clock, {} GHz (median of cycles ÷ elapsed time over every sample)",
+                    format_khz_as_ghz(khz),
+                );
+                if measured_samples > 0 {
+                    write!(
+                        text,
+                        "; {measured_samples} of {total_samples} samples whose cycle count fell short of that rate (work the counter does not see, such as SME2 streaming mode) keep their measured time",
+                    )
+                    .unwrap();
+                }
+                text
+            }
         }
     }
 }
@@ -330,17 +355,14 @@ struct MachineMetadata {
 
 /*
  * The contenders selected for this run, in column order, with the
- * interleaving orders that balance them and the index of the baseline
- * every ratio is taken against.
+ * interleaving orders that balance them.
  *
  * Contract: two to six contenders, each available on this machine, no
- * duplicates. The baseline is the first BLAKE3-family contender when one
- * is present, otherwise the first contender.
+ * duplicates.
  */
 struct Roster {
     algorithms: Vec<Algorithm>,
     orders: Vec<Vec<usize>>,
-    baseline: usize,
     /// Sample rounds: a multiple of INPUT_COUNT and of orders.len().
     rounds: usize,
 }
@@ -365,11 +387,7 @@ impl Roster {
         let orders = williams_orders(algorithms.len());
         let step = lcm(INPUT_COUNT, orders.len());
         let rounds = SAMPLE_ROUNDS_TARGET.div_ceil(step) * step;
-        let baseline = algorithms
-            .iter()
-            .position(|algorithm| algorithm.family() == Family::Blake3)
-            .unwrap_or(0);
-        Self { algorithms, orders, baseline, rounds }
+        Self { algorithms, orders, rounds }
     }
 
     fn len(&self) -> usize {
@@ -894,8 +912,20 @@ fn time_basis(samples: &Samples) -> TimeBasis {
     if rates_khz.is_empty() {
         return TimeBasis::Measured;
     }
+    let total_samples = rates_khz.len();
     rates_khz.sort_unstable();
-    TimeBasis::NormalisedToKhz(median_of_sorted(&rates_khz))
+    let khz = median_of_sorted(&rates_khz);
+    let measured_samples = rates_khz
+        .iter()
+        .filter(|&&rate| !cycle_count_trustworthy(rate, khz))
+        .count();
+    TimeBasis::NormalisedToKhz { khz, measured_samples, total_samples }
+}
+
+/// Whether a sample's own cycles-per-nanosecond rate is close enough to the
+/// run's sustained clock for its cycle count to have seen all the work.
+fn cycle_count_trustworthy(sample_khz: u64, sustained_khz: u64) -> bool {
+    sample_khz * 1000 >= sustained_khz * (1000 - CYCLE_COUNTER_TOLERANCE_PERMILLE)
 }
 
 /*
@@ -1446,8 +1476,13 @@ fn summarize_cell(samples: &[Sample], rounds: usize, basis: TimeBasis) -> Cell {
         .iter()
         .map(|sample| match basis {
             TimeBasis::Measured => sample.ps_per_byte,
-            TimeBasis::NormalisedToKhz(khz) => {
-                (sample.millicycles_per_byte * 1_000_000 + khz / 2) / khz
+            TimeBasis::NormalisedToKhz { khz, .. } => {
+                let sample_khz = (sample.cycles * 1_000_000 + sample.elapsed_ns / 2) / sample.elapsed_ns;
+                if cycle_count_trustworthy(sample_khz, khz) {
+                    (sample.millicycles_per_byte * 1_000_000 + khz / 2) / khz
+                } else {
+                    sample.ps_per_byte
+                }
             }
         })
         .collect();
@@ -1884,8 +1919,6 @@ fn generate_text(
             .unwrap();
     }
     writeln!(output).unwrap();
-    writeln!(output, "{}", generate_takeaway(roster, results)).unwrap();
-    writeln!(output).unwrap();
 
     output
 }
@@ -2046,139 +2079,6 @@ fn gigabytes_per_second(ps_per_byte: PsPerByte) -> String {
     }
 }
 
-/*
- * Speed of each contender relative to the baseline at each size: baseline
- * time divided by contender time. Above 1.0 means the contender is faster
- * than the baseline; the baseline's own ratio is exactly 1.0.
- */
-/*
- * ratios[contender][size] = 1000 × baseline median / contender median,
- * rounded. 1000 means equal speed; 2000 means the contender takes half
- * the time.
- */
-fn median_ratios_permille(roster: &Roster, results: &Results) -> Vec<[u64; INPUT_COUNT]> {
-    (0..roster.len())
-        .map(|algorithm_index| {
-            std::array::from_fn(|size_index| {
-                let baseline = results[roster.baseline][size_index].time.median;
-                let contender = results[algorithm_index][size_index].time.median;
-                (baseline * 1000 + contender / 2) / contender
-            })
-        })
-        .collect()
-}
-
-/// A permille ratio as "1.35×", rounded to two decimals.
-fn format_ratio(permille: u64) -> String {
-    let centi = (permille + 5) / 10;
-    format!("{}.{:02}×", centi / 100, centi % 100)
-}
-
-/// The reciprocal of a permille ratio, in permille, rounded.
-fn invert_permille(permille: u64) -> u64 {
-    assert!(permille > 0);
-    (1_000_000 + permille / 2) / permille
-}
-
-fn generate_takeaway(roster: &Roster, results: &Results) -> String {
-    let clauses: Vec<String> = (0..roster.len())
-        .filter(|&algorithm_index| algorithm_index != roster.baseline)
-        .map(|algorithm_index| takeaway_clause(roster, results, algorithm_index))
-        .collect();
-
-    format!("On this machine: {}", clauses.join("; "))
-}
-
-/*
- * Split the headline at clause boundaries into at most two lines that fit
- * the canvas width at the headline's font size. The script mirrors this.
- */
-fn wrap_takeaway(takeaway: &str) -> Vec<String> {
-    const MAX_CHARS: usize = 118;
-    let mut lines: Vec<String> = Vec::new();
-    for clause in takeaway.split("; ") {
-        match lines.last_mut() {
-            Some(last) if last.len() + 2 + clause.len() <= MAX_CHARS => {
-                last.push_str("; ");
-                last.push_str(clause);
-            }
-            _ => lines.push(clause.to_owned()),
-        }
-    }
-    lines
-}
-
-/*
- * One contender's speed relative to the baseline, phrased for the headline.
- * Requires a non-baseline contender.
- */
-fn takeaway_clause(roster: &Roster, results: &Results, algorithm_index: usize) -> String {
-    assert_ne!(algorithm_index, roster.baseline, "the baseline has no clause of its own");
-
-    let ratios = median_ratios_permille(roster, results);
-    let baseline = roster.algorithms[roster.baseline].name();
-
-    let name = roster.algorithms[algorithm_index].name();
-    let column: &[u64; INPUT_COUNT] = &ratios[algorithm_index];
-    let lowest = *column.iter().min().expect("sixteen sizes");
-    let highest = *column.iter().max().expect("sixteen sizes");
-
-    /*
-     * ratio = baseline time / contender time, in permille. Above 1000 the
-     * contender is faster than the baseline; below 1000 the baseline is
-     * faster. Within 5% the two are indistinguishable at this benchmark's
-     * precision; say so rather than pick a winner.
-     */
-    const TIE: u64 = 50;
-    let tied_low = lowest > 1000 - TIE;
-    let tied_high = highest < 1000 + TIE;
-
-    if tied_low && tied_high {
-        format!("{name} matches {baseline} at every size")
-    } else if lowest > 1000 + TIE {
-        format!(
-            "{name} is {} to {} faster than {baseline}",
-            format_ratio(lowest),
-            format_ratio(highest),
-        )
-    } else if highest < 1000 - TIE {
-        format!(
-            "{baseline} is {} to {} faster than {name}",
-            format_ratio(invert_permille(highest)),
-            format_ratio(invert_permille(lowest)),
-        )
-    } else if tied_low {
-        /* Never slower than the baseline; faster from some size up. */
-        let first_faster = column
-            .iter()
-            .position(|&r| r > 1000 + TIE)
-            .expect("some ratio is above the tie band");
-        format!(
-            "{name} matches {baseline} below {} and is up to {} faster from there",
-            INPUT_SIZES[first_faster].label,
-            format_ratio(highest),
-        )
-    } else if tied_high {
-        let last_slower = column
-            .iter()
-            .rposition(|&r| r < 1000 - TIE)
-            .expect("some ratio is below the tie band");
-        format!(
-            "{baseline} is up to {} faster than {name} through {}, then they match",
-            format_ratio(invert_permille(lowest)),
-            INPUT_SIZES[last_slower].label,
-        )
-    } else {
-        let first = if column[0] > 1000 { name } else { baseline };
-        let last = if column[INPUT_COUNT - 1] > 1000 { name } else { baseline };
-        format!(
-            "{first} is faster at {}, {last} at {}",
-            INPUT_SIZES[0].label,
-            INPUT_SIZES[INPUT_COUNT - 1].label,
-        )
-    }
-}
-
 fn sanitize_alphanumeric(input: &str) -> String {
     let sanitized: String = input
         .chars()
@@ -2214,7 +2114,7 @@ fn svg_height(provenance_lines: usize) -> f64 {
 }
 const PLOT_LEFT: f64 = 110.0;
 const PLOT_RIGHT: f64 = 1000.0;
-const PLOT_TOP: f64 = 150.0;
+const PLOT_TOP: f64 = 115.0;
 const PLOT_BOTTOM: f64 = 455.0;
 const X_INSET: f64 = 40.0;
 const SERIES_LABEL_GAP: f64 = 44.0;
@@ -2250,10 +2150,7 @@ fn generate_svg(
     selection_note: &str,
     basis: TimeBasis,
 ) -> String {
-    assert!(
-        roster.len() >= 2,
-        "the takeaway needs a baseline and at least one other contender"
-    );
+    assert!(roster.len() >= 2, "a graph compares at least two contenders");
 
     /*
      * From here down the SVG needs pixel positions on a log axis, which is
@@ -2304,7 +2201,6 @@ fn generate_svg(
 
     let implementations: Vec<Implementation> =
         roster.algorithms.iter().map(|&algorithm| detect_implementation(algorithm)).collect();
-    let takeaway = generate_takeaway(roster, results);
 
     let provenance_shared = shared_provenance_lines(machine, selection_note, basis);
     let provenance_total = provenance_shared.len()
@@ -2337,7 +2233,6 @@ fn generate_svg(
         r##"  <style>
     text { font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
     .title { font-size: 22px; font-weight: 700; fill: #1a1a1a; }
-    .takeaway { font-size: 14px; font-weight: 600; fill: #3a3a3a; }
     .method { font-size: 11px; fill: #8a8a8a; }
     .axis-title { font-size: 12px; fill: #666666; }
     .tick-label { font-size: 11px; fill: #777777; }
@@ -2391,31 +2286,15 @@ fn generate_svg(
     )
         .unwrap();
 
-    /*
-     * The headline wraps onto up to two lines at the semicolons; the script
-     * re-wraps it the same way after each toggle.
-     */
-    writeln!(svg, r##"  <text id="takeaway" x="{PLOT_LEFT:.0}" y="70" class="takeaway">"##).unwrap();
-    for (index, line) in wrap_takeaway(&takeaway).iter().enumerate() {
-        writeln!(
-            svg,
-            r##"    <tspan x="{PLOT_LEFT:.0}" dy="{}">{}</tspan>"##,
-            if index == 0 { 0 } else { 18 },
-            xml_escape(line),
-        )
-            .unwrap();
-    }
-    writeln!(svg, "  </text>").unwrap();
-
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="108" class="method">Line and dot: median · shaded band: minimum–maximum across {} interleaved samples; a deeper tint or dashed outline marks a wide spread, meaning lower precision · single-threaded · lower is better</text>"##,
+        r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Line and dot: median · shaded band: minimum–maximum across {} interleaved samples; a deeper tint or dashed outline marks a wide spread, meaning lower precision · single-threaded · lower is better</text>"##,
         roster.rounds,
     )
         .unwrap();
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="123" class="method">Dot shape marks the code path a contender used at that size; a ringed dot is where a new path begins · hover any dot to compare contenders and see the path · click a name at right to hide or show that contender</text>"##
+        r##"  <text x="{PLOT_LEFT:.0}" y="88" class="method">Dot shape marks the code path a contender used at that size; a ringed dot is where a new path begins · hover any dot to compare contenders and see the path · click a name at right to hide or show that contender</text>"##
     )
         .unwrap();
 
@@ -3154,9 +3033,7 @@ fn write_interaction_script(
     }
     write!(
         data,
-        "],\"baseline\":{},\"sharedProv\":{shared_count},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"plotTop\":{PLOT_TOP},\"plotBottom\":{PLOT_BOTTOM},\"labelGap\":{SERIES_LABEL_GAP},\"labelAbove\":{VALUE_LABEL_ABOVE},\"labelBelow\":{VALUE_LABEL_BELOW},\"labelHeight\":{VALUE_LABEL_HEIGHT},\"spreadNoticeable\":0.{SPREAD_NOTICEABLE_PERMILLE:03},\"spreadWide\":0.{SPREAD_WIDE_PERMILLE:03},\"provTop\":{PROVENANCE_TOP},\"provLine\":{PROVENANCE_LINE_HEIGHT},\"takeaway\":\"{}\"}}",
-        roster.baseline,
-        generate_takeaway(roster, results).replace('\\', "\\\\").replace('"', "\\\""),
+        "],\"sharedProv\":{shared_count},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"plotTop\":{PLOT_TOP},\"plotBottom\":{PLOT_BOTTOM},\"labelGap\":{SERIES_LABEL_GAP},\"labelAbove\":{VALUE_LABEL_ABOVE},\"labelBelow\":{VALUE_LABEL_BELOW},\"labelHeight\":{VALUE_LABEL_HEIGHT},\"spreadNoticeable\":0.{SPREAD_NOTICEABLE_PERMILLE:03},\"spreadWide\":0.{SPREAD_WIDE_PERMILLE:03},\"provTop\":{PROVENANCE_TOP},\"provLine\":{PROVENANCE_LINE_HEIGHT}}}",
     )
         .unwrap();
 
@@ -3196,42 +3073,6 @@ function ticks(lo, hi) {
     }
   }
   return out;
-}
-
-/* Mirror of takeaway_clause() in main.rs, for the visible contenders. */
-function clause(i) {
-  const b = DATA.series[DATA.baseline], s = DATA.series[i];
-  const ratios = b.med.map((v, k) => v / s.med[k]);
-  const lowest = Math.min(...ratios), highest = Math.max(...ratios);
-  const TIE = 0.05, n = s.name, bn = b.name;
-  const tiedLow = lowest > 1 - TIE, tiedHigh = highest < 1 + TIE;
-  const x = v => v.toFixed(2) + "\u00d7";
-  if (tiedLow && tiedHigh) return `${n} matches ${bn} at every size`;
-  if (lowest > 1 + TIE) return `${n} is ${x(lowest)} to ${x(highest)} faster than ${bn}`;
-  if (highest < 1 - TIE) return `${bn} is ${x(1 / highest)} to ${x(1 / lowest)} faster than ${n}`;
-  if (tiedLow) {
-    const first = ratios.findIndex(r => r > 1 + TIE);
-    return `${n} matches ${bn} below ${label(first)} and is up to ${x(highest)} faster from there`;
-  }
-  if (tiedHigh) {
-    let last = -1; ratios.forEach((r, k) => { if (r < 1 - TIE) last = k; });
-    return `${bn} is up to ${x(1 / lowest)} faster than ${n} through ${label(last)}, then they match`;
-  }
-  const first = ratios[0] > 1 ? n : bn, lastN = ratios[ratios.length - 1] > 1 ? n : bn;
-  return `${first} is faster at ${label(0)}, ${lastN} at ${label(ratios.length - 1)}`;
-}
-
-function takeaway() {
-  const visible = DATA.series.map((_, i) => i).filter(i => on[i]);
-  if (visible.length === 0) return "Every contender is hidden; click a name at right to show one";
-  if (!on[DATA.baseline]) {
-    return visible.length === 1
-      ? `Showing ${DATA.series[visible[0]].name} alone`
-      : `Showing ${visible.map(i => DATA.series[i].name).join(", ")}; show ${DATA.series[DATA.baseline].name} for speed ratios`;
-  }
-  const others = visible.filter(i => i !== DATA.baseline);
-  if (others.length === 0) return `Showing ${DATA.series[DATA.baseline].name} alone`;
-  return "On this machine: " + others.map(clause).join("; ");
 }
 
 function relayout() {
@@ -3329,20 +3170,6 @@ function relayout() {
     });
   });
 
-  const head = document.getElementById("takeaway");
-  while (head.firstChild) head.removeChild(head.firstChild);
-  const lines = [];
-  for (const clause of takeaway().split("; ")) {
-    const last = lines[lines.length - 1];
-    if (last !== undefined && last.length + 2 + clause.length <= 118) lines[lines.length - 1] = last + "; " + clause;
-    else lines.push(clause);
-  }
-  lines.forEach((line, i) => {
-    const span = document.createElementNS(NS, "tspan");
-    span.setAttribute("x", DATA.plotLeft); span.setAttribute("dy", i ? 18 : 0);
-    span.textContent = line;
-    head.appendChild(span);
-  });
 }
 
 function toggleSeries(i) {
