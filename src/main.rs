@@ -137,7 +137,7 @@ impl Algorithm {
             Self::Blake3 => "single-threaded; Rayon not enabled",
             Self::Sha256 => "assembly backends where available (ARMv8 SHA-256 instructions on AArch64)",
             Self::Sha1Dc => "SHA-1 with collision detection, pure Rust (the construction git uses)",
-            Self::Blake3Sme2 => "single-threaded; SME2 kernels (512-bit streaming vectors); requires SME2 at build time and run time",
+            Self::Blake3Sme2 => "single-threaded; SME2 kernel for groups of sixteen chunks, integer + NEON hybrid kernels below that; the benchmark stops on a CPU without SME2",
         }
     }
 }
@@ -178,18 +178,18 @@ fn main() {
     );
 
     /*
-     * The BLAKE3 SME2 column measures the SME2 kernel. The fork's build
-     * script fails without an SME2-capable assembler and its
-     * Platform::detect() panics on a CPU without SME2, so reaching this
-     * line with any other platform means the fork's contract changed
-     * underneath this benchmark. Stop rather than time NEON under the
-     * SME2 heading.
+     * The BLAKE3 SME2 column measures the fork with its SME2 kernel
+     * selected. The fork falls back to its NEON backend on a CPU without
+     * SME2, which is a fine library behaviour and a wrong benchmark
+     * heading; the check belongs here, where the heading is.
      */
     let sme2_platform = blake3_sme2::platform::Platform::detect();
     assert_eq!(
         format!("{sme2_platform:?}"),
         "SME2",
-        "the blake3_sme2 crate must select its SME2 kernel on this machine",
+        "the blake3_sme2 crate selected {sme2_platform:?} on this machine; \
+         the BLAKE3 SME2 column needs a CPU with SME2 and 512-bit streaming \
+         vectors (Apple M4 and later)",
     );
 
     let machine = machine_metadata();
@@ -742,11 +742,14 @@ fn append_blake3_backend_report(output: &mut String) {
  * The SME2 fork exposes its runtime platform choice directly, so this
  * report asks the crate rather than inferring from CPU features. main()
  * has already asserted that the platform is SME2, so this section
- * describes the SME2 kernel's per-size behaviour.
+ * describes the fork's per-size behaviour with that selection.
  *
- * Backend inferences follow the fork's src/ffi_sme2.rs: single chunks stay
- * on the portable compression, groups of sixteen whole 1 KiB chunks go to
- * the SME2 kernel, and any shorter run of inputs is handed to NEON.
+ * Backend inferences follow the fork's src/ffi_sme2.rs and
+ * src/ffi_neon_hybrid.rs: a single chunk runs on the integer-only scalar
+ * kernel (k1); two to fifteen whole chunks run on the integer + NEON
+ * hybrid kernels (one or two chunks on the integer ALUs beside NEON pairs
+ * or quads, xar from the SHA-3 extension); groups of sixteen whole chunks
+ * go to the SME2 kernel, with any remainder on the hybrid kernels.
  */
 fn append_blake3_sme2_backend_report(output: &mut String) {
     let platform = blake3_sme2::platform::Platform::detect();
@@ -763,10 +766,10 @@ fn append_blake3_sme2_backend_report(output: &mut String) {
     let implementation = Blake3Implementation {
         platform: "SME2",
         one_chunk:
-        "portable compression (one chunk; SME2 kernel not used)",
+        "scalar kernel k1 (one chunk on the integer ALUs)",
         four_chunks:
-        "NEON hash_many (fewer than sixteen chunks; SME2 group not filled)",
-        bulk: "SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors)",
+        "integer + NEON hybrid kernels (fewer than sixteen chunks; SME2 group not filled)",
+        bulk: "SME2 hash16_chunks kernel (16-way, 512-bit streaming vectors); remainder on hybrid kernels",
     };
 
     for input_size in INPUT_SIZES {
