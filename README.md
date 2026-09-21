@@ -141,6 +141,14 @@ The SVG shows median lines with min–max bands on a log-log grid. The
 headline sentence beneath the title states each contender's speed
 relative to BLAKE3 across the size range.
 
+The names at the right edge are toggles. Clicking one hides that
+contender: its marks fade out, the y axis rescales to the contenders
+still showing, the headline sentence restates itself for that set, and
+its provenance line drops out of the block below. The name stays in
+place, greyed with a hollow swatch and a "hidden · click to show" hint,
+anchored toward where its line would sit on the current axis. A viewer
+without script support shows every contender, laid out identically.
+
 ## Native optimization
 
 Release builds use optimization level 3, fat LTO, one codegen unit,

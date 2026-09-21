@@ -45,3 +45,4 @@ Results land in `benchmark-results/{CPU}.{OS}/` as a text report and an SVG. Eve
 - `CARGO_TARGET_DIR=/tmp/target` on a tmpfs; `CARGO_HOME=/usr/local/cargo`. The toolchain is rustc 1.98.1 without the `rustfmt` component, so there is no formatting check available in the guest.
 - Commands for the user go on one line, with no `\` continuations.
 - Never `sleep` in commands. When a network call fails, report it and stop; the user decides about retries.
+- Run long commands (builds, benchmark runs, package installs) without a timeout and let their output stream, so the user can watch progress and interrupt when they choose.

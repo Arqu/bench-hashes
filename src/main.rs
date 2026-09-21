@@ -134,9 +134,9 @@ impl Algorithm {
     fn mode(self) -> &'static str {
         match self {
             Self::Blake3 => "single-threaded; Rayon not enabled",
-            Self::Sha256 => "sha2 crate, assembly backends where available (ARMv8 SHA-256 instructions on AArch64)",
-            Self::Sha1Dc => "sha1-checked crate: SHA-1 with collision detection, pure Rust (the construction git uses)",
-            Self::Blake3Sme2 => "single-threaded; SME2 kernels (512-bit streaming vectors) selected at runtime when the CPU reports SME2, NEON otherwise",
+            Self::Sha256 => "assembly backends where available (ARMv8 SHA-256 instructions on AArch64)",
+            Self::Sha1Dc => "SHA-1 with collision detection, pure Rust (the construction git uses)",
+            Self::Blake3Sme2 => "single-threaded; SME2 kernels (512-bit streaming vectors); requires SME2 at build time and run time",
         }
     }
 }
@@ -904,15 +904,25 @@ fn median_ratios(results: &Results) -> [[f64; ALGORITHM_COUNT]; INPUT_COUNT] {
 }
 
 fn generate_takeaway(results: &Results) -> String {
+    let clauses: Vec<String> = (0..ALGORITHM_COUNT)
+        .filter(|&algorithm_index| algorithm_index != BASELINE)
+        .map(|algorithm_index| takeaway_clause(results, algorithm_index))
+        .collect();
+
+    format!("On this machine: {}", clauses.join("; "))
+}
+
+/*
+ * One contender's speed relative to the baseline, phrased for the headline.
+ * Requires a non-baseline contender.
+ */
+fn takeaway_clause(results: &Results, algorithm_index: usize) -> String {
+    assert_ne!(algorithm_index, BASELINE, "the baseline has no clause of its own");
+
     let ratios = median_ratios(results);
     let baseline = ALGORITHMS[BASELINE].name();
-    let mut clauses = Vec::new();
 
-    for algorithm_index in 0..ALGORITHM_COUNT {
-        if algorithm_index == BASELINE {
-            continue;
-        }
-
+    {
         let name = ALGORITHMS[algorithm_index].name();
         let column: Vec<f64> =
             ratios.iter().map(|row| row[algorithm_index]).collect();
@@ -965,10 +975,8 @@ fn generate_takeaway(results: &Results) -> String {
             )
         };
 
-        clauses.push(clause);
+        clause
     }
-
-    format!("On this machine: {}", clauses.join("; "))
 }
 
 fn sanitize_alphanumeric(input: &str) -> String {
@@ -993,17 +1001,48 @@ fn output_directory(machine: &MachineMetadata) -> std::path::PathBuf {
         .join(format!("{cpu}.{os}"))
 }
 
+/*
+ * Layout constants shared by the static geometry (Rust) and the interactive
+ * relayout (JavaScript inside the SVG). The script receives them through a
+ * JSON block, so a single source of truth drives both.
+ */
+const SVG_WIDTH: f64 = 1200.0;
+const SVG_HEIGHT: f64 = 740.0;
+const PLOT_LEFT: f64 = 110.0;
+const PLOT_RIGHT: f64 = 1000.0;
+const PLOT_TOP: f64 = 135.0;
+const PLOT_BOTTOM: f64 = 455.0;
+const X_INSET: f64 = 40.0;
+const SERIES_LABEL_GAP: f64 = 44.0;
+const PROVENANCE_TOP: f64 = PLOT_BOTTOM + 85.0;
+const PROVENANCE_LINE_HEIGHT: f64 = 14.0;
+
+/*
+ * The y axis spans [axis_min, axis_max] on a log scale, with room below
+ * the smallest minimum and above the largest maximum. The script applies
+ * the same rule to whichever contenders are on, so the axis reflects the
+ * visible data alone.
+ */
+fn log_axis_bounds(observed_min: f64, observed_max: f64) -> (f64, f64) {
+    assert!(
+        observed_min.is_finite() && observed_min > 0.0,
+        "log axis requires positive measurements"
+    );
+    assert!(
+        observed_max.is_finite() && observed_max >= observed_min,
+        "graph maximum must be finite and at least the minimum"
+    );
+
+    (
+        nice_log_bound_below(observed_min * 0.92),
+        nice_log_bound_above(observed_max * 1.08),
+    )
+}
+
 fn generate_svg(
     results: &Results,
     machine: &MachineMetadata,
 ) -> String {
-    const WIDTH: f64 = 1200.0;
-    const HEIGHT: f64 = 725.0;
-    const PLOT_LEFT: f64 = 110.0;
-    const PLOT_RIGHT: f64 = 1000.0;
-    const PLOT_TOP: f64 = 135.0;
-    const PLOT_BOTTOM: f64 = 455.0;
-
     assert!(
         ALGORITHM_COUNT >= 2,
         "the takeaway needs a baseline and at least one other contender"
@@ -1015,24 +1054,13 @@ fn generate_svg(
         .map(|statistics| statistics.maximum)
         .fold(0.0_f64, f64::max);
 
-    assert!(
-        observed_max.is_finite() && observed_max > 0.0,
-        "graph maximum must be finite and positive"
-    );
-
     let observed_min = results
         .iter()
         .flatten()
         .map(|statistics| statistics.minimum)
         .fold(f64::INFINITY, f64::min);
 
-    assert!(
-        observed_min.is_finite() && observed_min > 0.0,
-        "log axis requires positive measurements"
-    );
-
-    let axis_min = nice_log_bound_below(observed_min * 0.92);
-    let axis_max = nice_log_bound_above(observed_max * 1.08);
+    let (axis_min, axis_max) = log_axis_bounds(observed_min, observed_max);
 
     let log_min = axis_min.ln();
     let log_max = axis_max.ln();
@@ -1044,8 +1072,6 @@ fn generate_svg(
             - (value.ln() - log_min) / (log_max - log_min)
             * (PLOT_BOTTOM - PLOT_TOP)
     };
-
-    const X_INSET: f64 = 40.0;
 
     let x_positions: [f64; INPUT_COUNT] =
         std::array::from_fn(|index| {
@@ -1065,13 +1091,13 @@ fn generate_svg(
 
     writeln!(
         svg,
-        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH:.0} {HEIGHT:.0}" width="{WIDTH:.0}" height="{HEIGHT:.0}">"##
+        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SVG_WIDTH:.0} {SVG_HEIGHT:.0}" width="{SVG_WIDTH:.0}" height="{SVG_HEIGHT:.0}">"##
     )
         .unwrap();
 
     writeln!(
         svg,
-        r##"  <rect width="{WIDTH:.0}" height="{HEIGHT:.0}" fill="#fdfdfc"/>"##
+        r##"  <rect width="{SVG_WIDTH:.0}" height="{SVG_HEIGHT:.0}" fill="#fdfdfc"/>"##
     )
         .unwrap();
 
@@ -1084,10 +1110,10 @@ fn generate_svg(
     .axis-title { font-size: 12px; fill: #666666; }
     .tick-label { font-size: 11px; fill: #777777; }
     .size-label { font-size: 11px; font-weight: 600; fill: #333333; }
-    .size-sublabel { font-size: 10px; fill: #999999; }
     .value-label { font-size: 10px; font-weight: 700; }
     .series-name { font-size: 13px; font-weight: 700; }
     .series-detail { font-size: 10px; fill: #777777; }
+    .series-hint { font-size: 9px; fill: #b0b0b0; }
     .annotation { font-size: 10px; font-style: italic; fill: #8a8a8a; }
     .prov-head { font-size: 10px; font-weight: 700; fill: #aaaaaa; letter-spacing: 0.1em; }
     .prov { font-size: 9px; fill: #9a9a9a; }
@@ -1095,6 +1121,17 @@ fn generate_svg(
     .grid-x { stroke: #f0f0ee; stroke-width: 1; }
     .axis { stroke: #55555a; stroke-width: 1; }
     .divider { stroke: #e0e0de; stroke-width: 1; }
+    .series-label { cursor: pointer; transition: transform 0.3s ease; }
+    .series-label:hover .series-name { text-decoration: underline; }
+    .series-hint { display: none; }
+    .marks { transition: opacity 0.3s ease; }
+    .series[data-on="false"] .marks { opacity: 0; pointer-events: none; }
+    .series[data-on="false"] .series-name { fill: #9a9a9a; }
+    .series[data-on="false"] .series-detail { display: none; }
+    .series[data-on="false"] .series-hint { display: inline; }
+    .series[data-on="false"] .series-prov { display: none; }
+    .series[data-on="false"] .series-swatch { fill: #fdfdfc; }
+    .series-swatch { stroke-width: 2; transition: fill 0.3s ease; }
   </style>
 "##,
     );
@@ -1107,35 +1144,37 @@ fn generate_svg(
 
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="70" class="takeaway">{}</text>"##,
+        r##"  <text id="takeaway" x="{PLOT_LEFT:.0}" y="70" class="takeaway">{}</text>"##,
         xml_escape(&takeaway),
     )
         .unwrap();
 
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="90" class="method">Line and dot: median · shaded band: minimum–maximum across {SAMPLE_ROUNDS} interleaved samples · single-threaded · lower is better</text>"##
+        r##"  <text x="{PLOT_LEFT:.0}" y="90" class="method">Line and dot: median · shaded band: minimum–maximum across {SAMPLE_ROUNDS} interleaved samples · single-threaded · lower is better · click a name at right to hide or show that contender</text>"##
     )
         .unwrap();
 
-    /* Horizontal grid and y-axis tick labels. */
+    /* Horizontal grid and y-axis tick labels; the script rebuilds these. */
+    writeln!(svg, r##"  <g id="y-axis">"##).unwrap();
     for value in log_ticks(axis_min, axis_max) {
         let y = map_y(value);
         writeln!(
             svg,
-            r##"  <line x1="{PLOT_LEFT:.1}" y1="{y:.2}" x2="{PLOT_RIGHT:.1}" y2="{y:.2}" class="grid"/>"##
+            r##"    <line x1="{PLOT_LEFT:.1}" y1="{y:.2}" x2="{PLOT_RIGHT:.1}" y2="{y:.2}" class="grid"/>"##
         )
             .unwrap();
 
         writeln!(
             svg,
-            r##"  <text x="{:.1}" y="{:.2}" class="tick-label" text-anchor="end">{}</text>"##,
+            r##"    <text x="{:.1}" y="{:.2}" class="tick-label" text-anchor="end">{}</text>"##,
             PLOT_LEFT - 10.0,
             y + 3.5,
             format_tick(value),
         )
             .unwrap();
     }
+    writeln!(svg, "  </g>").unwrap();
 
     writeln!(
         svg,
@@ -1185,50 +1224,84 @@ fn generate_svg(
         .unwrap();
 
     /*
-     * Min–max bands: forward along the maximum, back along the minimum.
-     * Drawn first so lines and dots sit on top.
+     * Right-edge series labels double as toggles. Each sits level with its
+     * line's last point, pushed apart when medians nearly coincide. The
+     * script repeats this rule after each toggle; a hidden contender keeps
+     * its slot, anchored where its line would end on the current axis and
+     * clamped to the plot edge, so its grey label points toward its data.
      */
+    let mut label_slots: Vec<(usize, f64)> = (0..ALGORITHM_COUNT)
+        .map(|algorithm_index| {
+            (
+                algorithm_index,
+                map_y(results[INPUT_COUNT - 1][algorithm_index].median),
+            )
+        })
+        .collect();
+
+    label_slots.sort_by(|a, b| a.1.total_cmp(&b.1));
+
+    for index in 1..label_slots.len() {
+        let minimum_y = label_slots[index - 1].1 + SERIES_LABEL_GAP;
+
+        if label_slots[index].1 < minimum_y {
+            label_slots[index].1 = minimum_y;
+        }
+    }
+
+    let mut label_y_by_algorithm = [0.0_f64; ALGORITHM_COUNT];
+    for (algorithm_index, label_y) in &label_slots {
+        label_y_by_algorithm[*algorithm_index] = *label_y;
+    }
+
+    /*
+     * One group per contender holds everything that belongs to it: band,
+     * line, dots, value labels, the clickable label at right, and its
+     * provenance line. Toggling flips one attribute on the group.
+     */
+    let provenance_shared = shared_provenance_lines(machine, implementation);
+    let shared_count = provenance_shared.len();
+    let mut provenance_slot = shared_count;
+
     for algorithm_index in 0..ALGORITHM_COUNT {
         let algorithm = ALGORITHMS[algorithm_index];
-        let mut band = String::new();
+        let color = algorithm.color();
 
+        writeln!(
+            svg,
+            r##"  <g class="series" id="series-{algorithm_index}" data-on="true">"##
+        )
+            .unwrap();
+
+        writeln!(svg, r##"    <g class="marks">"##).unwrap();
+
+        let mut band = String::new();
         for size_index in 0..INPUT_COUNT {
             let x = x_positions[size_index];
             let y = map_y(results[size_index][algorithm_index].maximum);
-
             if size_index == 0 {
                 write!(band, "M {x:.2} {y:.2}").unwrap();
             } else {
                 write!(band, " L {x:.2} {y:.2}").unwrap();
             }
         }
-
         for size_index in (0..INPUT_COUNT).rev() {
             let x = x_positions[size_index];
             let y = map_y(results[size_index][algorithm_index].minimum);
-
             write!(band, " L {x:.2} {y:.2}").unwrap();
         }
-
         band.push_str(" Z");
 
         writeln!(
             svg,
-            r##"  <path d="{band}" fill="{}" fill-opacity="0.16" stroke="none"/>"##,
-            algorithm.color(),
+            r##"      <path class="band" d="{band}" fill="{color}" fill-opacity="0.16" stroke="none"/>"##
         )
             .unwrap();
-    }
 
-    /* Median lines. */
-    for algorithm_index in 0..ALGORITHM_COUNT {
-        let algorithm = ALGORITHMS[algorithm_index];
         let mut path = String::new();
-
         for size_index in 0..INPUT_COUNT {
             let x = x_positions[size_index];
             let y = map_y(results[size_index][algorithm_index].median);
-
             if size_index == 0 {
                 write!(path, "M {x:.2} {y:.2}").unwrap();
             } else {
@@ -1238,20 +1311,14 @@ fn generate_svg(
 
         writeln!(
             svg,
-            r##"  <path d="{path}" fill="none" stroke="{}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>"##,
-            algorithm.color(),
+            r##"      <path class="median" d="{path}" fill="none" stroke="{color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>"##
         )
             .unwrap();
-    }
-
-    /* Median dots, hover tooltips, and value labels. */
-    for algorithm_index in 0..ALGORITHM_COUNT {
-        let algorithm = ALGORITHMS[algorithm_index];
 
         /*
-         * Stagger labels vertically per algorithm so nearly-coincident
-         * series never collide: baseline above its dot, the others below
-         * at increasing offsets.
+         * Stagger value labels per algorithm so nearly-coincident series
+         * never collide: baseline above its dot, the others below at
+         * increasing offsets.
          */
         let label_offset = if algorithm_index == BASELINE {
             -12.0
@@ -1266,14 +1333,13 @@ fn generate_svg(
 
             writeln!(
                 svg,
-                r##"  <circle cx="{x:.2}" cy="{median_y:.2}" r="5" fill="{}" stroke="#fdfdfc" stroke-width="1.5">"##,
-                algorithm.color(),
+                r##"      <circle class="dot" data-size="{size_index}" cx="{x:.2}" cy="{median_y:.2}" r="5" fill="{color}" stroke="#fdfdfc" stroke-width="1.5">"##
             )
                 .unwrap();
 
             writeln!(
                 svg,
-                r##"    <title>{}, {}: median {} ns/B ({}); range {}–{} ns/B</title>"##,
+                r##"        <title>{}, {}: median {} ns/B ({}); range {}–{} ns/B</title>"##,
                 xml_escape(INPUT_SIZES[size_index].label),
                 xml_escape(algorithm.name()),
                 format_result_value(statistics.median),
@@ -1283,16 +1349,13 @@ fn generate_svg(
             )
                 .unwrap();
 
-            svg.push_str("  </circle>\n");
+            svg.push_str("      </circle>\n");
 
-            /*
-             * Edge columns anchor inward so labels never spill into the
-             * y-axis gutter or the right-edge series labels.
-             */
             /*
              * With fifteen columns, a value at every dot would overprint.
              * Label the ends and every fourth size; hovering a dot shows
-             * the rest.
+             * the rest. Edge columns anchor inward so labels stay clear of
+             * the y-axis gutter and the series labels at right.
              */
             let labeled = size_index == 0
                 || size_index == INPUT_COUNT - 1
@@ -1312,69 +1375,89 @@ fn generate_svg(
 
             writeln!(
                 svg,
-                r##"  <text x="{label_x:.2}" y="{:.2}" class="value-label" fill="{}" text-anchor="{anchor}">{}</text>"##,
+                r##"      <text class="value-label" data-size="{size_index}" data-offset="{label_offset:.1}" x="{label_x:.2}" y="{:.2}" fill="{color}" text-anchor="{anchor}">{}</text>"##,
                 median_y + label_offset,
-                algorithm.color(),
                 format_result_value(statistics.median),
             )
                 .unwrap();
         }
-    }
 
-    /*
-     * Direct series labels at the right edge, replacing the legend. Stack
-     * them apart when medians nearly coincide.
-     */
-    let mut label_slots: Vec<(usize, f64)> = (0..ALGORITHM_COUNT)
-        .map(|algorithm_index| {
-            (
-                algorithm_index,
-                map_y(
-                    results[INPUT_COUNT - 1][algorithm_index].median,
-                ),
-            )
-        })
-        .collect();
+        writeln!(svg, "    </g>").unwrap();
 
-    label_slots.sort_by(|a, b| a.1.total_cmp(&b.1));
-
-    for index in 1..label_slots.len() {
-        let minimum_y = label_slots[index - 1].1 + 44.0;
-
-        if label_slots[index].1 < minimum_y {
-            label_slots[index].1 = minimum_y;
-        }
-    }
-
-    for (algorithm_index, label_y) in label_slots {
-        let algorithm = ALGORITHMS[algorithm_index];
+        /* Clickable label at right: swatch, name, detail, hint. */
         let statistics = results[INPUT_COUNT - 1][algorithm_index];
         let label_x = PLOT_RIGHT + 14.0;
+        let label_y = label_y_by_algorithm[algorithm_index];
 
         writeln!(
             svg,
-            r##"  <text x="{label_x:.1}" y="{:.2}" class="series-name" fill="{}">{}</text>"##,
-            label_y + 4.0,
-            algorithm.color(),
+            r##"    <g class="series-label" transform="translate(0 {label_y:.2})" onclick="toggleSeries({algorithm_index})">"##
+        )
+            .unwrap();
+        writeln!(
+            svg,
+            r##"      <title>Click to hide or show {}</title>"##,
             xml_escape(algorithm.name()),
         )
             .unwrap();
-
         writeln!(
             svg,
-            r##"  <text x="{label_x:.1}" y="{:.2}" class="series-detail">{} ns/B · {} at {}</text>"##,
-            label_y + 18.0,
+            r##"      <rect x="{:.1}" y="-14" width="{:.1}" height="{:.0}" fill="transparent"/>"##,
+            label_x - 4.0,
+            SVG_WIDTH - label_x - 6.0,
+            SERIES_LABEL_GAP - 4.0,
+        )
+            .unwrap();
+        writeln!(
+            svg,
+            r##"      <circle class="series-swatch" cx="{:.1}" cy="0" r="4.5" fill="{color}" stroke="{color}"/>"##,
+            label_x + 4.5,
+        )
+            .unwrap();
+        writeln!(
+            svg,
+            r##"      <text class="series-name" x="{:.1}" y="4" fill="{color}">{}</text>"##,
+            label_x + 14.0,
+            xml_escape(algorithm.name()),
+        )
+            .unwrap();
+        writeln!(
+            svg,
+            r##"      <text class="series-detail" x="{:.1}" y="18">{} ns/B · {} at {}</text>"##,
+            label_x + 14.0,
             format_result_value(statistics.median),
             gigabytes_per_second(statistics.median),
             xml_escape(INPUT_SIZES[INPUT_COUNT - 1].label),
         )
             .unwrap();
+        writeln!(
+            svg,
+            r##"      <text class="series-hint" x="{:.1}" y="18">hidden · click to show</text>"##,
+            label_x + 14.0,
+        )
+            .unwrap();
+        writeln!(svg, "    </g>").unwrap();
+
+        /* This contender's provenance lines, hidden along with it. */
+        for line in contender_provenance_lines(algorithm) {
+            writeln!(
+                svg,
+                r##"    <text class="prov series-prov" x="{PLOT_LEFT:.1}" y="{:.1}">{}</text>"##,
+                provenance_line_y(provenance_slot),
+                xml_escape(&line),
+            )
+                .unwrap();
+            provenance_slot += 1;
+        }
+
+        writeln!(svg, "  </g>").unwrap();
     }
 
     /*
      * Annotate the BLAKE3 single-chunk elbow: the 64 B point uses a
      * different code path than the bulk sizes, and that is the whole story
-     * of its shape.
+     * of its shape. It follows the BLAKE3 dot, so it lives in a group the
+     * script moves and hides with that series.
      */
     {
         let blake3_index = 0;
@@ -1389,28 +1472,26 @@ fn generate_svg(
 
         writeln!(
             svg,
-            r##"  <line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="#bbbbbb" stroke-width="1"/>"##,
-            x + 8.0,
-            y - 8.0,
-            x + 42.0,
-            y - 48.0,
+            r##"  <g id="elbow" transform="translate({x:.2} {y:.2})">"##
         )
             .unwrap();
 
         writeln!(
             svg,
-            r##"  <text x="{:.2}" y="{:.2}" class="annotation">BLAKE3: 64 B fits one chunk → {}</text>"##,
-            x + 46.0,
-            y - 52.0,
+            r##"    <line x1="8" y1="-8" x2="42" y2="-48" stroke="#bbbbbb" stroke-width="1"/>"##
+        )
+            .unwrap();
+
+        writeln!(
+            svg,
+            r##"    <text x="46" y="-52" class="annotation">BLAKE3: 64 B fits one chunk → {}</text>"##,
             xml_escape(short_backend),
         )
             .unwrap();
 
         writeln!(
             svg,
-            r##"  <text x="{:.2}" y="{:.2}" class="annotation">(bulk sizes use {})</text>"##,
-            x + 46.0,
-            y - 40.0,
+            r##"    <text x="46" y="-40" class="annotation">(bulk sizes use {})</text>"##,
             xml_escape(
                 implementation
                     .bulk
@@ -1420,6 +1501,8 @@ fn generate_svg(
             ),
         )
             .unwrap();
+
+        writeln!(svg, "  </g>").unwrap();
     }
 
     /* Machine-readable provenance, complete and untruncated. */
@@ -1454,26 +1537,58 @@ fn generate_svg(
 
     writeln!(svg, "  </metadata>").unwrap();
 
-    /* Human-readable provenance: left-aligned, compact, de-emphasized. */
-    let provenance_top = PLOT_BOTTOM + 85.0;
-
+    /*
+     * Human-readable provenance: left-aligned, compact, de-emphasized.
+     * Shared lines first; the per-contender lines emitted above follow and
+     * close ranks when a contender is hidden.
+     */
     writeln!(
         svg,
-        r##"  <line x1="{PLOT_LEFT:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" class="divider"/>"##,
-        provenance_top,
-        WIDTH - PLOT_LEFT,
-        provenance_top,
+        r##"  <line x1="{PLOT_LEFT:.1}" y1="{PROVENANCE_TOP:.1}" x2="{:.1}" y2="{PROVENANCE_TOP:.1}" class="divider"/>"##,
+        SVG_WIDTH - PLOT_LEFT,
     )
         .unwrap();
 
     writeln!(
         svg,
         r##"  <text x="{PLOT_LEFT:.1}" y="{:.1}" class="prov-head">PROVENANCE</text>"##,
-        provenance_top + 20.0,
+        PROVENANCE_TOP + 20.0,
     )
         .unwrap();
 
-    let provenance_lines = [
+    for (index, line) in provenance_shared.iter().enumerate() {
+        writeln!(
+            svg,
+            r##"  <text class="prov" x="{PLOT_LEFT:.1}" y="{:.1}">{}</text>"##,
+            provenance_line_y(index),
+            xml_escape(line),
+        )
+            .unwrap();
+    }
+
+    let last_line_y = provenance_line_y(provenance_slot - 1);
+    assert!(
+        last_line_y + PROVENANCE_LINE_HEIGHT <= SVG_HEIGHT,
+        "provenance must fit inside the canvas: last line at {last_line_y}, height {SVG_HEIGHT}"
+    );
+
+    /* Data and behaviour for the interactive toggles. */
+    write_interaction_script(&mut svg, results, &x_positions, &label_y_by_algorithm, shared_count);
+
+    svg.push_str("</svg>\n");
+    svg
+}
+
+fn provenance_line_y(slot: usize) -> f64 {
+    PROVENANCE_TOP + 40.0 + slot as f64 * PROVENANCE_LINE_HEIGHT
+}
+
+/* Provenance that describes the run as a whole. */
+fn shared_provenance_lines(
+    machine: &MachineMetadata,
+    implementation: Blake3Implementation,
+) -> Vec<String> {
+    vec![
         format!(
             "Run: {} · bench-hashes {BENCH_VERSION}",
             machine.timestamp,
@@ -1482,42 +1597,272 @@ fn generate_svg(
             "Machine: {} · {} logical CPUs · {}",
             machine.cpu_type, machine.cpu_count, machine.os_type,
         ),
+        format!("Toolchain: {RUSTC_VERSION} · {BUILD_TARGET}"),
+        format!("Source: {GIT_SOURCE} @ {GIT_COMMIT}"),
+        format!("Tag: {GIT_TAG} · Working tree: {GIT_CLEAN_STATUS}"),
         format!(
-            "Toolchain: {RUSTC_VERSION} · {BUILD_TARGET}"
-        ),
-        format!(
-            "Source: {GIT_SOURCE} @ {GIT_COMMIT}"
-        ),
-        format!(
-            "Tag: {GIT_TAG} · Working tree: {GIT_CLEAN_STATUS}"
-        ),
-        format!(
-            "Crates: {} · {} (+{}) · {}",
-            package_name_and_version(BLAKE3_SOURCE_INFO),
-            package_name_and_version(SHA2_SOURCE_INFO),
-            package_name_and_version(SHA2_ASM_SOURCE_INFO),
-            package_name_and_version(SHA1_CHECKED_SOURCE_INFO),
-        ),
-        format!("BLAKE3 SME2: {}", short_git_source(BLAKE3_SME2_SOURCE_INFO)),
-        format!(
-            "BLAKE3: single-threaded, Rayon not enabled · platform {} · full crate checksums embedded in this file's metadata element",
+            "crates.io BLAKE3 platform: {} · full crate checksums are in this file's metadata element",
             implementation.platform,
         ),
-    ];
-
-    for (index, line) in provenance_lines.iter().enumerate() {
-        writeln!(
-            svg,
-            r##"  <text x="{PLOT_LEFT:.1}" y="{:.1}" class="prov">{}</text>"##,
-            provenance_top + 40.0 + index as f64 * 15.0,
-            xml_escape(line),
-        )
-            .unwrap();
-    }
-
-    svg.push_str("</svg>\n");
-    svg
+    ]
 }
+
+/* Provenance that belongs to one contender and hides with it. */
+fn contender_provenance_lines(algorithm: Algorithm) -> Vec<String> {
+    let name = algorithm.name();
+    match algorithm {
+        Algorithm::Blake3 => vec![format!(
+            "{name}: {} · {}",
+            package_name_and_version(BLAKE3_SOURCE_INFO),
+            algorithm.mode(),
+        )],
+        Algorithm::Sha256 => vec![format!(
+            "{name}: {} (+{}) · {}",
+            package_name_and_version(SHA2_SOURCE_INFO),
+            package_name_and_version(SHA2_ASM_SOURCE_INFO),
+            algorithm.mode(),
+        )],
+        Algorithm::Sha1Dc => vec![format!(
+            "{name}: {} · {}",
+            package_name_and_version(SHA1_CHECKED_SOURCE_INFO),
+            algorithm.mode(),
+        )],
+        Algorithm::Blake3Sme2 => vec![format!(
+            "{name}: {} · {}",
+            short_git_source(BLAKE3_SME2_SOURCE_INFO),
+            algorithm.mode(),
+        )],
+    }
+}
+
+/*
+ * The script re-derives every y position from the visible contenders'
+ * data, using the same rules as the Rust layout: nice log bounds with 8%
+ * headroom, the same tick mantissas, the same label stacking gap. The
+ * measurements and layout constants travel as JSON so the two stay in
+ * lockstep.
+ */
+fn write_interaction_script(
+    svg: &mut String,
+    results: &Results,
+    x_positions: &[f64; INPUT_COUNT],
+    label_y_by_algorithm: &[f64; ALGORITHM_COUNT],
+    shared_count: usize,
+) {
+    let mut data = String::from("{\"series\":[");
+    for algorithm_index in 0..ALGORITHM_COUNT {
+        if algorithm_index > 0 {
+            data.push(',');
+        }
+        write!(data, "{{\"name\":\"{}\",\"min\":[", ALGORITHMS[algorithm_index].name()).unwrap();
+        for size_index in 0..INPUT_COUNT {
+            if size_index > 0 { data.push(','); }
+            write!(data, "{}", results[size_index][algorithm_index].minimum).unwrap();
+        }
+        data.push_str("],\"med\":[");
+        for size_index in 0..INPUT_COUNT {
+            if size_index > 0 { data.push(','); }
+            write!(data, "{}", results[size_index][algorithm_index].median).unwrap();
+        }
+        data.push_str("],\"max\":[");
+        for size_index in 0..INPUT_COUNT {
+            if size_index > 0 { data.push(','); }
+            write!(data, "{}", results[size_index][algorithm_index].maximum).unwrap();
+        }
+        data.push_str("]}");
+    }
+    data.push_str("],\"x\":[");
+    for (index, x) in x_positions.iter().enumerate() {
+        if index > 0 { data.push(','); }
+        write!(data, "{x:.2}").unwrap();
+    }
+    data.push_str("],\"labelY\":[");
+    for (index, y) in label_y_by_algorithm.iter().enumerate() {
+        if index > 0 { data.push(','); }
+        write!(data, "{y:.2}").unwrap();
+    }
+    data.push_str("],\"sizes\":[");
+    for (index, size) in INPUT_SIZES.iter().enumerate() {
+        if index > 0 { data.push(','); }
+        write!(data, "\"{}\"", size.label).unwrap();
+    }
+    write!(
+        data,
+        "],\"baseline\":{BASELINE},\"sharedProv\":{shared_count},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"plotTop\":{PLOT_TOP},\"plotBottom\":{PLOT_BOTTOM},\"labelGap\":{SERIES_LABEL_GAP},\"provTop\":{PROVENANCE_TOP},\"provLine\":{PROVENANCE_LINE_HEIGHT},\"takeaway\":\"{}\"}}",
+        generate_takeaway(results).replace('\\', "\\\\").replace('"', "\\\""),
+    )
+        .unwrap();
+
+    svg.push_str("  <script><![CDATA[\n");
+    writeln!(svg, "const DATA = {data};").unwrap();
+    svg.push_str(INTERACTION_SCRIPT);
+    svg.push_str("  ]]></script>\n");
+}
+
+const INTERACTION_SCRIPT: &str = r##"
+const on = DATA.series.map(() => true);
+const NS = "http://www.w3.org/2000/svg";
+
+function niceBelow(v) {
+  const mag = Math.pow(10, Math.floor(Math.log10(v)));
+  const n = v / mag;
+  return (n >= 5 ? 5 : n >= 2 ? 2 : 1) * mag;
+}
+function niceAbove(v) {
+  const mag = Math.pow(10, Math.floor(Math.log10(v)));
+  const n = v / mag;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
+}
+function fmtTick(v) {
+  return v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2);
+}
+function fmt2(v) { return v.toFixed(2); }
+function label(i) { return DATA.sizes[i]; }
+
+function ticks(lo, hi) {
+  const out = [];
+  const eLo = Math.floor(Math.log10(lo)) - 1, eHi = Math.ceil(Math.log10(hi)) + 1;
+  for (let e = eLo; e <= eHi; e++) {
+    for (const m of [1, 1.5, 2, 3, 5, 7]) {
+      const v = m * Math.pow(10, e);
+      if (v >= lo * 0.999999 && v <= hi * 1.000001) out.push(v);
+    }
+  }
+  return out;
+}
+
+/* Mirror of takeaway_clause() in main.rs, for the visible contenders. */
+function clause(i) {
+  const b = DATA.series[DATA.baseline], s = DATA.series[i];
+  const ratios = b.med.map((v, k) => v / s.med[k]);
+  const lowest = Math.min(...ratios), highest = Math.max(...ratios);
+  const TIE = 0.05, n = s.name, bn = b.name;
+  const tiedLow = lowest > 1 - TIE, tiedHigh = highest < 1 + TIE;
+  const x = v => v.toFixed(2) + "\u00d7";
+  if (tiedLow && tiedHigh) return `${n} matches ${bn} at every size`;
+  if (lowest > 1 + TIE) return `${n} is ${x(lowest)} to ${x(highest)} faster than ${bn}`;
+  if (highest < 1 - TIE) return `${bn} is ${x(1 / highest)} to ${x(1 / lowest)} faster than ${n}`;
+  if (tiedLow) {
+    const first = ratios.findIndex(r => r > 1 + TIE);
+    return `${n} matches ${bn} below ${label(first)} and is up to ${x(highest)} faster from there`;
+  }
+  if (tiedHigh) {
+    let last = -1; ratios.forEach((r, k) => { if (r < 1 - TIE) last = k; });
+    return `${bn} is up to ${x(1 / lowest)} faster than ${n} through ${label(last)}, then they match`;
+  }
+  const first = ratios[0] > 1 ? n : bn, lastN = ratios[ratios.length - 1] > 1 ? n : bn;
+  return `${first} is faster at ${label(0)}, ${lastN} at ${label(ratios.length - 1)}`;
+}
+
+function takeaway() {
+  const visible = DATA.series.map((_, i) => i).filter(i => on[i]);
+  if (visible.length === 0) return "Every contender is hidden; click a name at right to show one";
+  if (!on[DATA.baseline]) {
+    return visible.length === 1
+      ? `Showing ${DATA.series[visible[0]].name} alone`
+      : `Showing ${visible.map(i => DATA.series[i].name).join(", ")}; show ${DATA.series[DATA.baseline].name} for speed ratios`;
+  }
+  const others = visible.filter(i => i !== DATA.baseline);
+  if (others.length === 0) return `Showing ${DATA.series[DATA.baseline].name} alone`;
+  return "On this machine: " + others.map(clause).join("; ");
+}
+
+function relayout() {
+  const visible = DATA.series.map((_, i) => i).filter(i => on[i]);
+  let lo = Infinity, hi = 0;
+  for (const i of visible) {
+    lo = Math.min(lo, ...DATA.series[i].min);
+    hi = Math.max(hi, ...DATA.series[i].max);
+  }
+  if (visible.length === 0) { lo = 0.1; hi = 1; }
+  const axMin = niceBelow(lo * 0.92), axMax = niceAbove(hi * 1.08);
+  const lMin = Math.log(axMin), lMax = Math.log(axMax);
+  const mapY = v => DATA.plotBottom - (Math.log(v) - lMin) / (lMax - lMin) * (DATA.plotBottom - DATA.plotTop);
+
+  /* Y axis: grid lines and tick labels. */
+  const axis = document.getElementById("y-axis");
+  while (axis.firstChild) axis.removeChild(axis.firstChild);
+  for (const v of ticks(axMin, axMax)) {
+    const y = mapY(v);
+    const line = document.createElementNS(NS, "line");
+    line.setAttribute("x1", DATA.plotLeft); line.setAttribute("x2", DATA.plotRight);
+    line.setAttribute("y1", y.toFixed(2)); line.setAttribute("y2", y.toFixed(2));
+    line.setAttribute("class", "grid");
+    axis.appendChild(line);
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("x", (DATA.plotLeft - 10).toFixed(1)); t.setAttribute("y", (y + 3.5).toFixed(2));
+    t.setAttribute("class", "tick-label"); t.setAttribute("text-anchor", "end");
+    t.textContent = fmtTick(v);
+    axis.appendChild(t);
+  }
+
+  /* Each series: band, median line, dots, value labels. */
+  DATA.series.forEach((s, i) => {
+    const g = document.getElementById("series-" + i);
+    g.setAttribute("data-on", on[i] ? "true" : "false");
+    if (!on[i]) return;
+    const X = DATA.x;
+    let band = "";
+    X.forEach((x, k) => { band += (k ? " L " : "M ") + x + " " + mapY(s.max[k]).toFixed(2); });
+    for (let k = X.length - 1; k >= 0; k--) band += " L " + X[k] + " " + mapY(s.min[k]).toFixed(2);
+    g.querySelector(".band").setAttribute("d", band + " Z");
+    let med = "";
+    X.forEach((x, k) => { med += (k ? " L " : "M ") + x + " " + mapY(s.med[k]).toFixed(2); });
+    g.querySelector(".median").setAttribute("d", med);
+    g.querySelectorAll(".dot").forEach(dot => {
+      const k = +dot.getAttribute("data-size");
+      dot.setAttribute("cy", mapY(s.med[k]).toFixed(2));
+    });
+    g.querySelectorAll(".value-label").forEach(t => {
+      const k = +t.getAttribute("data-size");
+      t.setAttribute("y", (mapY(s.med[k]) + +t.getAttribute("data-offset")).toFixed(2));
+    });
+  });
+
+  /*
+   * Right-edge labels, every contender in its slot. Each anchors level with
+   * its line's last point on the current axis; a hidden contender's anchor
+   * is clamped to the plot edge, so its grey label points toward where its
+   * data lies. Then push overlapping labels apart and keep the stack inside
+   * the plot.
+   */
+  const last = DATA.x.length - 1;
+  const clamp = y => Math.min(DATA.plotBottom - 8, Math.max(DATA.plotTop + 8, y));
+  const slots = DATA.series
+    .map((s, i) => [i, clamp(mapY(s.med[last]))])
+    .sort((a, b) => a[1] - b[1]);
+  for (let k = 1; k < slots.length; k++) {
+    slots[k][1] = Math.max(slots[k][1], slots[k - 1][1] + DATA.labelGap);
+  }
+  const overrun = Math.max(0, slots[slots.length - 1][1] + 20 - DATA.plotBottom);
+  for (const [i, y] of slots) {
+    const lab = document.getElementById("series-" + i).querySelector(".series-label");
+    lab.setAttribute("transform", `translate(0 ${(y - overrun).toFixed(2)})`);
+  }
+
+  /* Elbow annotation follows the baseline's first dot. */
+  const elbow = document.getElementById("elbow");
+  const b = DATA.series[DATA.baseline];
+  elbow.setAttribute("transform", `translate(${DATA.x[0]} ${mapY(b.med[0]).toFixed(2)})`);
+  elbow.style.display = on[DATA.baseline] ? "" : "none";
+
+  /* Provenance: visible contenders' lines close ranks after the shared lines. */
+  let slot = DATA.sharedProv;
+  DATA.series.forEach((s, i) => {
+    document.getElementById("series-" + i).querySelectorAll(".series-prov").forEach(t => {
+      if (on[i]) t.setAttribute("y", (DATA.provTop + 40 + slot++ * DATA.provLine).toFixed(1));
+    });
+  });
+
+  document.getElementById("takeaway").textContent = takeaway();
+}
+
+function toggleSeries(i) {
+  on[i] = !on[i];
+  relayout();
+}
+window.toggleSeries = toggleSeries;
+"##;
 
 /// "source URL · branch B · commit C" for a git-dependency provenance line.
 fn short_git_source(description: &str) -> String {
