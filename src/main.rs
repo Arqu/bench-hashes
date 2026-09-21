@@ -1045,6 +1045,25 @@ fn generate_takeaway(results: &Results) -> String {
 }
 
 /*
+ * Split the headline at clause boundaries into at most two lines that fit
+ * the canvas width at the headline's font size. The script mirrors this.
+ */
+fn wrap_takeaway(takeaway: &str) -> Vec<String> {
+    const MAX_CHARS: usize = 118;
+    let mut lines: Vec<String> = Vec::new();
+    for clause in takeaway.split("; ") {
+        match lines.last_mut() {
+            Some(last) if last.len() + 2 + clause.len() <= MAX_CHARS => {
+                last.push_str("; ");
+                last.push_str(clause);
+            }
+            _ => lines.push(clause.to_owned()),
+        }
+    }
+    lines
+}
+
+/*
  * One contender's speed relative to the baseline, phrased for the headline.
  * Requires a non-baseline contender.
  */
@@ -1139,10 +1158,10 @@ fn output_directory(machine: &MachineMetadata) -> std::path::PathBuf {
  * JSON block, so a single source of truth drives both.
  */
 const SVG_WIDTH: f64 = 1200.0;
-const SVG_HEIGHT: f64 = 740.0;
+const SVG_HEIGHT: f64 = 755.0;
 const PLOT_LEFT: f64 = 110.0;
 const PLOT_RIGHT: f64 = 1000.0;
-const PLOT_TOP: f64 = 135.0;
+const PLOT_TOP: f64 = 150.0;
 const PLOT_BOTTOM: f64 = 455.0;
 const X_INSET: f64 = 40.0;
 const SERIES_LABEL_GAP: f64 = 44.0;
@@ -1284,16 +1303,30 @@ fn generate_svg(
     )
         .unwrap();
 
-    writeln!(
-        svg,
-        r##"  <text id="takeaway" x="{PLOT_LEFT:.0}" y="70" class="takeaway">{}</text>"##,
-        xml_escape(&takeaway),
-    )
-        .unwrap();
+    /*
+     * The headline wraps onto up to two lines at the semicolons; the script
+     * re-wraps it the same way after each toggle.
+     */
+    writeln!(svg, r##"  <text id="takeaway" x="{PLOT_LEFT:.0}" y="70" class="takeaway">"##).unwrap();
+    for (index, line) in wrap_takeaway(&takeaway).iter().enumerate() {
+        writeln!(
+            svg,
+            r##"    <tspan x="{PLOT_LEFT:.0}" dy="{}">{}</tspan>"##,
+            if index == 0 { 0 } else { 18 },
+            xml_escape(line),
+        )
+            .unwrap();
+    }
+    writeln!(svg, "  </text>").unwrap();
 
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="90" class="method">Line and dot: median · shaded band: minimum–maximum across {SAMPLE_ROUNDS} interleaved samples · single-threaded · lower is better · hover a dot to compare contenders at that size · click a name at right to hide or show that contender</text>"##
+        r##"  <text x="{PLOT_LEFT:.0}" y="108" class="method">Line and dot: median · shaded band: minimum–maximum across {SAMPLE_ROUNDS} interleaved samples · single-threaded · lower is better</text>"##
+    )
+        .unwrap();
+    writeln!(
+        svg,
+        r##"  <text x="{PLOT_LEFT:.0}" y="123" class="method">Hover a dot to compare contenders at that size · click a name at right to hide or show that contender</text>"##
     )
         .unwrap();
 
@@ -1462,10 +1495,11 @@ fn generate_svg(
          * never collide: baseline above its dot, the others below at
          * increasing offsets.
          */
-        let label_offset = if algorithm_index == BASELINE {
-            -12.0
-        } else {
-            8.0 + 12.0 * algorithm_index as f64
+        let label_offset = match algorithm_index {
+            BASELINE => -11.0,
+            1 => 17.0,
+            2 => -11.0,
+            _ => 27.0,
         };
 
         for size_index in 0..INPUT_COUNT {
@@ -1611,22 +1645,27 @@ fn generate_svg(
         )
             .unwrap();
 
+        /*
+         * Above and to the right of the dot. The other BLAKE3 flavour and
+         * SHA-256 sit at or below this dot at 64 B, so the space above it is
+         * the clear side; the leader starts past the 64 B value labels.
+         */
         writeln!(
             svg,
-            r##"    <line x1="8" y1="-8" x2="42" y2="-48" stroke="#bbbbbb" stroke-width="1"/>"##
+            r##"    <line x1="10" y1="-8" x2="70" y2="-40" stroke="#bbbbbb" stroke-width="1"/>"##
         )
             .unwrap();
 
         writeln!(
             svg,
-            r##"    <text x="46" y="-52" class="annotation">BLAKE3: 64 B fits one chunk → {}</text>"##,
+            r##"    <text x="74" y="-44" class="annotation">BLAKE3 at 64 B: one chunk → {}</text>"##,
             xml_escape(short_backend),
         )
             .unwrap();
 
         writeln!(
             svg,
-            r##"    <text x="46" y="-40" class="annotation">(bulk sizes use {})</text>"##,
+            r##"    <text x="74" y="-32" class="annotation">(bulk sizes use {})</text>"##,
             xml_escape(
                 implementation
                     .bulk
@@ -1774,11 +1813,10 @@ fn contender_provenance_lines(
             package_name_and_version(SHA1_CHECKED_SOURCE_INFO),
             algorithm.mode(),
         )],
-        Algorithm::Blake3Sme2 => vec![format!(
-            "{name}: {} · {}",
-            short_git_source(BLAKE3_SME2_SOURCE_INFO),
-            algorithm.mode(),
-        )],
+        Algorithm::Blake3Sme2 => vec![
+            format!("{name}: {}", short_git_source(BLAKE3_SME2_SOURCE_INFO)),
+            format!("{name}: {}", algorithm.mode()),
+        ],
     }
 }
 
@@ -2007,7 +2045,20 @@ function relayout() {
     });
   });
 
-  document.getElementById("takeaway").textContent = takeaway();
+  const head = document.getElementById("takeaway");
+  while (head.firstChild) head.removeChild(head.firstChild);
+  const lines = [];
+  for (const clause of takeaway().split("; ")) {
+    const last = lines[lines.length - 1];
+    if (last !== undefined && last.length + 2 + clause.length <= 118) lines[lines.length - 1] = last + "; " + clause;
+    else lines.push(clause);
+  }
+  lines.forEach((line, i) => {
+    const span = document.createElementNS(NS, "tspan");
+    span.setAttribute("x", DATA.plotLeft); span.setAttribute("dy", i ? 18 : 0);
+    span.textContent = line;
+    head.appendChild(span);
+  });
 }
 
 function toggleSeries(i) {
