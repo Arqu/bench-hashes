@@ -10,17 +10,33 @@ use sysinfo::System;
 compile_error!("bench-hashes currently supports native targets only");
 
 /*
- * 128 rounds: a multiple of the sixteen input sizes and the four cyclic
- * orders, and enough that the running medians settle well before the end
- * (they are stable to three decimals by round 30 on every machine measured
- * so far). Each sample runs a contender for about 2 ms; timing noise on
- * this scale is well under 1%.
+ * Every (contender, size) cell collects SAMPLE_ROUNDS samples of about
+ * TARGET_SAMPLE_NS each. The two knobs trade off differently:
+ *
+ * - Fewer rounds thin the evidence behind the min–max band, so the band can
+ *   look tight while the true spread is wider: false precision.
+ * - Shorter samples keep the sample count. Any disturbance (an interrupt, a
+ *   clock step) is a larger share of a short sample, so it widens the band
+ *   rather than averaging away inside it. The band then tells the truth
+ *   about how noisy the run was.
+ *
+ * So the runtime budget goes to rounds first. 1 ms is long enough that the
+ * clock's own resolution (tens of nanoseconds) is under 0.01% of a sample.
+ * Rounds are a multiple of the sixteen sizes and of the order count.
  */
-const SAMPLE_ROUNDS: usize = 128;
-const CALIBRATION_PROBE_NS: u128 = 1_000_000;
-const TARGET_SAMPLE_NS: u128 = 2_000_000;
+const SAMPLE_ROUNDS: usize = 80;
+const CALIBRATION_PROBE_NS: u128 = 500_000;
+const TARGET_SAMPLE_NS: u128 = 1_000_000;
 
 const INPUT_COUNT: usize = 16;
+
+/*
+ * Apple platforms add a fifth contender: the system's CommonCrypto
+ * SHA-256, the implementation most Apple software actually calls.
+ */
+#[cfg(target_vendor = "apple")]
+const ALGORITHM_COUNT: usize = 5;
+#[cfg(not(target_vendor = "apple"))]
 const ALGORITHM_COUNT: usize = 4;
 
 /*
@@ -73,6 +89,15 @@ const INPUT_SIZES: [InputSize; INPUT_COUNT] = [
     InputSize { label: "1 MiB", bytes: 1024 * 1024 },
 ];
 
+#[cfg(target_vendor = "apple")]
+const ALGORITHMS: [Algorithm; ALGORITHM_COUNT] = [
+    Algorithm::Blake3,
+    Algorithm::Sha256,
+    Algorithm::Sha1Dc,
+    Algorithm::Blake3Sme2,
+    Algorithm::Sha256CommonCrypto,
+];
+#[cfg(not(target_vendor = "apple"))]
 const ALGORITHMS: [Algorithm; ALGORITHM_COUNT] = [
     Algorithm::Blake3,
     Algorithm::Sha256,
@@ -82,17 +107,32 @@ const ALGORITHMS: [Algorithm; ALGORITHM_COUNT] = [
 
 /*
  * The interleaving spreads one contender's lingering effects (cache state,
- * clock, thermal drift) evenly over the others. These four orders do that
- * with the same balance as all 24 permutations: every contender takes
- * every position exactly once, and every ordered pair "Y runs right after
- * X" occurs exactly once across the set. SAMPLE_ROUNDS is a multiple of
- * four, so each order runs equally often.
+ * clock, thermal drift) evenly over the others. These orders do that with
+ * the same balance as all permutations: every contender takes every
+ * position equally often, and every ordered pair "Y runs right after X"
+ * occurs equally often across the set (a Williams design; four rows for
+ * four contenders, ten for five). assert_orders_balanced() checks this at
+ * startup, and SAMPLE_ROUNDS is a multiple of the row count.
  */
+#[cfg(not(target_vendor = "apple"))]
 const ALGORITHM_ORDERS: [[usize; ALGORITHM_COUNT]; 4] = [
     [0, 1, 2, 3],
     [1, 3, 0, 2],
     [2, 0, 3, 1],
     [3, 2, 1, 0],
+];
+#[cfg(target_vendor = "apple")]
+const ALGORITHM_ORDERS: [[usize; ALGORITHM_COUNT]; 10] = [
+    [0, 1, 4, 2, 3],
+    [1, 2, 0, 3, 4],
+    [2, 3, 1, 4, 0],
+    [3, 4, 2, 0, 1],
+    [4, 0, 3, 1, 2],
+    [3, 2, 4, 1, 0],
+    [4, 3, 0, 2, 1],
+    [0, 4, 1, 3, 2],
+    [1, 0, 2, 4, 3],
+    [2, 1, 3, 0, 4],
 ];
 
 type Results = [[Statistics; ALGORITHM_COUNT]; INPUT_COUNT];
@@ -114,6 +154,9 @@ enum Algorithm {
     Sha256,
     Sha1Dc,
     Blake3Sme2,
+    /// Apple's CommonCrypto CC_SHA256, the system library implementation.
+    #[cfg_attr(not(target_vendor = "apple"), allow(dead_code))]
+    Sha256CommonCrypto,
 }
 
 impl Algorithm {
@@ -123,15 +166,21 @@ impl Algorithm {
             Self::Sha256 => "SHA-256",
             Self::Sha1Dc => "SHA-1DC",
             Self::Blake3Sme2 => "BLAKE3 SME2",
+            Self::Sha256CommonCrypto => "SHA-256 CommonCrypto",
         }
     }
 
+    /*
+     * Contender colours stay off pure green and pure red, which the hover
+     * panel reserves for "faster" and "slower".
+     */
     fn color(self) -> &'static str {
         match self {
             Self::Blake3 => "#3b82f6",
             Self::Sha256 => "#e07a45",
-            Self::Sha1Dc => "#6b9e3a",
+            Self::Sha1Dc => "#8a7a1e",
             Self::Blake3Sme2 => "#7c3aed",
+            Self::Sha256CommonCrypto => "#0e9aa7",
         }
     }
 
@@ -142,6 +191,7 @@ impl Algorithm {
             Self::Sha256 => SHA2_SOURCE_INFO,
             Self::Sha1Dc => SHA1_CHECKED_SOURCE_INFO,
             Self::Blake3Sme2 => BLAKE3_SME2_SOURCE_INFO,
+            Self::Sha256CommonCrypto => "CommonCrypto CC_SHA256 from the running macOS (libSystem); version follows the OS",
         }
     }
 
@@ -152,6 +202,7 @@ impl Algorithm {
             Self::Sha256 => "assembly backends where available (ARMv8 SHA-256 instructions on AArch64)",
             Self::Sha1Dc => "SHA-1 with collision detection, pure Rust (the construction git uses)",
             Self::Blake3Sme2 => "single-threaded; SME2 kernel for groups of sixteen chunks, integer + NEON hybrid kernels below that; the benchmark stops on a CPU without SME2",
+            Self::Sha256CommonCrypto => "Apple CommonCrypto one-shot CC_SHA256 via FFI; the system's own SHA-256 (corecrypto, ARMv8 SHA-256 instructions on Apple silicon)",
         }
     }
 }
@@ -247,11 +298,19 @@ fn main() {
 }
 
 /*
- * ALGORITHM_ORDERS must place every contender in every position exactly
- * once and realise every ordered adjacency exactly once. This is what
- * lets four orders stand in for all permutations.
+ * ALGORITHM_ORDERS must place every contender in every position equally
+ * often and realise every ordered adjacency equally often. This is what
+ * lets a handful of orders stand in for all permutations.
  */
 fn assert_orders_balanced() {
+    let rows = ALGORITHM_ORDERS.len();
+    assert_eq!(
+        rows % ALGORITHM_COUNT, 0,
+        "the order count must be a multiple of the contender count"
+    );
+    let per_position = rows / ALGORITHM_COUNT;
+    let per_adjacency = rows / ALGORITHM_COUNT;
+
     let mut positions = [[0usize; ALGORITHM_COUNT]; ALGORITHM_COUNT];
     let mut adjacencies = [[0usize; ALGORITHM_COUNT]; ALGORITHM_COUNT];
 
@@ -267,15 +326,15 @@ fn assert_orders_balanced() {
     for algorithm in 0..ALGORITHM_COUNT {
         for position in 0..ALGORITHM_COUNT {
             assert_eq!(
-                positions[algorithm][position], 1,
-                "contender {algorithm} must take position {position} exactly once across ALGORITHM_ORDERS"
+                positions[algorithm][position], per_position,
+                "contender {algorithm} must take position {position} {per_position} time(s) across ALGORITHM_ORDERS"
             );
         }
         for follower in 0..ALGORITHM_COUNT {
-            let expected = usize::from(follower != algorithm);
+            let expected = if follower == algorithm { 0 } else { per_adjacency };
             assert_eq!(
                 adjacencies[algorithm][follower], expected,
-                "contender {follower} must run right after {algorithm} exactly {expected} time(s) across ALGORITHM_ORDERS"
+                "contender {follower} must run right after {algorithm} {expected} time(s) across ALGORITHM_ORDERS"
             );
         }
     }
@@ -296,6 +355,14 @@ fn measure_all() -> Results {
             "BLAKE3 SME2 must agree with crates.io blake3 on a {}-byte input",
             input.len(),
         );
+        if ALGORITHMS.contains(&Algorithm::Sha256CommonCrypto) {
+            assert_eq!(
+                Sha256::digest(input).as_slice(),
+                &common_crypto::sha256(input)[..],
+                "CommonCrypto SHA-256 must agree with the sha2 crate on a {}-byte input",
+                input.len(),
+            );
+        }
     }
 
     /*
@@ -569,6 +636,46 @@ fn run_batch(
                 let _ = black_box(digest);
             }
         }
+        Algorithm::Sha256CommonCrypto => {
+            for _ in 0..iterations {
+                let digest = common_crypto::sha256(black_box(input));
+                let _ = black_box(digest);
+            }
+        }
+    }
+}
+
+/*
+ * Apple's CommonCrypto SHA-256, linked from libSystem. Only the one-shot
+ * entry point is used, matching how the other contenders are called.
+ */
+#[cfg(target_vendor = "apple")]
+mod common_crypto {
+    pub const DIGEST_LEN: usize = 32;
+
+    unsafe extern "C" {
+        /// `unsigned char *CC_SHA256(const void *data, CC_LONG len, unsigned char *md);`
+        /// CC_LONG is uint32_t, so inputs are limited to 4 GiB; every input
+        /// here is at most 1 MiB.
+        fn CC_SHA256(data: *const u8, len: u32, md: *mut u8) -> *mut u8;
+    }
+
+    pub fn sha256(input: &[u8]) -> [u8; DIGEST_LEN] {
+        let len = u32::try_from(input.len()).expect("CC_SHA256 takes a 32-bit length");
+        let mut digest = [0u8; DIGEST_LEN];
+        // Safe: `input` is valid for `len` bytes and `digest` for 32 bytes,
+        // and CC_SHA256 writes exactly 32 bytes to `md`.
+        let returned = unsafe { CC_SHA256(input.as_ptr(), len, digest.as_mut_ptr()) };
+        assert!(!returned.is_null(), "CC_SHA256 returned NULL");
+        digest
+    }
+}
+
+#[cfg(not(target_vendor = "apple"))]
+mod common_crypto {
+    /// Never called: the contender is absent from ALGORITHMS off Apple.
+    pub fn sha256(_input: &[u8]) -> [u8; 32] {
+        unreachable!("CommonCrypto SHA-256 is an Apple-only contender")
     }
 }
 
@@ -882,12 +989,25 @@ fn detect_sha1dc_implementation() -> Implementation {
     )
 }
 
+fn detect_common_crypto_implementation() -> Implementation {
+    Implementation::new(
+        "CommonCrypto",
+        vec![Regime {
+            first: 0,
+            name: "CC_SHA256 (corecrypto, ARMv8 SHA-256 instructions)",
+            why: "One implementation at every size.",
+            mark: Mark::Circle,
+        }],
+    )
+}
+
 fn detect_implementation(algorithm: Algorithm) -> Implementation {
     match algorithm {
         Algorithm::Blake3 => detect_blake3_implementation(),
         Algorithm::Sha256 => detect_sha256_implementation(),
         Algorithm::Sha1Dc => detect_sha1dc_implementation(),
         Algorithm::Blake3Sme2 => detect_blake3_sme2_implementation(),
+        Algorithm::Sha256CommonCrypto => detect_common_crypto_implementation(),
     }
 }
 
@@ -986,10 +1106,10 @@ fn generate_text(
         .unwrap();
     writeln!(output).unwrap();
 
-    /* Header row: one column per contender. */
+    /* Header row: one column per contender; wide names get a short form. */
     write!(output, "  {:<8}", "size").unwrap();
     for algorithm in ALGORITHMS {
-        write!(output, "  {:>13}", algorithm.name()).unwrap();
+        write!(output, "  {:>13}", column_heading(algorithm)).unwrap();
     }
     writeln!(output).unwrap();
 
@@ -1008,9 +1128,11 @@ fn generate_text(
         write!(output, "  {:<8}", "").unwrap();
         for algorithm_index in 0..ALGORITHM_COUNT {
             let statistics = results[size_index][algorithm_index];
+            /* A trailing mark flags a wide spread; the legend below explains it. */
+            let flag = if spread(statistics) >= SPREAD_WIDE { "!" } else { " " };
             write!(
                 output,
-                "  {:>13}",
+                "  {:>12}{flag}",
                 format!("{:.3}–{:.3}", statistics.minimum, statistics.maximum),
             )
                 .unwrap();
@@ -1018,11 +1140,41 @@ fn generate_text(
         writeln!(output).unwrap();
     }
 
+    let wide_cells = results
+        .iter()
+        .flatten()
+        .filter(|statistics| spread(**statistics) >= SPREAD_WIDE)
+        .count();
+    writeln!(output).unwrap();
+    if wide_cells > 0 {
+        writeln!(
+            output,
+            "!  marks a cell whose minimum–maximum spread is at least {:.0}% of its median: {wide_cells} of {} cells; treat those medians as low precision.",
+            SPREAD_WIDE * 100.0,
+            INPUT_COUNT * ALGORITHM_COUNT,
+        )
+            .unwrap();
+    } else {
+        writeln!(
+            output,
+            "Every cell's minimum–maximum spread is under {:.0}% of its median.",
+            SPREAD_WIDE * 100.0,
+        )
+            .unwrap();
+    }
     writeln!(output).unwrap();
     writeln!(output, "{}", generate_takeaway(results)).unwrap();
     writeln!(output).unwrap();
 
     output
+}
+
+/// Column heading that fits the 13-character summary columns.
+fn column_heading(algorithm: Algorithm) -> &'static str {
+    match algorithm {
+        Algorithm::Sha256CommonCrypto => "SHA-256 CC",
+        other => other.name(),
+    }
 }
 
 fn machine_metadata() -> MachineMetadata {
@@ -1461,7 +1613,7 @@ fn generate_svg(
 
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="108" class="method">Line and dot: median · shaded band: minimum–maximum across {SAMPLE_ROUNDS} interleaved samples · single-threaded · lower is better</text>"##
+        r##"  <text x="{PLOT_LEFT:.0}" y="108" class="method">Line and dot: median · shaded band: minimum–maximum across {SAMPLE_ROUNDS} interleaved samples; a deeper tint or dashed outline marks a wide spread, meaning lower precision · single-threaded · lower is better</text>"##
     )
         .unwrap();
     writeln!(
@@ -1644,9 +1796,22 @@ fn generate_svg(
         }
         band.push_str(" Z");
 
+        /*
+         * The band's look reports the run's precision for this contender.
+         * Spread is (max − min) / median at a size; the band takes the
+         * worst spread across sizes. Tight runs stay a faint tint. As the
+         * spread grows the tint deepens, and past the wide threshold a
+         * dashed outline appears, so a broad band cannot pass as decor.
+         */
+        let worst_spread = (0..INPUT_COUNT)
+            .map(|size_index| spread(results[size_index][algorithm_index]))
+            .fold(0.0_f64, f64::max);
+        let (opacity, outline) = band_style(worst_spread);
+
         writeln!(
             svg,
-            r##"      <path class="band" d="{band}" fill="{color}" fill-opacity="0.16" stroke="none"/>"##
+            r##"      <path class="band" d="{band}" fill="{color}" fill-opacity="{opacity:.2}" stroke="{color}" stroke-opacity="{}" stroke-width="1" stroke-dasharray="4,3"/>"##,
+            if outline { "0.6" } else { "0" },
         )
             .unwrap();
 
@@ -1676,7 +1841,8 @@ fn generate_svg(
             BASELINE => -11.0,
             1 => 17.0,
             2 => -11.0,
-            _ => 27.0,
+            3 => 27.0,
+            _ => -21.0,
         };
 
         for size_index in 0..INPUT_COUNT {
@@ -1963,6 +2129,34 @@ fn generate_svg(
     svg
 }
 
+/*
+ * Relative spread of one cell: (max − min) / median. Zero for a perfectly
+ * repeatable measurement; 0.10 means the extremes differ by a tenth of the
+ * median.
+ */
+fn spread(statistics: Statistics) -> f64 {
+    (statistics.maximum - statistics.minimum) / statistics.median
+}
+
+/*
+ * Band fill opacity and whether to outline it, from the worst spread. The
+ * script applies the same thresholds. Spread under 10% is a routine run;
+ * 10–25% earns a deeper tint; over 25% adds the dashed outline.
+ */
+const SPREAD_NOTICEABLE: f64 = 0.10;
+const SPREAD_WIDE: f64 = 0.25;
+
+fn band_style(worst_spread: f64) -> (f64, bool) {
+    let opacity = if worst_spread < SPREAD_NOTICEABLE {
+        0.16
+    } else if worst_spread < SPREAD_WIDE {
+        0.16 + 0.14 * (worst_spread - SPREAD_NOTICEABLE) / (SPREAD_WIDE - SPREAD_NOTICEABLE)
+    } else {
+        0.30
+    };
+    (opacity, worst_spread >= SPREAD_WIDE)
+}
+
 fn json_string(text: &str) -> String {
     format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
 }
@@ -2043,6 +2237,7 @@ fn contender_provenance_lines(
             format!("{name}: {}", short_git_source(BLAKE3_SME2_SOURCE_INFO)),
             format!("{name}: {}", algorithm.mode()),
         ],
+        Algorithm::Sha256CommonCrypto => vec![format!("{name}: {}", algorithm.mode())],
     }
 }
 
@@ -2119,7 +2314,7 @@ fn write_interaction_script(
     }
     write!(
         data,
-        "],\"baseline\":{BASELINE},\"sharedProv\":{shared_count},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"plotTop\":{PLOT_TOP},\"plotBottom\":{PLOT_BOTTOM},\"labelGap\":{SERIES_LABEL_GAP},\"provTop\":{PROVENANCE_TOP},\"provLine\":{PROVENANCE_LINE_HEIGHT},\"takeaway\":\"{}\"}}",
+        "],\"baseline\":{BASELINE},\"sharedProv\":{shared_count},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"plotTop\":{PLOT_TOP},\"plotBottom\":{PLOT_BOTTOM},\"labelGap\":{SERIES_LABEL_GAP},\"spreadNoticeable\":{SPREAD_NOTICEABLE},\"spreadWide\":{SPREAD_WIDE},\"provTop\":{PROVENANCE_TOP},\"provLine\":{PROVENANCE_LINE_HEIGHT},\"takeaway\":\"{}\"}}",
         generate_takeaway(results).replace('\\', "\\\\").replace('"', "\\\""),
     )
         .unwrap();
@@ -2361,8 +2556,13 @@ function showHover(focus, k) {
   let y = PAD + 12;
   body.appendChild(textEl(PAD, y, "hover-head", `${f.name} at ${DATA.sizes[k]}`));
   y += 14;
-  body.appendChild(textEl(PAD, y, "hover-sub",
-    `median ${f.med[k].toFixed(3)} ns/B (${gbps(f.med[k])}) · range ${f.min[k].toFixed(3)}–${f.max[k].toFixed(3)}`));
+  const spread = (f.max[k] - f.min[k]) / f.med[k];
+  const spreadNote = spread >= DATA.spreadWide ? " · wide spread, low precision"
+    : spread >= DATA.spreadNoticeable ? " · noticeable spread" : "";
+  const rangeRow = textEl(PAD, y, "hover-sub",
+    `median ${f.med[k].toFixed(3)} ns/B (${gbps(f.med[k])}) · range ${f.min[k].toFixed(3)}–${f.max[k].toFixed(3)} (±${(spread * 50).toFixed(0)}%)${spreadNote}`);
+  if (spread >= DATA.spreadWide) rangeRow.setAttribute("fill", "#b45309");
+  body.appendChild(rangeRow);
 
   /* Code path at this size; the first size of a new path explains why. */
   let ri = 0;
@@ -2413,8 +2613,8 @@ function showHover(focus, k) {
       else {
         const r = f.med[k] / med;
         if (Math.abs(r - 1) < 0.05) { rel = "about the same"; color = "#777777"; }
-        else if (r > 1) { rel = r.toFixed(2) + "\u00d7 faster"; color = "#2f7d32"; }
-        else { rel = (1 / r).toFixed(2) + "\u00d7 slower"; color = "#b3261e"; }
+        else if (r > 1) { rel = "\u25b2 " + r.toFixed(2) + "\u00d7 faster"; color = "#15803d"; }
+        else { rel = "\u25bc " + (1 / r).toFixed(2) + "\u00d7 slower"; color = "#b91c1c"; }
       }
       body.appendChild(textEl(W - PAD, y, "hover-ratio", rel, { "text-anchor": "end", fill: color }));
     }

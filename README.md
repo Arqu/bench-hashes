@@ -3,8 +3,9 @@
 Written by GPT-5.6 Sol and Claude Fable 5 to my (Zooko's) specifications.
 
 A small single-threaded benchmark comparing BLAKE3, SHA-256, SHA-1DC
-(SHA-1 with collision detection, the construction git uses), and BLAKE3
-with SME2 kernels (Apple M4 and later).
+(SHA-1 with collision detection, the construction git uses), BLAKE3
+with SME2 kernels (Apple M4 and later), and on Apple platforms the
+system's CommonCrypto SHA-256.
 
 The benchmark tests every power-of-two input size from 64 B to 1 MiB,
 plus 3 KiB: 64 B, 128 B, 256 B, 512 B, 1 KiB, 2 KiB, 3 KiB, 4 KiB, 8 KiB,
@@ -109,6 +110,13 @@ so this column measures the SME2 kernel on every machine where the
 benchmark runs. Its provenance line gives the branch and commit instead
 of a registry checksum.
 
+SHA-256 CommonCrypto, on Apple platforms only, calls the one-shot
+`CC_SHA256` from the system's libSystem through FFI. This is the
+implementation most Apple software reaches for, so it anchors the sha2
+crate's number against the platform's own. The benchmark checks that
+the two agree on every input before timing them. Its provenance is the
+running OS rather than a crate version.
+
 SHA-1DC is provided by RustCrypto's sha1-checked crate: SHA-1 with the
 collision-detection pass that git applies to every object hash. The
 detection is pure Rust and has no hardware path, so this contender shows
@@ -140,15 +148,28 @@ one colour while its dots change shape.
 These inferences follow BLAKE3 v1.8.7's `src/platform.rs` and the
 fork's `src/ffi_sme2.rs` and `src/ffi_neon_hybrid.rs`.
 
-## Interleaving
+## Interleaving and precision
 
-The contenders run in four orders that together place every contender
-in every position exactly once and realise every "Y right after X"
-adjacency exactly once, the same balance all 24 permutations give.
-Input-size order rotates independently. This distributes ordering effects,
-thermal throttling, and competing system activity evenly. Each
-algorithm/input-size combination is calibrated separately so its timed
-blocks have approximately equal durations.
+The contenders run in a fixed set of orders that together place every
+contender in every position equally often and realise every "Y right
+after X" adjacency equally often — the balance all permutations would
+give (four orders for four contenders, ten for five). Input-size order
+rotates independently. Each contender/size combination is calibrated
+separately so its timed samples last about 1 ms each.
+
+Each combination collects 80 samples. The runtime budget favours sample
+count over sample length: fewer samples thin the evidence behind the
+min–max band and let it look tight while the true spread is wider,
+whereas shorter samples keep the count and let any disturbance widen
+the band honestly. A whole run takes about six seconds on this
+benchmark's development machines.
+
+The band's appearance reports precision. Spread is (maximum − minimum)
+÷ median at a size; a contender's band takes its worst spread across
+sizes. Under 10% the band is a faint tint; from 10% to 25% the tint
+deepens; at 25% and above a dashed outline appears. The hover panel
+prints each point's spread as ±% and names it when it is noticeable or
+wide, and the text report marks wide cells with `!` and counts them.
 
 ## The graph
 
@@ -159,8 +180,9 @@ relative to BLAKE3 across the size range.
 Hovering a dot opens a panel for that input size: the hovered
 contender's median, range, and code path, then every visible contender ranked
 fastest first with its ns/B, GB/s, and speed relative to the hovered
-one ("1.35× faster", "about the same", "3.22× slower"). Hidden
-contenders stay out of the ranking.
+one ("▲ 1.35× faster" in green, "about the same" in grey, "▼ 3.22×
+slower" in red; contender colours stay away from those two hues).
+Hidden contenders stay out of the ranking.
 
 The names at the right edge are toggles. Clicking one hides that
 contender: its marks fade out, the y axis rescales to the contenders
