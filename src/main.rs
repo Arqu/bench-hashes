@@ -213,7 +213,7 @@ impl Algorithm {
             Self::Sha256 => "assembly backends where available (ARMv8 SHA-256 instructions on AArch64)",
             Self::Sha1Dc => "SHA-1 with collision detection, pure Rust (the construction git uses)",
             Self::Blake3Sme2 => "single-threaded; SME2 kernel for groups of sixteen chunks, integer + NEON hybrid kernels below that; needs a CPU with SME2",
-            Self::Sha256CommonCrypto => "Apple CommonCrypto CC_SHA256_Init/Update/Final via FFI; the system's own SHA-256 (corecrypto, ARMv8 SHA-256 instructions on Apple silicon). The one-shot CC_SHA256 is avoided: its finalisation costs ~110 ns per compression",
+            Self::Sha256CommonCrypto => "Apple CommonCrypto CC_SHA256_Init/Update/Final via FFI, the fastest route into the system's own SHA-256 (corecrypto, ARMv8 SHA-256 instructions on Apple silicon)",
         }
     }
 }
@@ -894,13 +894,11 @@ fn run_batch(
 
 /*
  * Apple's CommonCrypto SHA-256, linked from libSystem, through the
- * streaming Init/Update/Final calls.
- *
- * The one-shot CC_SHA256() (and CCDigest()) is avoided on purpose: measured
- * on an M4 Max, its finalisation costs about 110 ns per compression against
- * 17 ns for the same arithmetic elsewhere, so a 64-byte digest took 182 ns
- * one-shot and 51 ns through Init/Update/Final, with identical bulk
- * throughput. The streaming path is the efficient way to call corecrypto.
+ * streaming Init/Update/Final calls: the fastest route into corecrypto.
+ * Measured on an M4 Max, a 64-byte digest takes 51 ns this way and 182 ns
+ * through the one-shot CC_SHA256(), whose finalisation spends about
+ * 110 ns per compression; bulk throughput is identical on both. Keep the
+ * three-call form.
  */
 #[cfg(target_vendor = "apple")]
 mod common_crypto {

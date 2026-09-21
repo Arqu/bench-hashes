@@ -138,12 +138,12 @@ platform's own. The benchmark checks that the two agree on every input
 before timing them. Its provenance is the running OS rather than a
 crate version.
 
-The one-shot `CC_SHA256()` (and `CCDigest()`) is avoided deliberately.
-Measured on an M4 Max, its finalisation costs about 110 ns per
-compression against 17 ns for the same arithmetic elsewhere: a 64-byte
-digest took 182 ns one-shot and 51 ns through Init/Update/Final, with
-identical bulk throughput. Anyone calling CommonCrypto for small
-inputs should use the streaming calls.
+The three-call form is the fastest route into corecrypto. Measured on
+an M4 Max, a 64-byte digest takes 51 ns through Init/Update/Final and
+182 ns through the one-shot `CC_SHA256()`, whose finalisation spends
+about 110 ns per compression; bulk throughput is identical on both.
+Callers hashing small inputs through CommonCrypto gain most from the
+streaming calls.
 
 SHA-1DC is provided by RustCrypto's sha1-checked crate: SHA-1 with the
 collision-detection pass that git applies to every object hash. The
