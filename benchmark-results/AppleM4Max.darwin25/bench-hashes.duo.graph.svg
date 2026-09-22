@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 896" width="1300" height="896">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 896" width="1300" height="896" onclick="tapAway()">
   <rect width="1300" height="896" fill="#fdfdfc"/>
   <style>
     text { font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
@@ -16,14 +16,12 @@
     .annotation { font-size: 10px; font-style: italic; fill: #8a8a8a; }
     .prov-head { font-size: 10px; font-weight: 700; fill: #aaaaaa; letter-spacing: 0.1em; }
     .prov-head-row { cursor: pointer; }
-    .prov-head-row:hover .prov-head { text-decoration: underline; }
     .prov { font-size: 9px; fill: #9a9a9a; }
     .grid { stroke: #e8e8e6; stroke-width: 1; }
     .grid-x { stroke: #f0f0ee; stroke-width: 1; }
     .axis { stroke: #55555a; stroke-width: 1; }
     .divider { stroke: #e0e0de; stroke-width: 1; }
     .series-label { cursor: pointer; transition: transform 0.3s ease; }
-    .series-label:hover .series-name { text-decoration: underline; }
     .series-hint { display: none; }
     .marks, .dots { transition: opacity 0.3s ease; }
     .marks { pointer-events: none; }
@@ -40,7 +38,11 @@
     .series-swatch { stroke-width: 2; transition: fill 0.3s ease; }
     #unit-switch { cursor: pointer; }
     .unit-track { fill: #e8e8e6; stroke: #c8c8c4; stroke-width: 1; }
-    #unit-switch:hover .unit-track { stroke: #55555a; }
+    @media (hover: hover) {
+      .prov-head-row:hover .prov-head { text-decoration: underline; }
+      .series-label:hover .series-name { text-decoration: underline; }
+      #unit-switch:hover .unit-track { stroke: #55555a; }
+    }
     .unit-knob { fill: #55555a; transition: cy 0.35s ease; }
     .unit-label { font-size: 10px; font-weight: 600; fill: #b0b0b0; transition: fill 0.35s ease; }
     .unit-label.unit-on { fill: #333333; }
@@ -60,7 +62,7 @@
   </style>
   <text x="110" y="44" class="title">Cryptographic Hash Performance</text>
   <text x="110" y="72" class="method">Line and dot: median of 280 interleaved duo samples (two copies at once, later finish) · shaded band: 95% confidence interval of that median; a deeper tint marks a median that is less certain</text>
-  <text x="110" y="88" class="method">Dot shape marks the code path a contender used at that size · hover any dot or name to highlight its contender and compare · click a name at right to hide or show that contender</text>
+  <text x="110" y="88" class="method">Dot shape marks the code path a contender used at that size · hover or tap a dot to compare at that size · hover a name to highlight its contender · click a name at right to hide or show it</text>
   <g id="y-axis">
     <line x1="110.0" y1="455.00" x2="1000.0" y2="455.00" class="grid" data-ns="10"/>
     <text x="100.0" y="458.50" class="tick-label" text-anchor="end" data-ns="10">0.1</text>
@@ -98,7 +100,7 @@
     <text x="100.0" y="118.50" class="tick-label" text-anchor="end" data-ns="0.02">50</text>
   </g>
   <text id="y-title" x="30" y="285.0" class="axis-title" text-anchor="middle" transform="rotate(-90 30 285.0)">Gigabytes per second (log scale) · higher is better</text>
-  <g id="unit-switch" transform="translate(50.0 65.0)" onclick="flipUnit()">
+  <g id="unit-switch" transform="translate(50.0 65.0)" onclick="event.stopPropagation(); flipUnit()">
     <title>Switch between nanoseconds per byte and gigabytes per second</title>
     <rect class="unit-hit" x="-4" y="-4" width="60" height="42" fill="transparent"/>
     <rect class="unit-track" x="0" y="0" width="14" height="34" rx="7"/>
@@ -153,16 +155,16 @@
   <line x1="110.0" y1="455.0" x2="1000.0" y2="455.0" class="axis"/>
   <g class="series" id="series-0" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 309.75 L 197.65 310.90 L 245.29 309.36 L 292.94 308.96 L 340.59 309.90 L 388.24 310.13 L 416.11 310.83 L 435.88 278.07 L 483.53 277.37 L 531.18 276.80 L 578.82 276.52 L 626.47 276.52 L 674.12 276.52 L 721.76 276.38 L 769.41 276.23 L 817.06 276.09 L 864.71 276.52 L 892.58 276.09 L 912.35 275.95 L 960.00 275.80 L 960.00 275.66 L 912.35 275.80 L 892.58 275.95 L 864.71 276.38 L 817.06 275.95 L 769.41 276.09 L 721.76 276.23 L 674.12 276.38 L 626.47 276.38 L 578.82 276.38 L 531.18 276.66 L 483.53 277.23 L 435.88 277.93 L 416.11 310.75 L 388.24 310.06 L 340.59 309.75 L 292.94 308.80 L 245.29 309.20 L 197.65 310.44 L 150.00 309.59 Z" fill="#3b82f6" fill-opacity="0.16" stroke="none"/>
-      <path class="median" d="M 150.00 309.67 L 197.65 310.60 L 245.29 309.28 L 292.94 308.88 L 340.59 309.82 L 388.24 310.13 L 416.11 310.83 L 435.88 277.93 L 483.53 277.23 L 531.18 276.80 L 578.82 276.52 L 626.47 276.38 L 674.12 276.38 L 721.76 276.38 L 769.41 276.23 L 817.06 275.95 L 864.71 276.38 L 892.58 275.95 L 912.35 275.80 L 960.00 275.80" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <path class="band" d="M 150.00 309.75 L 197.65 310.98 L 245.29 309.59 L 292.94 309.12 L 340.59 308.88 L 388.24 310.13 L 416.11 310.90 L 435.88 278.35 L 483.53 277.51 L 531.18 277.23 L 578.82 277.09 L 626.47 277.09 L 674.12 276.95 L 721.76 276.66 L 769.41 276.52 L 817.06 276.23 L 864.71 276.80 L 892.58 276.23 L 912.35 276.23 L 960.00 275.95 L 960.00 275.80 L 912.35 275.80 L 892.58 275.95 L 864.71 276.38 L 817.06 275.95 L 769.41 276.23 L 721.76 276.52 L 674.12 276.80 L 626.47 276.95 L 578.82 276.80 L 531.18 277.09 L 483.53 277.37 L 435.88 278.21 L 416.11 310.75 L 388.24 310.06 L 340.59 308.80 L 292.94 308.96 L 245.29 309.36 L 197.65 310.44 L 150.00 309.51 Z" fill="#3b82f6" fill-opacity="0.16" stroke="none"/>
+      <path class="median" d="M 150.00 309.67 L 197.65 310.67 L 245.29 309.43 L 292.94 309.04 L 340.59 308.80 L 388.24 310.13 L 416.11 310.83 L 435.88 278.21 L 483.53 277.51 L 531.18 277.23 L 578.82 276.95 L 626.47 276.95 L 674.12 276.80 L 721.76 276.52 L 769.41 276.38 L 817.06 276.09 L 864.71 276.52 L 892.58 276.09 L 912.35 276.09 L 960.00 275.80" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
       <text class="value-label" data-size="0" x="159.00" y="348.67" fill="#3b82f6" text-anchor="start">1.4</text>
-      <text class="value-label" data-size="3" x="292.94" y="347.88" fill="#3b82f6" text-anchor="middle">1.4</text>
-      <text class="value-label" data-size="7" x="435.88" y="266.93" fill="#3b82f6" text-anchor="middle">2.5</text>
-      <text class="value-label" data-size="11" x="626.47" y="315.38" fill="#3b82f6" text-anchor="middle">2.6</text>
-      <text class="value-label" data-size="15" x="817.06" y="314.95" fill="#3b82f6" text-anchor="middle">2.6</text>
+      <text class="value-label" data-size="3" x="292.94" y="359.04" fill="#3b82f6" text-anchor="middle">1.4</text>
+      <text class="value-label" data-size="7" x="435.88" y="267.21" fill="#3b82f6" text-anchor="middle">2.5</text>
+      <text class="value-label" data-size="11" x="626.47" y="315.95" fill="#3b82f6" text-anchor="middle">2.6</text>
+      <text class="value-label" data-size="15" x="817.06" y="315.09" fill="#3b82f6" text-anchor="middle">2.6</text>
       <text class="value-label" data-size="19" x="951.00" y="264.80" fill="#3b82f6" text-anchor="end">2.6</text>
     </g>
-    <g class="series-label" transform="translate(0 381.74)" onclick="toggleSeries(0)" onmouseenter="highlightSeries(0,true)" onmouseleave="highlightSeries(0,false)">
+    <g class="series-label" transform="translate(0 382.90)" onclick="event.stopPropagation(); toggleSeries(0)" onpointerenter="hoverLabel(event,0,true)" onpointerleave="hoverLabel(event,0,false)">
       <title>Click to hide or show BLAKE3</title>
       <rect x="1010.0" y="-14" width="280.0" height="40" fill="transparent"/>
       <g class="series-swatch" transform="translate(0 0)">
@@ -177,16 +179,16 @@
   </g>
   <g class="series" id="series-1" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 288.53 L 197.65 276.38 L 245.29 271.90 L 292.94 271.59 L 340.59 270.96 L 388.24 270.64 L 416.11 270.49 L 435.88 270.64 L 483.53 270.49 L 531.18 270.49 L 578.82 270.64 L 626.47 270.80 L 674.12 270.96 L 721.76 270.96 L 769.41 270.96 L 817.06 270.64 L 864.71 271.12 L 892.58 270.64 L 912.35 270.49 L 960.00 270.17 L 960.00 270.17 L 912.35 270.17 L 892.58 270.49 L 864.71 270.80 L 817.06 270.49 L 769.41 270.64 L 721.76 270.64 L 674.12 270.64 L 626.47 270.64 L 578.82 270.64 L 531.18 270.49 L 483.53 270.49 L 435.88 270.49 L 416.11 270.49 L 388.24 270.64 L 340.59 270.96 L 292.94 271.59 L 245.29 271.75 L 197.65 276.09 L 150.00 288.18 Z" fill="#e07a45" fill-opacity="0.16" stroke="none"/>
-      <path class="median" d="M 150.00 288.30 L 197.65 276.38 L 245.29 271.90 L 292.94 271.59 L 340.59 270.96 L 388.24 270.64 L 416.11 270.49 L 435.88 270.64 L 483.53 270.49 L 531.18 270.49 L 578.82 270.64 L 626.47 270.64 L 674.12 270.80 L 721.76 270.80 L 769.41 270.80 L 817.06 270.49 L 864.71 270.96 L 892.58 270.64 L 912.35 270.33 L 960.00 270.17" fill="none" stroke="#e07a45" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text class="value-label" data-size="0" x="159.00" y="277.30" fill="#e07a45" text-anchor="start">2.1</text>
+      <path class="band" d="M 150.00 288.98 L 197.65 276.80 L 245.29 272.67 L 292.94 271.75 L 340.59 271.12 L 388.24 270.64 L 416.11 270.64 L 435.88 270.64 L 483.53 270.64 L 531.18 270.64 L 578.82 270.64 L 626.47 270.96 L 674.12 270.80 L 721.76 270.80 L 769.41 270.80 L 817.06 270.80 L 864.71 271.12 L 892.58 270.80 L 912.35 270.49 L 960.00 270.33 L 960.00 270.17 L 912.35 270.33 L 892.58 270.49 L 864.71 270.80 L 817.06 270.49 L 769.41 270.64 L 721.76 270.49 L 674.12 270.49 L 626.47 270.64 L 578.82 270.64 L 531.18 270.49 L 483.53 270.49 L 435.88 270.49 L 416.11 270.49 L 388.24 270.64 L 340.59 270.96 L 292.94 271.59 L 245.29 272.52 L 197.65 276.66 L 150.00 288.64 Z" fill="#e07a45" fill-opacity="0.16" stroke="none"/>
+      <path class="median" d="M 150.00 288.76 L 197.65 276.66 L 245.29 272.52 L 292.94 271.59 L 340.59 270.96 L 388.24 270.64 L 416.11 270.64 L 435.88 270.64 L 483.53 270.64 L 531.18 270.49 L 578.82 270.64 L 626.47 270.80 L 674.12 270.64 L 721.76 270.64 L 769.41 270.80 L 817.06 270.64 L 864.71 270.96 L 892.58 270.64 L 912.35 270.33 L 960.00 270.17" fill="none" stroke="#e07a45" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="value-label" data-size="0" x="159.00" y="277.76" fill="#e07a45" text-anchor="start">2.1</text>
       <text class="value-label" data-size="3" x="292.94" y="288.59" fill="#e07a45" text-anchor="middle">2.9</text>
       <text class="value-label" data-size="7" x="435.88" y="309.64" fill="#e07a45" text-anchor="middle">2.9</text>
-      <text class="value-label" data-size="11" x="626.47" y="298.64" fill="#e07a45" text-anchor="middle">2.9</text>
-      <text class="value-label" data-size="15" x="817.06" y="298.49" fill="#e07a45" text-anchor="middle">2.9</text>
+      <text class="value-label" data-size="11" x="626.47" y="298.80" fill="#e07a45" text-anchor="middle">2.9</text>
+      <text class="value-label" data-size="15" x="817.06" y="298.64" fill="#e07a45" text-anchor="middle">2.9</text>
       <text class="value-label" data-size="19" x="951.00" y="287.17" fill="#e07a45" text-anchor="end">2.9</text>
     </g>
-    <g class="series-label" transform="translate(0 337.74)" onclick="toggleSeries(1)" onmouseenter="highlightSeries(1,true)" onmouseleave="highlightSeries(1,false)">
+    <g class="series-label" transform="translate(0 338.90)" onclick="event.stopPropagation(); toggleSeries(1)" onpointerenter="hoverLabel(event,1,true)" onpointerleave="hoverLabel(event,1,false)">
       <title>Click to hide or show SHA-256</title>
       <rect x="1010.0" y="-14" width="280.0" height="40" fill="transparent"/>
       <g class="series-swatch" transform="translate(0 0)">
@@ -200,39 +202,39 @@
   </g>
   <g class="series" id="series-2" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 383.20 L 197.65 362.68 L 245.29 350.84 L 292.94 342.45 L 340.59 339.00 L 388.24 336.72 L 416.11 336.72 L 435.88 335.91 L 483.53 335.86 L 531.18 335.66 L 578.82 336.81 L 626.47 337.76 L 674.12 339.64 L 721.76 341.45 L 769.41 342.23 L 817.06 342.83 L 864.71 343.25 L 892.58 343.76 L 912.35 344.26 L 960.00 345.32 L 960.00 344.75 L 912.35 343.34 L 892.58 342.92 L 864.71 342.57 L 817.06 342.45 L 769.41 341.89 L 721.76 341.23 L 674.12 339.27 L 626.47 337.48 L 578.82 336.67 L 531.18 335.47 L 483.53 335.71 L 435.88 335.62 L 416.11 336.48 L 388.24 336.34 L 340.59 338.63 L 292.94 342.10 L 245.29 350.59 L 197.65 362.33 L 150.00 382.78 Z" fill="#8a7a1e" fill-opacity="0.16" stroke="none"/>
-      <path class="median" d="M 150.00 382.94 L 197.65 362.45 L 245.29 350.66 L 292.94 342.27 L 340.59 338.77 L 388.24 336.53 L 416.11 336.58 L 435.88 335.76 L 483.53 335.71 L 531.18 335.57 L 578.82 336.72 L 626.47 337.62 L 674.12 339.41 L 721.76 341.32 L 769.41 342.02 L 817.06 342.70 L 864.71 342.87 L 892.58 343.21 L 912.35 343.84 L 960.00 344.96" fill="none" stroke="#8a7a1e" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text class="value-label" data-size="0" x="159.00" y="371.94" fill="#8a7a1e" text-anchor="start">0.4</text>
-      <text class="value-label" data-size="3" x="292.94" y="370.27" fill="#8a7a1e" text-anchor="middle">0.8</text>
-      <text class="value-label" data-size="7" x="435.88" y="352.76" fill="#8a7a1e" text-anchor="middle">0.9</text>
-      <text class="value-label" data-size="11" x="626.47" y="326.62" fill="#8a7a1e" text-anchor="middle">0.9</text>
-      <text class="value-label" data-size="15" x="817.06" y="331.70" fill="#8a7a1e" text-anchor="middle">0.8</text>
-      <text class="value-label" data-size="19" x="951.00" y="333.96" fill="#8a7a1e" text-anchor="end">0.7</text>
+      <path class="band" d="M 150.00 383.43 L 197.65 363.01 L 245.29 350.40 L 292.94 342.02 L 340.59 339.59 L 388.24 337.05 L 416.11 336.48 L 435.88 335.95 L 483.53 335.76 L 531.18 335.62 L 578.82 336.81 L 626.47 337.80 L 674.12 339.99 L 721.76 341.58 L 769.41 342.36 L 817.06 342.87 L 864.71 343.46 L 892.58 344.05 L 912.35 344.50 L 960.00 345.49 L 960.00 344.96 L 912.35 343.80 L 892.58 343.38 L 864.71 342.92 L 817.06 342.57 L 769.41 341.89 L 721.76 341.23 L 674.12 339.59 L 626.47 337.52 L 578.82 336.67 L 531.18 335.47 L 483.53 335.62 L 435.88 335.71 L 416.11 336.29 L 388.24 336.81 L 340.59 339.32 L 292.94 341.71 L 245.29 350.03 L 197.65 362.71 L 150.00 383.02 Z" fill="#8a7a1e" fill-opacity="0.16" stroke="none"/>
+      <path class="median" d="M 150.00 383.24 L 197.65 362.83 L 245.29 350.25 L 292.94 341.80 L 340.59 339.45 L 388.24 336.91 L 416.11 336.43 L 435.88 335.81 L 483.53 335.71 L 531.18 335.57 L 578.82 336.77 L 626.47 337.71 L 674.12 339.77 L 721.76 341.37 L 769.41 342.06 L 817.06 342.74 L 864.71 343.17 L 892.58 343.72 L 912.35 344.22 L 960.00 345.28" fill="none" stroke="#8a7a1e" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="value-label" data-size="0" x="159.00" y="372.24" fill="#8a7a1e" text-anchor="start">0.4</text>
+      <text class="value-label" data-size="3" x="292.94" y="380.80" fill="#8a7a1e" text-anchor="middle">0.8</text>
+      <text class="value-label" data-size="7" x="435.88" y="352.81" fill="#8a7a1e" text-anchor="middle">0.9</text>
+      <text class="value-label" data-size="11" x="626.47" y="354.71" fill="#8a7a1e" text-anchor="middle">0.9</text>
+      <text class="value-label" data-size="15" x="817.06" y="331.74" fill="#8a7a1e" text-anchor="middle">0.8</text>
+      <text class="value-label" data-size="19" x="951.00" y="334.28" fill="#8a7a1e" text-anchor="end">0.7</text>
     </g>
-    <g class="series-label" transform="translate(0 425.74)" onclick="toggleSeries(2)" onmouseenter="highlightSeries(2,true)" onmouseleave="highlightSeries(2,false)">
+    <g class="series-label" transform="translate(0 426.90)" onclick="event.stopPropagation(); toggleSeries(2)" onpointerenter="hoverLabel(event,2,true)" onpointerleave="hoverLabel(event,2,false)">
       <title>Click to hide or show SHA-1DC</title>
       <rect x="1010.0" y="-14" width="280.0" height="40" fill="transparent"/>
       <g class="series-swatch" transform="translate(0 0)">
         <g transform="translate(1018.5 0)"><title>SHA-1 with collision detection, pure Rust: One kernel at every size.</title><circle r="4.5" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/></g>
       </g>
       <text class="series-name" x="1080.0" y="4" fill="#8a7a1e">SHA-1DC</text>
-      <text class="series-detail" x="1080.0" y="18">0.7 GB/s · 1.338 ns/B at 8 MiB</text>
+      <text class="series-detail" x="1080.0" y="18">0.7 GB/s · 1.346 ns/B at 8 MiB</text>
       <text class="series-hint" x="1080.0" y="18">hidden · click to show</text>
     </g>
     <text class="prov series-prov" x="110.0" y="776.0">SHA-1DC: sha1-checked 0.10.0 · single-threaded</text>
   </g>
   <g class="series" id="series-3" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 307.85 L 197.65 306.46 L 245.29 305.96 L 292.94 306.54 L 340.59 305.54 L 388.24 287.84 L 416.11 269.19 L 435.88 265.30 L 483.53 259.58 L 531.18 250.26 L 578.82 245.94 L 626.47 243.38 L 674.12 242.06 L 721.76 239.31 L 769.41 236.41 L 817.06 236.41 L 864.71 235.81 L 892.58 235.81 L 912.35 236.11 L 960.00 235.21 L 960.00 235.21 L 912.35 235.81 L 892.58 235.81 L 864.71 235.81 L 817.06 236.11 L 769.41 236.11 L 721.76 239.02 L 674.12 242.06 L 626.47 243.12 L 578.82 245.94 L 531.18 249.80 L 483.53 259.58 L 435.88 264.77 L 416.11 269.19 L 388.24 287.84 L 340.59 305.46 L 292.94 306.29 L 245.29 305.79 L 197.65 306.13 L 150.00 307.44 Z" fill="#7c3aed" fill-opacity="0.16" stroke="none"/>
-      <path class="median" d="M 150.00 307.60 L 197.65 306.29 L 245.29 305.88 L 292.94 306.38 L 340.59 305.46 L 388.24 287.84 L 416.11 269.19 L 435.88 265.13 L 483.53 259.58 L 531.18 250.03 L 578.82 245.94 L 626.47 243.38 L 674.12 242.06 L 721.76 239.02 L 769.41 236.11 L 817.06 236.11 L 864.71 235.81 L 892.58 235.81 L 912.35 236.11 L 960.00 235.21" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text class="value-label" data-size="0" x="159.00" y="324.60" fill="#7c3aed" text-anchor="start">1.5</text>
-      <text class="value-label" data-size="3" x="292.94" y="334.38" fill="#7c3aed" text-anchor="middle">1.5</text>
-      <text class="value-label" data-size="7" x="435.88" y="282.13" fill="#7c3aed" text-anchor="middle">3.2</text>
+      <path class="band" d="M 150.00 308.09 L 197.65 306.71 L 245.29 306.13 L 292.94 305.79 L 340.59 305.79 L 388.24 287.84 L 416.11 269.52 L 435.88 265.48 L 483.53 259.58 L 531.18 250.03 L 578.82 245.94 L 626.47 243.38 L 674.12 242.06 L 721.76 239.02 L 769.41 236.41 L 817.06 236.41 L 864.71 235.81 L 892.58 235.81 L 912.35 236.11 L 960.00 235.21 L 960.00 235.21 L 912.35 235.81 L 892.58 235.51 L 864.71 235.51 L 817.06 236.11 L 769.41 236.11 L 721.76 239.02 L 674.12 242.06 L 626.47 243.38 L 578.82 245.94 L 531.18 249.80 L 483.53 259.38 L 435.88 265.13 L 416.11 269.36 L 388.24 287.84 L 340.59 305.54 L 292.94 305.71 L 245.29 305.88 L 197.65 306.29 L 150.00 307.60 Z" fill="#7c3aed" fill-opacity="0.16" stroke="none"/>
+      <path class="median" d="M 150.00 307.77 L 197.65 306.46 L 245.29 305.96 L 292.94 305.79 L 340.59 305.63 L 388.24 287.84 L 416.11 269.36 L 435.88 265.30 L 483.53 259.58 L 531.18 249.80 L 578.82 245.94 L 626.47 243.38 L 674.12 242.06 L 721.76 239.02 L 769.41 236.11 L 817.06 236.11 L 864.71 235.81 L 892.58 235.81 L 912.35 236.11 L 960.00 235.21" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="value-label" data-size="0" x="159.00" y="335.77" fill="#7c3aed" text-anchor="start">1.5</text>
+      <text class="value-label" data-size="3" x="292.94" y="333.79" fill="#7c3aed" text-anchor="middle">1.5</text>
+      <text class="value-label" data-size="7" x="435.88" y="293.30" fill="#7c3aed" text-anchor="middle">3.2</text>
       <text class="value-label" data-size="11" x="626.47" y="260.38" fill="#7c3aed" text-anchor="middle">4.8</text>
       <text class="value-label" data-size="15" x="817.06" y="225.11" fill="#7c3aed" text-anchor="middle">5.5</text>
       <text class="value-label" data-size="19" x="951.00" y="224.21" fill="#7c3aed" text-anchor="end">5.6</text>
     </g>
-    <g class="series-label" transform="translate(0 249.74)" onclick="toggleSeries(3)" onmouseenter="highlightSeries(3,true)" onmouseleave="highlightSeries(3,false)">
+    <g class="series-label" transform="translate(0 250.90)" onclick="event.stopPropagation(); toggleSeries(3)" onpointerenter="hoverLabel(event,3,true)" onpointerleave="hoverLabel(event,3,false)">
       <title>Click to hide or show BLAKE3 servil</title>
       <rect x="1010.0" y="-14" width="280.0" height="40" fill="transparent"/>
       <g class="series-swatch" transform="translate(0 0)">
@@ -244,44 +246,44 @@
       <text class="series-detail" x="1080.0" y="18">5.6 GB/s · 0.180 ns/B at 8 MiB</text>
       <text class="series-hint" x="1080.0" y="18">hidden · click to show</text>
     </g>
-    <text class="prov series-prov" x="110.0" y="790.0">BLAKE3 servil: source https://github.com/johnservil/BLAKE3 · branch sme2-bench · commit 04c33949d24a · clean</text>
+    <text class="prov series-prov" x="110.0" y="790.0">BLAKE3 servil: source https://github.com/johnservil/BLAKE3 · branch sme2-bench · commit 604abc40e981 · clean</text>
     <text class="prov series-prov" x="110.0" y="804.0">BLAKE3 servil: single-threaded · platform SME2</text>
   </g>
   <g class="series" id="series-4" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 302.87 L 197.65 280.91 L 245.29 269.36 L 292.94 265.65 L 340.59 263.88 L 388.24 262.79 L 416.11 262.42 L 435.88 262.24 L 483.53 262.05 L 531.18 262.05 L 578.82 262.05 L 626.47 262.05 L 674.12 262.05 L 721.76 262.05 L 769.41 262.05 L 817.06 262.05 L 864.71 262.05 L 892.58 262.24 L 912.35 261.87 L 960.00 261.68 L 960.00 261.49 L 912.35 261.68 L 892.58 261.87 L 864.71 261.68 L 817.06 261.87 L 769.41 261.87 L 721.76 261.87 L 674.12 261.87 L 626.47 261.87 L 578.82 262.05 L 531.18 261.87 L 483.53 262.05 L 435.88 262.24 L 416.11 262.42 L 388.24 262.79 L 340.59 263.88 L 292.94 265.48 L 245.29 269.03 L 197.65 280.78 L 150.00 302.78 Z" fill="#c2410c" fill-opacity="0.16" stroke="none"/>
-      <path class="median" d="M 150.00 302.78 L 197.65 280.78 L 245.29 269.19 L 292.94 265.65 L 340.59 263.88 L 388.24 262.79 L 416.11 262.42 L 435.88 262.24 L 483.53 262.05 L 531.18 261.87 L 578.82 262.05 L 626.47 262.05 L 674.12 261.87 L 721.76 261.87 L 769.41 261.87 L 817.06 262.05 L 864.71 261.87 L 892.58 262.05 L 912.35 261.68 L 960.00 261.68" fill="none" stroke="#c2410c" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text class="value-label" data-size="0" x="159.00" y="291.78" fill="#c2410c" text-anchor="start">1.6</text>
-      <text class="value-label" data-size="3" x="292.94" y="254.65" fill="#c2410c" text-anchor="middle">3.2</text>
-      <text class="value-label" data-size="7" x="435.88" y="251.24" fill="#c2410c" text-anchor="middle">3.4</text>
+      <path class="band" d="M 150.00 302.96 L 197.65 280.91 L 245.29 269.19 L 292.94 266.00 L 340.59 263.88 L 388.24 262.79 L 416.11 262.61 L 435.88 262.42 L 483.53 262.24 L 531.18 262.05 L 578.82 262.05 L 626.47 262.05 L 674.12 262.24 L 721.76 262.05 L 769.41 262.05 L 817.06 262.24 L 864.71 262.05 L 892.58 262.24 L 912.35 261.87 L 960.00 261.68 L 960.00 261.49 L 912.35 261.68 L 892.58 261.87 L 864.71 261.68 L 817.06 261.87 L 769.41 261.87 L 721.76 261.87 L 674.12 261.87 L 626.47 261.87 L 578.82 261.87 L 531.18 261.87 L 483.53 262.05 L 435.88 262.24 L 416.11 262.42 L 388.24 262.79 L 340.59 263.88 L 292.94 265.65 L 245.29 268.87 L 197.65 280.78 L 150.00 302.78 Z" fill="#c2410c" fill-opacity="0.16" stroke="none"/>
+      <path class="median" d="M 150.00 302.87 L 197.65 280.78 L 245.29 269.03 L 292.94 265.83 L 340.59 263.88 L 388.24 262.79 L 416.11 262.61 L 435.88 262.42 L 483.53 262.05 L 531.18 262.05 L 578.82 262.05 L 626.47 262.05 L 674.12 262.05 L 721.76 262.05 L 769.41 261.87 L 817.06 262.05 L 864.71 261.87 L 892.58 262.05 L 912.35 261.87 L 960.00 261.49" fill="none" stroke="#c2410c" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="value-label" data-size="0" x="159.00" y="291.87" fill="#c2410c" text-anchor="start">1.6</text>
+      <text class="value-label" data-size="3" x="292.94" y="254.83" fill="#c2410c" text-anchor="middle">3.2</text>
+      <text class="value-label" data-size="7" x="435.88" y="251.42" fill="#c2410c" text-anchor="middle">3.4</text>
       <text class="value-label" data-size="11" x="626.47" y="279.05" fill="#c2410c" text-anchor="middle">3.4</text>
       <text class="value-label" data-size="15" x="817.06" y="279.05" fill="#c2410c" text-anchor="middle">3.4</text>
-      <text class="value-label" data-size="19" x="951.00" y="250.68" fill="#c2410c" text-anchor="end">3.4</text>
+      <text class="value-label" data-size="19" x="951.00" y="250.49" fill="#c2410c" text-anchor="end">3.4</text>
     </g>
-    <g class="series-label" transform="translate(0 293.74)" onclick="toggleSeries(4)" onmouseenter="highlightSeries(4,true)" onmouseleave="highlightSeries(4,false)">
+    <g class="series-label" transform="translate(0 294.90)" onclick="event.stopPropagation(); toggleSeries(4)" onpointerenter="hoverLabel(event,4,true)" onpointerleave="hoverLabel(event,4,false)">
       <title>Click to hide or show SHA-256 ring</title>
       <rect x="1010.0" y="-14" width="280.0" height="40" fill="transparent"/>
       <g class="series-swatch" transform="translate(0 0)">
         <g transform="translate(1018.5 0)"><title>sha256_block_data_order_hw (ARMv8 SHA-256 instructions, pipelined schedule): One kernel at every size.</title><circle r="4.5" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/></g>
       </g>
       <text class="series-name" x="1080.0" y="4" fill="#c2410c">SHA-256 ring</text>
-      <text class="series-detail" x="1080.0" y="18">3.4 GB/s · 0.292 ns/B at 8 MiB</text>
+      <text class="series-detail" x="1080.0" y="18">3.4 GB/s · 0.291 ns/B at 8 MiB</text>
       <text class="series-hint" x="1080.0" y="18">hidden · click to show</text>
     </g>
     <text class="prov series-prov" x="110.0" y="818.0">SHA-256 ring: ring 0.17.14 · single-threaded · sha256_block_data_order_hw (ARMv8 SHA-256 instructions, pipelined schedule)</text>
   </g>
   <g class="series" id="series-5" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 317.09 L 197.65 310.75 L 245.29 309.67 L 292.94 309.12 L 340.59 309.90 L 388.24 310.75 L 416.11 311.13 L 435.88 278.62 L 483.53 416.38 L 531.18 394.97 L 578.82 357.15 L 626.47 327.86 L 674.12 300.90 L 721.76 276.95 L 769.41 256.16 L 817.06 239.02 L 864.71 222.24 L 892.58 229.11 L 912.35 207.26 L 960.00 196.68 L 960.00 195.43 L 912.35 206.24 L 892.58 227.38 L 864.71 220.67 L 817.06 237.30 L 769.41 254.48 L 721.76 275.22 L 674.12 298.85 L 626.47 326.33 L 578.82 355.01 L 531.18 392.11 L 483.53 414.60 L 435.88 278.48 L 416.11 310.98 L 388.24 310.67 L 340.59 309.67 L 292.94 309.04 L 245.29 309.51 L 197.65 310.52 L 150.00 316.82 Z" fill="#1e3a8a" fill-opacity="0.30" stroke="none"/>
-      <path class="median" d="M 150.00 316.95 L 197.65 310.60 L 245.29 309.59 L 292.94 309.12 L 340.59 309.82 L 388.24 310.67 L 416.11 311.05 L 435.88 278.62 L 483.53 415.43 L 531.18 393.24 L 578.82 355.82 L 626.47 327.30 L 674.12 299.69 L 721.76 276.09 L 769.41 255.33 L 817.06 238.17 L 864.71 221.46 L 892.58 227.73 L 912.35 206.75 L 960.00 196.06" fill="none" stroke="#1e3a8a" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text class="value-label" data-size="0" x="159.00" y="305.95" fill="#1e3a8a" text-anchor="start">1.2</text>
-      <text class="value-label" data-size="3" x="292.94" y="359.12" fill="#1e3a8a" text-anchor="middle">1.4</text>
-      <text class="value-label" data-size="7" x="435.88" y="328.62" fill="#1e3a8a" text-anchor="middle">2.5</text>
-      <text class="value-label" data-size="11" x="626.47" y="344.30" fill="#1e3a8a" text-anchor="middle">1.0</text>
-      <text class="value-label" data-size="15" x="817.06" y="255.17" fill="#1e3a8a" text-anchor="middle">5.3</text>
-      <text class="value-label" data-size="19" x="951.00" y="185.06" fill="#1e3a8a" text-anchor="end">11</text>
+      <path class="band" d="M 150.00 317.23 L 197.65 310.44 L 245.29 309.67 L 292.94 309.12 L 340.59 308.88 L 388.24 310.75 L 416.11 311.21 L 435.88 278.90 L 483.53 416.26 L 531.18 396.51 L 578.82 368.49 L 626.47 327.08 L 674.12 298.85 L 721.76 276.23 L 769.41 258.00 L 817.06 238.45 L 864.71 223.38 L 892.58 228.08 L 912.35 208.27 L 960.00 197.29 L 960.00 196.68 L 912.35 206.24 L 892.58 227.03 L 864.71 221.85 L 817.06 236.71 L 769.41 256.16 L 721.76 274.48 L 674.12 297.30 L 626.47 325.64 L 578.82 365.48 L 531.18 392.54 L 483.53 413.41 L 435.88 278.76 L 416.11 311.05 L 388.24 310.60 L 340.59 308.73 L 292.94 308.96 L 245.29 309.51 L 197.65 310.29 L 150.00 316.89 Z" fill="#1e3a8a" fill-opacity="0.30" stroke="none"/>
+      <path class="median" d="M 150.00 317.02 L 197.65 310.37 L 245.29 309.59 L 292.94 309.04 L 340.59 308.80 L 388.24 310.67 L 416.11 311.13 L 435.88 278.90 L 483.53 414.54 L 531.18 394.82 L 578.82 367.00 L 626.47 326.45 L 674.12 297.98 L 721.76 275.22 L 769.41 256.99 L 817.06 237.30 L 864.71 222.62 L 892.58 227.73 L 912.35 207.26 L 960.00 196.68" fill="none" stroke="#1e3a8a" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="value-label" data-size="0" x="159.00" y="306.02" fill="#1e3a8a" text-anchor="start">1.2</text>
+      <text class="value-label" data-size="3" x="292.94" y="348.04" fill="#1e3a8a" text-anchor="middle">1.4</text>
+      <text class="value-label" data-size="7" x="435.88" y="328.90" fill="#1e3a8a" text-anchor="middle">2.5</text>
+      <text class="value-label" data-size="11" x="626.47" y="343.45" fill="#1e3a8a" text-anchor="middle">1.0</text>
+      <text class="value-label" data-size="15" x="817.06" y="254.30" fill="#1e3a8a" text-anchor="middle">5.3</text>
+      <text class="value-label" data-size="19" x="951.00" y="185.68" fill="#1e3a8a" text-anchor="end">11</text>
     </g>
-    <g class="series-label" transform="translate(0 205.74)" onclick="toggleSeries(5)" onmouseenter="highlightSeries(5,true)" onmouseleave="highlightSeries(5,false)">
+    <g class="series-label" transform="translate(0 206.90)" onclick="event.stopPropagation(); toggleSeries(5)" onpointerenter="hoverLabel(event,5,true)" onpointerleave="hoverLabel(event,5,false)">
       <title>Click to hide or show BLAKE3 mt</title>
       <rect x="1010.0" y="-14" width="280.0" height="40" fill="transparent"/>
       <g class="series-swatch" transform="translate(0 0)">
@@ -289,7 +291,7 @@
         <g transform="translate(1031.5 0)"><title>rayon::join over the pool: Above one SIMD width of chunks the tree splits recursively with rayon::join, and idle pool threads steal the halves.</title><path d="M 0 -5.62 L 5.62 0 L 0 5.62 L -5.62 0 Z" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/></g>
       </g>
       <text class="series-name" x="1080.0" y="4" fill="#1e3a8a">BLAKE3 mt</text>
-      <text class="series-detail" x="1080.0" y="18">11 GB/s · 0.088 ns/B at 8 MiB</text>
+      <text class="series-detail" x="1080.0" y="18">11 GB/s · 0.089 ns/B at 8 MiB</text>
       <text class="series-hint" x="1080.0" y="18">hidden · click to show</text>
     </g>
     <text class="prov series-prov" x="110.0" y="832.0">BLAKE3 mt: blake3 1.8.7 · Hasher::update_rayon · platform NEON</text>
@@ -297,16 +299,16 @@
   </g>
   <g class="series" id="series-6" data-on="true">
     <g class="marks">
-      <path class="band" d="M 150.00 308.01 L 197.65 306.38 L 245.29 305.88 L 292.94 306.38 L 340.59 305.63 L 388.24 287.72 L 416.11 269.19 L 435.88 265.48 L 483.53 259.58 L 531.18 250.26 L 578.82 246.19 L 626.47 239.59 L 674.12 214.38 L 721.76 204.14 L 769.41 186.58 L 817.06 176.01 L 864.71 169.34 L 892.58 167.28 L 912.35 165.13 L 960.00 162.90 L 960.00 161.74 L 912.35 165.13 L 892.58 166.21 L 864.71 168.32 L 817.06 176.01 L 769.41 186.58 L 721.76 203.60 L 674.12 213.93 L 626.47 238.74 L 578.82 245.94 L 531.18 250.03 L 483.53 259.38 L 435.88 264.95 L 416.11 269.03 L 388.24 287.60 L 340.59 305.46 L 292.94 306.29 L 245.29 305.71 L 197.65 306.04 L 150.00 307.60 Z" fill="#4c1d95" fill-opacity="0.16" stroke="none"/>
-      <path class="median" d="M 150.00 307.77 L 197.65 306.21 L 245.29 305.79 L 292.94 306.29 L 340.59 305.54 L 388.24 287.60 L 416.11 269.19 L 435.88 265.30 L 483.53 259.38 L 531.18 250.03 L 578.82 245.94 L 626.47 239.02 L 674.12 214.38 L 721.76 203.60 L 769.41 186.58 L 817.06 176.01 L 864.71 169.34 L 892.58 167.28 L 912.35 165.13 L 960.00 161.74" fill="none" stroke="#4c1d95" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <text class="value-label" data-size="0" x="159.00" y="335.77" fill="#4c1d95" text-anchor="start">1.5</text>
-      <text class="value-label" data-size="3" x="292.94" y="323.29" fill="#4c1d95" text-anchor="middle">1.5</text>
-      <text class="value-label" data-size="7" x="435.88" y="293.30" fill="#4c1d95" text-anchor="middle">3.2</text>
+      <path class="band" d="M 150.00 308.01 L 197.65 306.54 L 245.29 306.04 L 292.94 305.79 L 340.59 305.63 L 388.24 287.84 L 416.11 269.52 L 435.88 265.48 L 483.53 259.77 L 531.18 249.80 L 578.82 246.19 L 626.47 239.31 L 674.12 214.82 L 721.76 204.14 L 769.41 190.16 L 817.06 177.77 L 864.71 169.34 L 892.58 167.28 L 912.35 166.21 L 960.00 162.90 L 960.00 162.90 L 912.35 165.13 L 892.58 167.28 L 864.71 169.34 L 817.06 176.90 L 769.41 189.46 L 721.76 203.60 L 674.12 214.38 L 626.47 238.45 L 578.82 245.94 L 531.18 249.80 L 483.53 259.38 L 435.88 265.13 L 416.11 269.19 L 388.24 287.72 L 340.59 305.46 L 292.94 305.54 L 245.29 305.79 L 197.65 306.21 L 150.00 307.52 Z" fill="#4c1d95" fill-opacity="0.16" stroke="none"/>
+      <path class="median" d="M 150.00 307.68 L 197.65 306.38 L 245.29 305.96 L 292.94 305.63 L 340.59 305.54 L 388.24 287.72 L 416.11 269.36 L 435.88 265.30 L 483.53 259.58 L 531.18 249.80 L 578.82 245.94 L 626.47 239.02 L 674.12 214.82 L 721.76 203.60 L 769.41 189.46 L 817.06 177.77 L 864.71 169.34 L 892.58 167.28 L 912.35 165.13 L 960.00 162.90" fill="none" stroke="#4c1d95" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <text class="value-label" data-size="0" x="159.00" y="324.68" fill="#4c1d95" text-anchor="start">1.5</text>
+      <text class="value-label" data-size="3" x="292.94" y="322.63" fill="#4c1d95" text-anchor="middle">1.5</text>
+      <text class="value-label" data-size="7" x="435.88" y="282.30" fill="#4c1d95" text-anchor="middle">3.2</text>
       <text class="value-label" data-size="11" x="626.47" y="228.02" fill="#4c1d95" text-anchor="middle">5.2</text>
-      <text class="value-label" data-size="15" x="817.06" y="165.01" fill="#4c1d95" text-anchor="middle">16</text>
-      <text class="value-label" data-size="19" x="951.00" y="150.74" fill="#4c1d95" text-anchor="end">21</text>
+      <text class="value-label" data-size="15" x="817.06" y="166.77" fill="#4c1d95" text-anchor="middle">16</text>
+      <text class="value-label" data-size="19" x="951.00" y="151.90" fill="#4c1d95" text-anchor="end">21</text>
     </g>
-    <g class="series-label" transform="translate(0 161.74)" onclick="toggleSeries(6)" onmouseenter="highlightSeries(6,true)" onmouseleave="highlightSeries(6,false)">
+    <g class="series-label" transform="translate(0 162.90)" onclick="event.stopPropagation(); toggleSeries(6)" onpointerenter="hoverLabel(event,6,true)" onpointerleave="hoverLabel(event,6,false)">
       <title>Click to hide or show BLAKE3 servil mt</title>
       <rect x="1010.0" y="-14" width="280.0" height="40" fill="transparent"/>
       <g class="series-swatch" transform="translate(0 0)">
@@ -316,443 +318,443 @@
         <g transform="translate(1057.5 0)"><title>subtrees over threads: From here calls may cut the input at subtree boundaries into pieces of 8 KiB to 128 KiB, shrinking toward the end, that the calling thread and this crate&apos;s worker threads (one per CPU beyond the first) hash at once; a piece runs on the SME2 kernels while an SME unit is free and on the NEON hybrids otherwise, and the caller merges the chaining values. Concurrent callers&apos; pieces are served in turn; when callers already fill the CPUs, a new call hashes its input whole on its own thread.</title><path d="M 0 -5.85 L 5.85 2.93 L -5.85 2.93 Z" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/></g>
       </g>
       <text class="series-name" x="1080.0" y="4" fill="#4c1d95">BLAKE3 servil mt</text>
-      <text class="series-detail" x="1080.0" y="18">21 GB/s · 0.047 ns/B at 8 MiB</text>
+      <text class="series-detail" x="1080.0" y="18">21 GB/s · 0.048 ns/B at 8 MiB</text>
       <text class="series-hint" x="1080.0" y="18">hidden · click to show</text>
     </g>
-    <text class="prov series-prov" x="110.0" y="860.0">BLAKE3 servil mt: source https://github.com/johnservil/BLAKE3 · branch sme2-bench · commit 04c33949d24a · clean · hash_multithreaded</text>
+    <text class="prov series-prov" x="110.0" y="860.0">BLAKE3 servil mt: source https://github.com/johnservil/BLAKE3 · branch sme2-bench · commit 604abc40e981 · clean · hash_multithreaded</text>
     <text class="prov series-prov" x="110.0" y="874.0">BLAKE3 servil mt: multithreaded on the fork&apos;s own threads · platform SME2</text>
   </g>
   <g class="dots" id="dots-0" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 309.67)" onmouseenter="showHover(0,0)" onmouseleave="hideHover()">
+    <g class="dot" data-size="0" transform="translate(150.00 309.67)" onpointerenter="hoverDot(event,0,0)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,0)">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="1" transform="translate(197.65 310.60)" onmouseenter="showHover(0,1)" onmouseleave="hideHover()">
+    <g class="dot" data-size="1" transform="translate(197.65 310.67)" onpointerenter="hoverDot(event,0,1)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,1)">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(245.29 309.28)" onmouseenter="showHover(0,2)" onmouseleave="hideHover()">
+    <g class="dot" data-size="2" transform="translate(245.29 309.43)" onpointerenter="hoverDot(event,0,2)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,2)">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="3" transform="translate(292.94 308.88)" onmouseenter="showHover(0,3)" onmouseleave="hideHover()">
+    <g class="dot" data-size="3" transform="translate(292.94 309.04)" onpointerenter="hoverDot(event,0,3)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,3)">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="4" transform="translate(340.59 309.82)" onmouseenter="showHover(0,4)" onmouseleave="hideHover()">
+    <g class="dot" data-size="4" transform="translate(340.59 308.80)" onpointerenter="hoverDot(event,0,4)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,4)">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="5" transform="translate(388.24 310.13)" onmouseenter="showHover(0,5)" onmouseleave="hideHover()">
+    <g class="dot" data-size="5" transform="translate(388.24 310.13)" onpointerenter="hoverDot(event,0,5)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,5)">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="6" transform="translate(416.11 310.83)" onmouseenter="showHover(0,6)" onmouseleave="hideHover()">
+    <g class="dot" data-size="6" transform="translate(416.11 310.83)" onpointerenter="hoverDot(event,0,6)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,6)">
       <circle r="5.0" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="7" transform="translate(435.88 277.93)" onmouseenter="showHover(0,7)" onmouseleave="hideHover()">
+    <g class="dot" data-size="7" transform="translate(435.88 278.21)" onpointerenter="hoverDot(event,0,7)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,7)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="8" transform="translate(483.53 277.23)" onmouseenter="showHover(0,8)" onmouseleave="hideHover()">
+    <g class="dot" data-size="8" transform="translate(483.53 277.51)" onpointerenter="hoverDot(event,0,8)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,8)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="9" transform="translate(531.18 276.80)" onmouseenter="showHover(0,9)" onmouseleave="hideHover()">
+    <g class="dot" data-size="9" transform="translate(531.18 277.23)" onpointerenter="hoverDot(event,0,9)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,9)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="10" transform="translate(578.82 276.52)" onmouseenter="showHover(0,10)" onmouseleave="hideHover()">
+    <g class="dot" data-size="10" transform="translate(578.82 276.95)" onpointerenter="hoverDot(event,0,10)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,10)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(626.47 276.38)" onmouseenter="showHover(0,11)" onmouseleave="hideHover()">
+    <g class="dot" data-size="11" transform="translate(626.47 276.95)" onpointerenter="hoverDot(event,0,11)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,11)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="12" transform="translate(674.12 276.38)" onmouseenter="showHover(0,12)" onmouseleave="hideHover()">
+    <g class="dot" data-size="12" transform="translate(674.12 276.80)" onpointerenter="hoverDot(event,0,12)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,12)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="13" transform="translate(721.76 276.38)" onmouseenter="showHover(0,13)" onmouseleave="hideHover()">
+    <g class="dot" data-size="13" transform="translate(721.76 276.52)" onpointerenter="hoverDot(event,0,13)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,13)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(769.41 276.23)" onmouseenter="showHover(0,14)" onmouseleave="hideHover()">
+    <g class="dot" data-size="14" transform="translate(769.41 276.38)" onpointerenter="hoverDot(event,0,14)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,14)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(817.06 275.95)" onmouseenter="showHover(0,15)" onmouseleave="hideHover()">
+    <g class="dot" data-size="15" transform="translate(817.06 276.09)" onpointerenter="hoverDot(event,0,15)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,15)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="16" transform="translate(864.71 276.38)" onmouseenter="showHover(0,16)" onmouseleave="hideHover()">
+    <g class="dot" data-size="16" transform="translate(864.71 276.52)" onpointerenter="hoverDot(event,0,16)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,16)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="17" transform="translate(892.58 275.95)" onmouseenter="showHover(0,17)" onmouseleave="hideHover()">
+    <g class="dot" data-size="17" transform="translate(892.58 276.09)" onpointerenter="hoverDot(event,0,17)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,17)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="18" transform="translate(912.35 275.80)" onmouseenter="showHover(0,18)" onmouseleave="hideHover()">
+    <g class="dot" data-size="18" transform="translate(912.35 276.09)" onpointerenter="hoverDot(event,0,18)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,18)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="19" transform="translate(960.00 275.80)" onmouseenter="showHover(0,19)" onmouseleave="hideHover()">
+    <g class="dot" data-size="19" transform="translate(960.00 275.80)" onpointerenter="hoverDot(event,0,19)" onpointerleave="leaveDot(event)" onclick="tapDot(event,0,19)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#3b82f6" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
   <g class="dots" id="dots-1" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 288.30)" onmouseenter="showHover(1,0)" onmouseleave="hideHover()">
+    <g class="dot" data-size="0" transform="translate(150.00 288.76)" onpointerenter="hoverDot(event,1,0)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,0)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="1" transform="translate(197.65 276.38)" onmouseenter="showHover(1,1)" onmouseleave="hideHover()">
+    <g class="dot" data-size="1" transform="translate(197.65 276.66)" onpointerenter="hoverDot(event,1,1)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,1)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(245.29 271.90)" onmouseenter="showHover(1,2)" onmouseleave="hideHover()">
+    <g class="dot" data-size="2" transform="translate(245.29 272.52)" onpointerenter="hoverDot(event,1,2)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,2)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="3" transform="translate(292.94 271.59)" onmouseenter="showHover(1,3)" onmouseleave="hideHover()">
+    <g class="dot" data-size="3" transform="translate(292.94 271.59)" onpointerenter="hoverDot(event,1,3)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,3)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="4" transform="translate(340.59 270.96)" onmouseenter="showHover(1,4)" onmouseleave="hideHover()">
+    <g class="dot" data-size="4" transform="translate(340.59 270.96)" onpointerenter="hoverDot(event,1,4)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,4)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="5" transform="translate(388.24 270.64)" onmouseenter="showHover(1,5)" onmouseleave="hideHover()">
+    <g class="dot" data-size="5" transform="translate(388.24 270.64)" onpointerenter="hoverDot(event,1,5)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,5)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="6" transform="translate(416.11 270.49)" onmouseenter="showHover(1,6)" onmouseleave="hideHover()">
+    <g class="dot" data-size="6" transform="translate(416.11 270.64)" onpointerenter="hoverDot(event,1,6)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,6)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="7" transform="translate(435.88 270.64)" onmouseenter="showHover(1,7)" onmouseleave="hideHover()">
+    <g class="dot" data-size="7" transform="translate(435.88 270.64)" onpointerenter="hoverDot(event,1,7)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,7)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="8" transform="translate(483.53 270.49)" onmouseenter="showHover(1,8)" onmouseleave="hideHover()">
+    <g class="dot" data-size="8" transform="translate(483.53 270.64)" onpointerenter="hoverDot(event,1,8)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,8)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="9" transform="translate(531.18 270.49)" onmouseenter="showHover(1,9)" onmouseleave="hideHover()">
+    <g class="dot" data-size="9" transform="translate(531.18 270.49)" onpointerenter="hoverDot(event,1,9)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,9)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="10" transform="translate(578.82 270.64)" onmouseenter="showHover(1,10)" onmouseleave="hideHover()">
+    <g class="dot" data-size="10" transform="translate(578.82 270.64)" onpointerenter="hoverDot(event,1,10)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,10)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(626.47 270.64)" onmouseenter="showHover(1,11)" onmouseleave="hideHover()">
+    <g class="dot" data-size="11" transform="translate(626.47 270.80)" onpointerenter="hoverDot(event,1,11)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,11)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="12" transform="translate(674.12 270.80)" onmouseenter="showHover(1,12)" onmouseleave="hideHover()">
+    <g class="dot" data-size="12" transform="translate(674.12 270.64)" onpointerenter="hoverDot(event,1,12)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,12)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="13" transform="translate(721.76 270.80)" onmouseenter="showHover(1,13)" onmouseleave="hideHover()">
+    <g class="dot" data-size="13" transform="translate(721.76 270.64)" onpointerenter="hoverDot(event,1,13)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,13)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(769.41 270.80)" onmouseenter="showHover(1,14)" onmouseleave="hideHover()">
+    <g class="dot" data-size="14" transform="translate(769.41 270.80)" onpointerenter="hoverDot(event,1,14)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,14)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(817.06 270.49)" onmouseenter="showHover(1,15)" onmouseleave="hideHover()">
+    <g class="dot" data-size="15" transform="translate(817.06 270.64)" onpointerenter="hoverDot(event,1,15)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,15)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="16" transform="translate(864.71 270.96)" onmouseenter="showHover(1,16)" onmouseleave="hideHover()">
+    <g class="dot" data-size="16" transform="translate(864.71 270.96)" onpointerenter="hoverDot(event,1,16)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,16)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="17" transform="translate(892.58 270.64)" onmouseenter="showHover(1,17)" onmouseleave="hideHover()">
+    <g class="dot" data-size="17" transform="translate(892.58 270.64)" onpointerenter="hoverDot(event,1,17)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,17)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="18" transform="translate(912.35 270.33)" onmouseenter="showHover(1,18)" onmouseleave="hideHover()">
+    <g class="dot" data-size="18" transform="translate(912.35 270.33)" onpointerenter="hoverDot(event,1,18)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,18)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="19" transform="translate(960.00 270.17)" onmouseenter="showHover(1,19)" onmouseleave="hideHover()">
+    <g class="dot" data-size="19" transform="translate(960.00 270.17)" onpointerenter="hoverDot(event,1,19)" onpointerleave="leaveDot(event)" onclick="tapDot(event,1,19)">
       <circle r="5.0" fill="#e07a45" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
   <g class="dots" id="dots-2" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 382.94)" onmouseenter="showHover(2,0)" onmouseleave="hideHover()">
+    <g class="dot" data-size="0" transform="translate(150.00 383.24)" onpointerenter="hoverDot(event,2,0)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,0)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="1" transform="translate(197.65 362.45)" onmouseenter="showHover(2,1)" onmouseleave="hideHover()">
+    <g class="dot" data-size="1" transform="translate(197.65 362.83)" onpointerenter="hoverDot(event,2,1)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,1)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(245.29 350.66)" onmouseenter="showHover(2,2)" onmouseleave="hideHover()">
+    <g class="dot" data-size="2" transform="translate(245.29 350.25)" onpointerenter="hoverDot(event,2,2)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,2)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="3" transform="translate(292.94 342.27)" onmouseenter="showHover(2,3)" onmouseleave="hideHover()">
+    <g class="dot" data-size="3" transform="translate(292.94 341.80)" onpointerenter="hoverDot(event,2,3)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,3)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="4" transform="translate(340.59 338.77)" onmouseenter="showHover(2,4)" onmouseleave="hideHover()">
+    <g class="dot" data-size="4" transform="translate(340.59 339.45)" onpointerenter="hoverDot(event,2,4)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,4)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="5" transform="translate(388.24 336.53)" onmouseenter="showHover(2,5)" onmouseleave="hideHover()">
+    <g class="dot" data-size="5" transform="translate(388.24 336.91)" onpointerenter="hoverDot(event,2,5)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,5)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="6" transform="translate(416.11 336.58)" onmouseenter="showHover(2,6)" onmouseleave="hideHover()">
+    <g class="dot" data-size="6" transform="translate(416.11 336.43)" onpointerenter="hoverDot(event,2,6)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,6)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="7" transform="translate(435.88 335.76)" onmouseenter="showHover(2,7)" onmouseleave="hideHover()">
+    <g class="dot" data-size="7" transform="translate(435.88 335.81)" onpointerenter="hoverDot(event,2,7)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,7)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="8" transform="translate(483.53 335.71)" onmouseenter="showHover(2,8)" onmouseleave="hideHover()">
+    <g class="dot" data-size="8" transform="translate(483.53 335.71)" onpointerenter="hoverDot(event,2,8)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,8)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="9" transform="translate(531.18 335.57)" onmouseenter="showHover(2,9)" onmouseleave="hideHover()">
+    <g class="dot" data-size="9" transform="translate(531.18 335.57)" onpointerenter="hoverDot(event,2,9)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,9)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="10" transform="translate(578.82 336.72)" onmouseenter="showHover(2,10)" onmouseleave="hideHover()">
+    <g class="dot" data-size="10" transform="translate(578.82 336.77)" onpointerenter="hoverDot(event,2,10)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,10)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(626.47 337.62)" onmouseenter="showHover(2,11)" onmouseleave="hideHover()">
+    <g class="dot" data-size="11" transform="translate(626.47 337.71)" onpointerenter="hoverDot(event,2,11)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,11)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="12" transform="translate(674.12 339.41)" onmouseenter="showHover(2,12)" onmouseleave="hideHover()">
+    <g class="dot" data-size="12" transform="translate(674.12 339.77)" onpointerenter="hoverDot(event,2,12)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,12)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="13" transform="translate(721.76 341.32)" onmouseenter="showHover(2,13)" onmouseleave="hideHover()">
+    <g class="dot" data-size="13" transform="translate(721.76 341.37)" onpointerenter="hoverDot(event,2,13)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,13)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(769.41 342.02)" onmouseenter="showHover(2,14)" onmouseleave="hideHover()">
+    <g class="dot" data-size="14" transform="translate(769.41 342.06)" onpointerenter="hoverDot(event,2,14)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,14)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(817.06 342.70)" onmouseenter="showHover(2,15)" onmouseleave="hideHover()">
+    <g class="dot" data-size="15" transform="translate(817.06 342.74)" onpointerenter="hoverDot(event,2,15)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,15)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="16" transform="translate(864.71 342.87)" onmouseenter="showHover(2,16)" onmouseleave="hideHover()">
+    <g class="dot" data-size="16" transform="translate(864.71 343.17)" onpointerenter="hoverDot(event,2,16)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,16)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="17" transform="translate(892.58 343.21)" onmouseenter="showHover(2,17)" onmouseleave="hideHover()">
+    <g class="dot" data-size="17" transform="translate(892.58 343.72)" onpointerenter="hoverDot(event,2,17)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,17)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="18" transform="translate(912.35 343.84)" onmouseenter="showHover(2,18)" onmouseleave="hideHover()">
+    <g class="dot" data-size="18" transform="translate(912.35 344.22)" onpointerenter="hoverDot(event,2,18)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,18)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="19" transform="translate(960.00 344.96)" onmouseenter="showHover(2,19)" onmouseleave="hideHover()">
+    <g class="dot" data-size="19" transform="translate(960.00 345.28)" onpointerenter="hoverDot(event,2,19)" onpointerleave="leaveDot(event)" onclick="tapDot(event,2,19)">
       <circle r="5.0" fill="#8a7a1e" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
   <g class="dots" id="dots-3" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 307.60)" onmouseenter="showHover(3,0)" onmouseleave="hideHover()">
+    <g class="dot" data-size="0" transform="translate(150.00 307.77)" onpointerenter="hoverDot(event,3,0)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,0)">
       <circle r="5.0" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="1" transform="translate(197.65 306.29)" onmouseenter="showHover(3,1)" onmouseleave="hideHover()">
+    <g class="dot" data-size="1" transform="translate(197.65 306.46)" onpointerenter="hoverDot(event,3,1)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,1)">
       <circle r="5.0" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(245.29 305.88)" onmouseenter="showHover(3,2)" onmouseleave="hideHover()">
+    <g class="dot" data-size="2" transform="translate(245.29 305.96)" onpointerenter="hoverDot(event,3,2)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,2)">
       <circle r="5.0" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="3" transform="translate(292.94 306.38)" onmouseenter="showHover(3,3)" onmouseleave="hideHover()">
+    <g class="dot" data-size="3" transform="translate(292.94 305.79)" onpointerenter="hoverDot(event,3,3)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,3)">
       <circle r="5.0" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="4" transform="translate(340.59 305.46)" onmouseenter="showHover(3,4)" onmouseleave="hideHover()">
+    <g class="dot" data-size="4" transform="translate(340.59 305.63)" onpointerenter="hoverDot(event,3,4)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,4)">
       <circle r="5.0" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="5" transform="translate(388.24 287.84)" onmouseenter="showHover(3,5)" onmouseleave="hideHover()">
+    <g class="dot" data-size="5" transform="translate(388.24 287.84)" onpointerenter="hoverDot(event,3,5)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,5)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="6" transform="translate(416.11 269.19)" onmouseenter="showHover(3,6)" onmouseleave="hideHover()">
+    <g class="dot" data-size="6" transform="translate(416.11 269.36)" onpointerenter="hoverDot(event,3,6)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,6)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="7" transform="translate(435.88 265.13)" onmouseenter="showHover(3,7)" onmouseleave="hideHover()">
+    <g class="dot" data-size="7" transform="translate(435.88 265.30)" onpointerenter="hoverDot(event,3,7)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,7)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="8" transform="translate(483.53 259.58)" onmouseenter="showHover(3,8)" onmouseleave="hideHover()">
+    <g class="dot" data-size="8" transform="translate(483.53 259.58)" onpointerenter="hoverDot(event,3,8)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,8)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="9" transform="translate(531.18 250.03)" onmouseenter="showHover(3,9)" onmouseleave="hideHover()">
+    <g class="dot" data-size="9" transform="translate(531.18 249.80)" onpointerenter="hoverDot(event,3,9)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,9)">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="10" transform="translate(578.82 245.94)" onmouseenter="showHover(3,10)" onmouseleave="hideHover()">
+    <g class="dot" data-size="10" transform="translate(578.82 245.94)" onpointerenter="hoverDot(event,3,10)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,10)">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(626.47 243.38)" onmouseenter="showHover(3,11)" onmouseleave="hideHover()">
+    <g class="dot" data-size="11" transform="translate(626.47 243.38)" onpointerenter="hoverDot(event,3,11)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,11)">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="12" transform="translate(674.12 242.06)" onmouseenter="showHover(3,12)" onmouseleave="hideHover()">
+    <g class="dot" data-size="12" transform="translate(674.12 242.06)" onpointerenter="hoverDot(event,3,12)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,12)">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="13" transform="translate(721.76 239.02)" onmouseenter="showHover(3,13)" onmouseleave="hideHover()">
+    <g class="dot" data-size="13" transform="translate(721.76 239.02)" onpointerenter="hoverDot(event,3,13)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,13)">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(769.41 236.11)" onmouseenter="showHover(3,14)" onmouseleave="hideHover()">
+    <g class="dot" data-size="14" transform="translate(769.41 236.11)" onpointerenter="hoverDot(event,3,14)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,14)">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(817.06 236.11)" onmouseenter="showHover(3,15)" onmouseleave="hideHover()">
+    <g class="dot" data-size="15" transform="translate(817.06 236.11)" onpointerenter="hoverDot(event,3,15)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,15)">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="16" transform="translate(864.71 235.81)" onmouseenter="showHover(3,16)" onmouseleave="hideHover()">
+    <g class="dot" data-size="16" transform="translate(864.71 235.81)" onpointerenter="hoverDot(event,3,16)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,16)">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="17" transform="translate(892.58 235.81)" onmouseenter="showHover(3,17)" onmouseleave="hideHover()">
+    <g class="dot" data-size="17" transform="translate(892.58 235.81)" onpointerenter="hoverDot(event,3,17)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,17)">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="18" transform="translate(912.35 236.11)" onmouseenter="showHover(3,18)" onmouseleave="hideHover()">
+    <g class="dot" data-size="18" transform="translate(912.35 236.11)" onpointerenter="hoverDot(event,3,18)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,18)">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="19" transform="translate(960.00 235.21)" onmouseenter="showHover(3,19)" onmouseleave="hideHover()">
+    <g class="dot" data-size="19" transform="translate(960.00 235.21)" onpointerenter="hoverDot(event,3,19)" onpointerleave="leaveDot(event)" onclick="tapDot(event,3,19)">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#7c3aed" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
   <g class="dots" id="dots-4" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 302.78)" onmouseenter="showHover(4,0)" onmouseleave="hideHover()">
+    <g class="dot" data-size="0" transform="translate(150.00 302.87)" onpointerenter="hoverDot(event,4,0)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,0)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="1" transform="translate(197.65 280.78)" onmouseenter="showHover(4,1)" onmouseleave="hideHover()">
+    <g class="dot" data-size="1" transform="translate(197.65 280.78)" onpointerenter="hoverDot(event,4,1)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,1)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(245.29 269.19)" onmouseenter="showHover(4,2)" onmouseleave="hideHover()">
+    <g class="dot" data-size="2" transform="translate(245.29 269.03)" onpointerenter="hoverDot(event,4,2)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,2)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="3" transform="translate(292.94 265.65)" onmouseenter="showHover(4,3)" onmouseleave="hideHover()">
+    <g class="dot" data-size="3" transform="translate(292.94 265.83)" onpointerenter="hoverDot(event,4,3)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,3)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="4" transform="translate(340.59 263.88)" onmouseenter="showHover(4,4)" onmouseleave="hideHover()">
+    <g class="dot" data-size="4" transform="translate(340.59 263.88)" onpointerenter="hoverDot(event,4,4)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,4)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="5" transform="translate(388.24 262.79)" onmouseenter="showHover(4,5)" onmouseleave="hideHover()">
+    <g class="dot" data-size="5" transform="translate(388.24 262.79)" onpointerenter="hoverDot(event,4,5)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,5)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="6" transform="translate(416.11 262.42)" onmouseenter="showHover(4,6)" onmouseleave="hideHover()">
+    <g class="dot" data-size="6" transform="translate(416.11 262.61)" onpointerenter="hoverDot(event,4,6)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,6)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="7" transform="translate(435.88 262.24)" onmouseenter="showHover(4,7)" onmouseleave="hideHover()">
+    <g class="dot" data-size="7" transform="translate(435.88 262.42)" onpointerenter="hoverDot(event,4,7)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,7)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="8" transform="translate(483.53 262.05)" onmouseenter="showHover(4,8)" onmouseleave="hideHover()">
+    <g class="dot" data-size="8" transform="translate(483.53 262.05)" onpointerenter="hoverDot(event,4,8)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,8)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="9" transform="translate(531.18 261.87)" onmouseenter="showHover(4,9)" onmouseleave="hideHover()">
+    <g class="dot" data-size="9" transform="translate(531.18 262.05)" onpointerenter="hoverDot(event,4,9)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,9)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="10" transform="translate(578.82 262.05)" onmouseenter="showHover(4,10)" onmouseleave="hideHover()">
+    <g class="dot" data-size="10" transform="translate(578.82 262.05)" onpointerenter="hoverDot(event,4,10)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,10)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(626.47 262.05)" onmouseenter="showHover(4,11)" onmouseleave="hideHover()">
+    <g class="dot" data-size="11" transform="translate(626.47 262.05)" onpointerenter="hoverDot(event,4,11)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,11)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="12" transform="translate(674.12 261.87)" onmouseenter="showHover(4,12)" onmouseleave="hideHover()">
+    <g class="dot" data-size="12" transform="translate(674.12 262.05)" onpointerenter="hoverDot(event,4,12)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,12)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="13" transform="translate(721.76 261.87)" onmouseenter="showHover(4,13)" onmouseleave="hideHover()">
+    <g class="dot" data-size="13" transform="translate(721.76 262.05)" onpointerenter="hoverDot(event,4,13)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,13)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(769.41 261.87)" onmouseenter="showHover(4,14)" onmouseleave="hideHover()">
+    <g class="dot" data-size="14" transform="translate(769.41 261.87)" onpointerenter="hoverDot(event,4,14)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,14)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(817.06 262.05)" onmouseenter="showHover(4,15)" onmouseleave="hideHover()">
+    <g class="dot" data-size="15" transform="translate(817.06 262.05)" onpointerenter="hoverDot(event,4,15)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,15)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="16" transform="translate(864.71 261.87)" onmouseenter="showHover(4,16)" onmouseleave="hideHover()">
+    <g class="dot" data-size="16" transform="translate(864.71 261.87)" onpointerenter="hoverDot(event,4,16)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,16)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="17" transform="translate(892.58 262.05)" onmouseenter="showHover(4,17)" onmouseleave="hideHover()">
+    <g class="dot" data-size="17" transform="translate(892.58 262.05)" onpointerenter="hoverDot(event,4,17)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,17)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="18" transform="translate(912.35 261.68)" onmouseenter="showHover(4,18)" onmouseleave="hideHover()">
+    <g class="dot" data-size="18" transform="translate(912.35 261.87)" onpointerenter="hoverDot(event,4,18)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,18)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="19" transform="translate(960.00 261.68)" onmouseenter="showHover(4,19)" onmouseleave="hideHover()">
+    <g class="dot" data-size="19" transform="translate(960.00 261.49)" onpointerenter="hoverDot(event,4,19)" onpointerleave="leaveDot(event)" onclick="tapDot(event,4,19)">
       <circle r="5.0" fill="#c2410c" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
   <g class="dots" id="dots-5" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 316.95)" onmouseenter="showHover(5,0)" onmouseleave="hideHover()">
+    <g class="dot" data-size="0" transform="translate(150.00 317.02)" onpointerenter="hoverDot(event,5,0)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,0)">
       <circle r="5.0" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="1" transform="translate(197.65 310.60)" onmouseenter="showHover(5,1)" onmouseleave="hideHover()">
+    <g class="dot" data-size="1" transform="translate(197.65 310.37)" onpointerenter="hoverDot(event,5,1)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,1)">
       <circle r="5.0" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(245.29 309.59)" onmouseenter="showHover(5,2)" onmouseleave="hideHover()">
+    <g class="dot" data-size="2" transform="translate(245.29 309.59)" onpointerenter="hoverDot(event,5,2)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,2)">
       <circle r="5.0" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="3" transform="translate(292.94 309.12)" onmouseenter="showHover(5,3)" onmouseleave="hideHover()">
+    <g class="dot" data-size="3" transform="translate(292.94 309.04)" onpointerenter="hoverDot(event,5,3)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,3)">
       <circle r="5.0" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="4" transform="translate(340.59 309.82)" onmouseenter="showHover(5,4)" onmouseleave="hideHover()">
+    <g class="dot" data-size="4" transform="translate(340.59 308.80)" onpointerenter="hoverDot(event,5,4)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,4)">
       <circle r="5.0" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="5" transform="translate(388.24 310.67)" onmouseenter="showHover(5,5)" onmouseleave="hideHover()">
+    <g class="dot" data-size="5" transform="translate(388.24 310.67)" onpointerenter="hoverDot(event,5,5)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,5)">
       <circle r="5.0" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="6" transform="translate(416.11 311.05)" onmouseenter="showHover(5,6)" onmouseleave="hideHover()">
+    <g class="dot" data-size="6" transform="translate(416.11 311.13)" onpointerenter="hoverDot(event,5,6)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,6)">
       <circle r="5.0" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="7" transform="translate(435.88 278.62)" onmouseenter="showHover(5,7)" onmouseleave="hideHover()">
+    <g class="dot" data-size="7" transform="translate(435.88 278.90)" onpointerenter="hoverDot(event,5,7)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,7)">
       <circle r="5.0" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="8" transform="translate(483.53 415.43)" onmouseenter="showHover(5,8)" onmouseleave="hideHover()">
+    <g class="dot" data-size="8" transform="translate(483.53 414.54)" onpointerenter="hoverDot(event,5,8)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,8)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="9" transform="translate(531.18 393.24)" onmouseenter="showHover(5,9)" onmouseleave="hideHover()">
+    <g class="dot" data-size="9" transform="translate(531.18 394.82)" onpointerenter="hoverDot(event,5,9)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,9)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="10" transform="translate(578.82 355.82)" onmouseenter="showHover(5,10)" onmouseleave="hideHover()">
+    <g class="dot" data-size="10" transform="translate(578.82 367.00)" onpointerenter="hoverDot(event,5,10)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,10)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(626.47 327.30)" onmouseenter="showHover(5,11)" onmouseleave="hideHover()">
+    <g class="dot" data-size="11" transform="translate(626.47 326.45)" onpointerenter="hoverDot(event,5,11)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,11)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="12" transform="translate(674.12 299.69)" onmouseenter="showHover(5,12)" onmouseleave="hideHover()">
+    <g class="dot" data-size="12" transform="translate(674.12 297.98)" onpointerenter="hoverDot(event,5,12)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,12)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="13" transform="translate(721.76 276.09)" onmouseenter="showHover(5,13)" onmouseleave="hideHover()">
+    <g class="dot" data-size="13" transform="translate(721.76 275.22)" onpointerenter="hoverDot(event,5,13)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,13)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(769.41 255.33)" onmouseenter="showHover(5,14)" onmouseleave="hideHover()">
+    <g class="dot" data-size="14" transform="translate(769.41 256.99)" onpointerenter="hoverDot(event,5,14)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,14)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(817.06 238.17)" onmouseenter="showHover(5,15)" onmouseleave="hideHover()">
+    <g class="dot" data-size="15" transform="translate(817.06 237.30)" onpointerenter="hoverDot(event,5,15)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,15)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="16" transform="translate(864.71 221.46)" onmouseenter="showHover(5,16)" onmouseleave="hideHover()">
+    <g class="dot" data-size="16" transform="translate(864.71 222.62)" onpointerenter="hoverDot(event,5,16)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,16)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="17" transform="translate(892.58 227.73)" onmouseenter="showHover(5,17)" onmouseleave="hideHover()">
+    <g class="dot" data-size="17" transform="translate(892.58 227.73)" onpointerenter="hoverDot(event,5,17)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,17)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="18" transform="translate(912.35 206.75)" onmouseenter="showHover(5,18)" onmouseleave="hideHover()">
+    <g class="dot" data-size="18" transform="translate(912.35 207.26)" onpointerenter="hoverDot(event,5,18)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,18)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="19" transform="translate(960.00 196.06)" onmouseenter="showHover(5,19)" onmouseleave="hideHover()">
+    <g class="dot" data-size="19" transform="translate(960.00 196.68)" onpointerenter="hoverDot(event,5,19)" onpointerleave="leaveDot(event)" onclick="tapDot(event,5,19)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#1e3a8a" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
   <g class="dots" id="dots-6" data-on="true">
-    <g class="dot" data-size="0" transform="translate(150.00 307.77)" onmouseenter="showHover(6,0)" onmouseleave="hideHover()">
+    <g class="dot" data-size="0" transform="translate(150.00 307.68)" onpointerenter="hoverDot(event,6,0)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,0)">
       <circle r="5.0" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="1" transform="translate(197.65 306.21)" onmouseenter="showHover(6,1)" onmouseleave="hideHover()">
+    <g class="dot" data-size="1" transform="translate(197.65 306.38)" onpointerenter="hoverDot(event,6,1)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,1)">
       <circle r="5.0" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="2" transform="translate(245.29 305.79)" onmouseenter="showHover(6,2)" onmouseleave="hideHover()">
+    <g class="dot" data-size="2" transform="translate(245.29 305.96)" onpointerenter="hoverDot(event,6,2)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,2)">
       <circle r="5.0" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="3" transform="translate(292.94 306.29)" onmouseenter="showHover(6,3)" onmouseleave="hideHover()">
+    <g class="dot" data-size="3" transform="translate(292.94 305.63)" onpointerenter="hoverDot(event,6,3)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,3)">
       <circle r="5.0" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="4" transform="translate(340.59 305.54)" onmouseenter="showHover(6,4)" onmouseleave="hideHover()">
+    <g class="dot" data-size="4" transform="translate(340.59 305.54)" onpointerenter="hoverDot(event,6,4)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,4)">
       <circle r="5.0" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="5" transform="translate(388.24 287.60)" onmouseenter="showHover(6,5)" onmouseleave="hideHover()">
+    <g class="dot" data-size="5" transform="translate(388.24 287.72)" onpointerenter="hoverDot(event,6,5)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,5)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="6" transform="translate(416.11 269.19)" onmouseenter="showHover(6,6)" onmouseleave="hideHover()">
+    <g class="dot" data-size="6" transform="translate(416.11 269.36)" onpointerenter="hoverDot(event,6,6)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,6)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="7" transform="translate(435.88 265.30)" onmouseenter="showHover(6,7)" onmouseleave="hideHover()">
+    <g class="dot" data-size="7" transform="translate(435.88 265.30)" onpointerenter="hoverDot(event,6,7)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,7)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="8" transform="translate(483.53 259.38)" onmouseenter="showHover(6,8)" onmouseleave="hideHover()">
+    <g class="dot" data-size="8" transform="translate(483.53 259.58)" onpointerenter="hoverDot(event,6,8)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,8)">
       <path d="M 0 -6.25 L 6.25 0 L 0 6.25 L -6.25 0 Z" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="9" transform="translate(531.18 250.03)" onmouseenter="showHover(6,9)" onmouseleave="hideHover()">
+    <g class="dot" data-size="9" transform="translate(531.18 249.80)" onpointerenter="hoverDot(event,6,9)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,9)">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="10" transform="translate(578.82 245.94)" onmouseenter="showHover(6,10)" onmouseleave="hideHover()">
+    <g class="dot" data-size="10" transform="translate(578.82 245.94)" onpointerenter="hoverDot(event,6,10)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,10)">
       <rect x="-4.50" y="-4.50" width="9.00" height="9.00" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="11" transform="translate(626.47 239.02)" onmouseenter="showHover(6,11)" onmouseleave="hideHover()">
+    <g class="dot" data-size="11" transform="translate(626.47 239.02)" onpointerenter="hoverDot(event,6,11)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,11)">
       <path d="M 0 -6.50 L 6.50 3.25 L -6.50 3.25 Z" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="12" transform="translate(674.12 214.38)" onmouseenter="showHover(6,12)" onmouseleave="hideHover()">
+    <g class="dot" data-size="12" transform="translate(674.12 214.82)" onpointerenter="hoverDot(event,6,12)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,12)">
       <path d="M 0 -6.50 L 6.50 3.25 L -6.50 3.25 Z" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="13" transform="translate(721.76 203.60)" onmouseenter="showHover(6,13)" onmouseleave="hideHover()">
+    <g class="dot" data-size="13" transform="translate(721.76 203.60)" onpointerenter="hoverDot(event,6,13)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,13)">
       <path d="M 0 -6.50 L 6.50 3.25 L -6.50 3.25 Z" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="14" transform="translate(769.41 186.58)" onmouseenter="showHover(6,14)" onmouseleave="hideHover()">
+    <g class="dot" data-size="14" transform="translate(769.41 189.46)" onpointerenter="hoverDot(event,6,14)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,14)">
       <path d="M 0 -6.50 L 6.50 3.25 L -6.50 3.25 Z" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="15" transform="translate(817.06 176.01)" onmouseenter="showHover(6,15)" onmouseleave="hideHover()">
+    <g class="dot" data-size="15" transform="translate(817.06 177.77)" onpointerenter="hoverDot(event,6,15)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,15)">
       <path d="M 0 -6.50 L 6.50 3.25 L -6.50 3.25 Z" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="16" transform="translate(864.71 169.34)" onmouseenter="showHover(6,16)" onmouseleave="hideHover()">
+    <g class="dot" data-size="16" transform="translate(864.71 169.34)" onpointerenter="hoverDot(event,6,16)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,16)">
       <path d="M 0 -6.50 L 6.50 3.25 L -6.50 3.25 Z" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="17" transform="translate(892.58 167.28)" onmouseenter="showHover(6,17)" onmouseleave="hideHover()">
+    <g class="dot" data-size="17" transform="translate(892.58 167.28)" onpointerenter="hoverDot(event,6,17)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,17)">
       <path d="M 0 -6.50 L 6.50 3.25 L -6.50 3.25 Z" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="18" transform="translate(912.35 165.13)" onmouseenter="showHover(6,18)" onmouseleave="hideHover()">
+    <g class="dot" data-size="18" transform="translate(912.35 165.13)" onpointerenter="hoverDot(event,6,18)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,18)">
       <path d="M 0 -6.50 L 6.50 3.25 L -6.50 3.25 Z" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
-    <g class="dot" data-size="19" transform="translate(960.00 161.74)" onmouseenter="showHover(6,19)" onmouseleave="hideHover()">
+    <g class="dot" data-size="19" transform="translate(960.00 162.90)" onpointerenter="hoverDot(event,6,19)" onpointerleave="leaveDot(event)" onclick="tapDot(event,6,19)">
       <path d="M 0 -6.50 L 6.50 3.25 L -6.50 3.25 Z" fill="#4c1d95" stroke="#fdfdfc" stroke-width="1.5"/>
     </g>
   </g>
@@ -770,12 +772,12 @@
     <g id="hover-body"></g>
   </g>
   <metadata>
-    timestamp: 2026-09-22 15:29:45 UTC
+    timestamp: 2026-09-22 17:18:13 UTC
     git source: https://github.com/johnservil/bench-hashes
-    git commit: 2134c1c30301180b1facc453e10b308ab77b45b6
-    git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+62 commits)
-    git clean status: dirty-17297759ca5d6605b3b6e41c46f4a3a73c6e5cc1f51fd6666fa6b4067e264eb5
-    bench-hashes version: 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f
+    git commit: db0284883642c40cc4b1426c477540cf77a929c7
+    git tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+66 commits)
+    git clean status: clean
+    bench-hashes version: 0.5.0
     CPU type: Apple M4 Max
     OS type: darwin25
     Rust compiler: rustc 1.98.0-nightly (f428d123a 2026-06-19)
@@ -787,30 +789,30 @@
     SHA-256 source: sha2 0.11.0; crate archive SHA-256 446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4; source registry+https://github.com/rust-lang/crates.io-index
     SHA-1DC source: sha1-checked 0.10.0; crate archive SHA-256 89f599ac0c323ebb1c6082821a54962b839832b03984598375bff3975b804423; source registry+https://github.com/rust-lang/crates.io-index
     SHA-256 ring source: ring 0.17.14; crate archive SHA-256 a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7; source registry+https://github.com/rust-lang/crates.io-index
-    BLAKE3 servil source: blake3-servil (path dependency ..); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit 04c33949d24a04c81a45cf46ae07a879367691f5; clean
+    BLAKE3 servil source: blake3-servil (path dependency ..); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit 604abc40e98195c721f701a63dea46e73dce232b; clean
   </metadata>
   <line x1="110.0" y1="540.0" x2="1190.0" y2="540.0" class="divider"/>
   <text x="110.0" y="560.0" class="prov-head">PROVENANCE</text>
-  <g class="prov-head-row" data-cat="run" data-name="Run" data-summary="2026-09-22 15:29:45 UTC · bench-hashes 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f" onclick="toggleProv('run')">
-    <text class="prov-head" x="110.0" y="580.0">▾ Run — 2026-09-22 15:29:45 UTC · bench-hashes 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f</text>
+  <g class="prov-head-row" data-cat="run" data-name="Run" data-summary="2026-09-22 17:18:13 UTC · bench-hashes 0.5.0" onclick="event.stopPropagation(); toggleProv('run')">
+    <text class="prov-head" x="110.0" y="580.0">▾ Run — 2026-09-22 17:18:13 UTC · bench-hashes 0.5.0</text>
   </g>
-  <text class="prov prov-shared" data-cat="run" x="110.0" y="594.0">Run: 2026-09-22 15:29:45 UTC · bench-hashes 0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f</text>
+  <text class="prov prov-shared" data-cat="run" x="110.0" y="594.0">Run: 2026-09-22 17:18:13 UTC · bench-hashes 0.5.0</text>
   <text class="prov prov-shared" data-cat="run" x="110.0" y="608.0">Contenders: every contender available on this machine</text>
-  <text class="prov prov-shared" data-cat="run" x="110.0" y="622.0">Tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+62 commits) · Working tree: dirty-17297759ca5d6605b3b6e41c46f4a3a73c6e5cc1f51fd6666fa6b4067e264eb5</text>
-  <g class="prov-head-row" data-cat="machine" data-name="Machine" data-summary="Apple M4 Max · 16 CPUs · darwin25" onclick="toggleProv('machine')">
+  <text class="prov prov-shared" data-cat="run" x="110.0" y="622.0">Tag: v0.5.0+7b47c3b7a25176eb5c7678ad8aac56c72ee7556f (+66 commits) · Working tree: clean</text>
+  <g class="prov-head-row" data-cat="machine" data-name="Machine" data-summary="Apple M4 Max · 16 CPUs · darwin25" onclick="event.stopPropagation(); toggleProv('machine')">
     <text class="prov-head" x="110.0" y="636.0">▾ Machine — Apple M4 Max · 16 CPUs · darwin25</text>
   </g>
   <text class="prov prov-shared" data-cat="machine" x="110.0" y="650.0">Machine: Apple M4 Max · 16 logical CPUs · darwin25</text>
   <text class="prov prov-shared" data-cat="machine" x="110.0" y="664.0">Toolchain: rustc 1.98.0-nightly (f428d123a 2026-06-19) · aarch64-apple-darwin</text>
   <text class="prov prov-shared" data-cat="machine" x="110.0" y="678.0">Sample clock: std::time::Instant → CLOCK_UPTIME_RAW (mach_absolute_time; stops during sleep, no NTP slew)</text>
   <text class="prov prov-shared" data-cat="machine" x="110.0" y="692.0">Reported time: measured elapsed time on the hardware counter</text>
-  <g class="prov-head-row" data-cat="sources" data-name="Sources" data-summary="bench-hashes @ 2134c1c30301" onclick="toggleProv('sources')">
-    <text class="prov-head" x="110.0" y="706.0">▾ Sources — bench-hashes @ 2134c1c30301</text>
+  <g class="prov-head-row" data-cat="sources" data-name="Sources" data-summary="bench-hashes @ db0284883642" onclick="event.stopPropagation(); toggleProv('sources')">
+    <text class="prov-head" x="110.0" y="706.0">▾ Sources — bench-hashes @ db0284883642</text>
   </g>
-  <text class="prov prov-shared" data-cat="sources" x="110.0" y="720.0">Source: https://github.com/johnservil/bench-hashes @ 2134c1c30301180b1facc453e10b308ab77b45b6</text>
+  <text class="prov prov-shared" data-cat="sources" x="110.0" y="720.0">Source: https://github.com/johnservil/bench-hashes @ db0284883642c40cc4b1426c477540cf77a929c7</text>
   <text class="prov prov-shared" data-cat="sources" x="110.0" y="734.0">Full crate checksums are in this file&apos;s metadata element</text>
   <script><![CDATA[
-const DATA = {"series":[{"name":"BLAKE3","kernels":[{"from":0,"name":"portable compression","why":"Fewer than four whole chunks: each runs through the portable single-chunk compressor, so 2 KiB and 3 KiB take this path too.","mark":"circle"},{"from":7,"name":"NEON hash_many (4-way)","why":"Four whole chunks fill a NEON batch; from here the bulk of the input runs four chunks at a time.","mark":"diamond"}],"min":[0.685,0.690,0.683,0.678,0.691,0.695,0.703,0.382,0.378,0.375,0.375,0.374,0.373,0.374,0.373,0.373,0.374,0.373,0.373,0.373],"low":[0.701,0.712,0.696,0.691,0.703,0.707,0.716,0.393,0.388,0.384,0.382,0.382,0.382,0.381,0.380,0.379,0.382,0.379,0.378,0.377],"med":[0.702,0.714,0.697,0.692,0.704,0.708,0.717,0.393,0.388,0.385,0.383,0.382,0.382,0.382,0.381,0.379,0.382,0.379,0.378,0.378],"high":[0.703,0.718,0.698,0.693,0.705,0.708,0.717,0.394,0.389,0.385,0.383,0.383,0.383,0.382,0.381,0.380,0.383,0.380,0.379,0.378],"max":[0.776,0.762,0.738,0.760,0.762,0.748,0.819,0.441,0.438,0.439,0.443,0.415,0.421,0.422,0.418,0.409,0.426,0.412,0.405,0.403],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"SHA-256","kernels":[{"from":0,"name":"sha2 aarch64_sha2 backend (ARMv8 SHA-256 instructions)","why":"One kernel at every size.","mark":"circle"}],"min":[0.455,0.370,0.341,0.343,0.340,0.338,0.338,0.338,0.337,0.337,0.337,0.337,0.337,0.337,0.337,0.337,0.337,0.337,0.337,0.337],"low":[0.474,0.380,0.351,0.350,0.346,0.344,0.343,0.343,0.343,0.343,0.344,0.344,0.344,0.344,0.344,0.343,0.345,0.343,0.341,0.341],"med":[0.475,0.382,0.352,0.350,0.346,0.344,0.343,0.344,0.343,0.343,0.344,0.344,0.345,0.345,0.345,0.343,0.346,0.344,0.342,0.341],"high":[0.477,0.382,0.352,0.350,0.346,0.344,0.343,0.344,0.343,0.343,0.344,0.345,0.346,0.346,0.346,0.344,0.347,0.344,0.343,0.341],"max":[0.501,0.402,0.369,0.390,0.363,0.374,0.386,0.371,0.379,0.382,0.376,0.368,0.378,0.374,0.372,0.372,0.380,0.369,0.361,0.351],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"SHA-1DC","kernels":[{"from":0,"name":"SHA-1 with collision detection, pure Rust","why":"One kernel at every size.","mark":"circle"}],"min":[2.602,1.792,1.449,1.241,1.165,1.124,1.119,1.104,1.106,1.098,1.123,1.139,1.171,1.214,1.234,1.251,1.247,1.249,1.248,1.255],"low":[2.671,1.838,1.483,1.270,1.192,1.143,1.146,1.128,1.130,1.125,1.150,1.167,1.206,1.250,1.265,1.278,1.281,1.289,1.299,1.333],"med":[2.679,1.842,1.485,1.274,1.195,1.147,1.148,1.131,1.130,1.127,1.151,1.170,1.209,1.252,1.268,1.284,1.288,1.296,1.311,1.338],"high":[2.692,1.850,1.490,1.278,1.200,1.151,1.151,1.134,1.133,1.129,1.153,1.173,1.214,1.255,1.273,1.287,1.297,1.309,1.321,1.347],"max":[3.006,2.002,1.624,1.372,1.297,1.230,1.230,1.268,1.282,1.279,1.302,1.292,1.356,1.410,1.401,1.405,1.374,1.380,1.391,1.408],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"BLAKE3 servil","kernels":[{"from":0,"name":"scalar kernel c1, one call","why":"Inputs of one chunk (1 KiB) or less run every block, the root compression included, in one call to the integer-only kernel, with the state in registers throughout.","mark":"circle"},{"from":5,"name":"integer + NEON hybrid kernels","why":"Above one chunk the tree is hashed several chunks at a time; below a full SME2 group of sixteen, the hybrid kernels run scalar chunks on the integer units beside NEON chunks, up to fifteen per call.","mark":"diamond"},{"from":9,"name":"SME2 hash16_chunks kernel","why":"Sixteen whole chunks fill one group on 512-bit streaming vectors, up to eight groups per call; a remainder below sixteen stays on the hybrid kernels.","mark":"square"}],"min":[0.660,0.644,0.641,0.649,0.638,0.457,0.324,0.299,0.269,0.229,0.214,0.205,0.196,0.187,0.178,0.178,0.177,0.176,0.177,0.176],"low":[0.674,0.658,0.654,0.660,0.650,0.471,0.335,0.309,0.281,0.235,0.219,0.208,0.204,0.193,0.183,0.183,0.182,0.182,0.182,0.180],"med":[0.676,0.660,0.655,0.661,0.650,0.471,0.335,0.311,0.281,0.236,0.219,0.209,0.204,0.193,0.183,0.183,0.182,0.182,0.183,0.180],"high":[0.679,0.662,0.656,0.663,0.651,0.471,0.335,0.312,0.281,0.237,0.219,0.209,0.204,0.194,0.184,0.184,0.182,0.182,0.183,0.180],"max":[0.761,0.743,0.711,0.706,0.689,0.494,0.357,0.349,0.322,0.298,0.299,0.307,0.305,0.343,0.305,0.314,0.311,0.312,0.313,0.191],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"SHA-256 ring","kernels":[{"from":0,"name":"sha256_block_data_order_hw (ARMv8 SHA-256 instructions, pipelined schedule)","why":"One kernel at every size.","mark":"circle"}],"min":[0.606,0.404,0.325,0.307,0.299,0.292,0.291,0.290,0.289,0.288,0.288,0.288,0.288,0.288,0.287,0.287,0.287,0.287,0.287,0.288],"low":[0.619,0.414,0.334,0.313,0.304,0.298,0.296,0.295,0.294,0.293,0.294,0.293,0.293,0.293,0.293,0.293,0.292,0.293,0.292,0.291],"med":[0.619,0.414,0.335,0.314,0.304,0.298,0.296,0.295,0.294,0.293,0.294,0.294,0.293,0.293,0.293,0.294,0.293,0.294,0.292,0.292],"high":[0.620,0.415,0.336,0.314,0.304,0.298,0.296,0.295,0.294,0.294,0.294,0.294,0.294,0.294,0.294,0.294,0.294,0.295,0.293,0.292],"max":[0.658,0.447,0.363,0.339,0.320,0.319,0.317,0.330,0.324,0.327,0.334,0.318,0.321,0.329,0.315,0.330,0.317,0.321,0.313,0.306],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"BLAKE3 mt","kernels":[{"from":0,"name":"caller's thread (below one SIMD width of chunks)","why":"One SIMD width of chunks or less is one hash_many call; update_rayon has nothing to split.","mark":"circle"},{"from":8,"name":"rayon::join over the pool","why":"Above one SIMD width of chunks the tree splits recursively with rayon::join, and idle pool threads steal the halves.","mark":"diamond"}],"min":[0.785,0.698,0.685,0.680,0.690,0.702,0.706,0.386,3.421,1.959,1.243,0.761,0.463,0.299,0.202,0.151,0.119,0.127,0.090,0.076],"low":[0.800,0.713,0.700,0.694,0.702,0.715,0.719,0.397,4.779,3.168,1.608,0.952,0.576,0.374,0.256,0.187,0.138,0.156,0.106,0.087],"med":[0.802,0.714,0.701,0.695,0.704,0.715,0.720,0.398,4.852,3.234,1.632,0.969,0.585,0.380,0.260,0.190,0.140,0.157,0.107,0.088],"high":[0.804,0.716,0.702,0.695,0.705,0.716,0.721,0.398,4.937,3.338,1.672,0.979,0.598,0.386,0.264,0.193,0.142,0.161,0.108,0.089],"max":[0.889,0.771,0.755,0.755,0.742,0.752,0.798,0.442,6.769,5.446,2.707,1.439,0.997,0.543,0.346,0.264,0.186,0.209,0.136,0.110],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"BLAKE3 servil mt","kernels":[{"from":0,"name":"scalar kernel c1, one call","why":"Inputs of one chunk (1 KiB) or less run every block, the root compression included, in one call to the integer-only kernel, with the state in registers throughout.","mark":"circle"},{"from":5,"name":"integer + NEON hybrid kernels","why":"Above one chunk the tree is hashed several chunks at a time; below a full SME2 group of sixteen, the hybrid kernels run scalar chunks on the integer units beside NEON chunks, up to fifteen per call.","mark":"diamond"},{"from":9,"name":"SME2 hash16_chunks kernel","why":"Sixteen whole chunks fill one group on 512-bit streaming vectors, up to eight groups per call; a remainder below sixteen stays on the hybrid kernels.","mark":"square"},{"from":11,"name":"subtrees over threads","why":"From here calls may cut the input at subtree boundaries into pieces of 8 KiB to 128 KiB, shrinking toward the end, that the calling thread and this crate's worker threads (one per CPU beyond the first) hash at once; a piece runs on the SME2 kernels while an SME unit is free and on the NEON hybrids otherwise, and the caller merges the chaining values. Concurrent callers' pieces are served in turn; when callers already fill the CPUs, a new call hashes its input whole on its own thread.","mark":"triangle"}],"min":[0.660,0.644,0.640,0.648,0.637,0.456,0.328,0.299,0.270,0.229,0.214,0.157,0.103,0.091,0.070,0.058,0.051,0.047,0.046,0.045],"low":[0.676,0.657,0.653,0.660,0.650,0.469,0.334,0.310,0.280,0.236,0.219,0.192,0.122,0.101,0.074,0.061,0.053,0.051,0.050,0.047],"med":[0.678,0.659,0.654,0.660,0.651,0.469,0.335,0.312,0.280,0.236,0.219,0.193,0.123,0.101,0.074,0.061,0.054,0.052,0.050,0.047],"high":[0.681,0.661,0.655,0.661,0.652,0.470,0.335,0.313,0.281,0.237,0.220,0.195,0.123,0.102,0.074,0.061,0.054,0.052,0.050,0.048],"max":[0.750,0.703,0.695,0.704,0.702,0.496,0.374,0.359,0.317,0.290,0.299,0.229,0.139,0.114,0.083,0.066,0.060,0.059,0.057,0.052],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0.046,63,0.048,217]]}],"x":[150.00,197.65,245.29,292.94,340.59,388.24,416.11,435.88,483.53,531.18,578.82,626.47,674.12,721.76,769.41,817.06,864.71,892.58,912.35,960.00],"labelY":[381.74,337.74,425.74,249.74,293.74,205.74,161.74],"colors":["#3b82f6","#e07a45","#8a7a1e","#7c3aed","#c2410c","#1e3a8a","#4c1d95"],"sizes":["64 B","128 B","256 B","512 B","1 KiB","2 KiB","3 KiB","4 KiB","8 KiB","16 KiB","32 KiB","64 KiB","128 KiB","256 KiB","512 KiB","1 MiB","2 MiB","3 MiB","4 MiB","8 MiB"],"sharedProv":3,"svgWidth":1300,"plotLeft":110,"plotRight":1000,"plotTop":115,"plotBottom":455,"labelGap":44,"rounds":280,"labelAbove":-11,"labelBelow":17,"labelHeight":11,"spreadNoticeable":0.020,"spreadWide":0.050,"provTop":540,"provLine":14};
+const DATA = {"series":[{"name":"BLAKE3","kernels":[{"from":0,"name":"portable compression","why":"Fewer than four whole chunks: each runs through the portable single-chunk compressor, so 2 KiB and 3 KiB take this path too.","mark":"circle"},{"from":7,"name":"NEON hash_many (4-way)","why":"Four whole chunks fill a NEON batch; from here the bulk of the input runs four chunks at a time.","mark":"diamond"}],"min":[0.685,0.691,0.682,0.679,0.676,0.694,0.703,0.382,0.378,0.377,0.374,0.373,0.373,0.374,0.373,0.373,0.373,0.373,0.373,0.373],"low":[0.700,0.712,0.698,0.693,0.691,0.707,0.716,0.395,0.389,0.387,0.385,0.386,0.385,0.383,0.381,0.379,0.382,0.379,0.378,0.378],"med":[0.702,0.715,0.699,0.694,0.691,0.708,0.717,0.395,0.390,0.388,0.386,0.386,0.385,0.383,0.382,0.380,0.383,0.380,0.380,0.378],"high":[0.703,0.719,0.701,0.695,0.692,0.708,0.718,0.396,0.390,0.388,0.387,0.387,0.386,0.384,0.383,0.381,0.385,0.381,0.381,0.379],"max":[0.765,0.770,0.760,0.751,0.750,0.769,0.778,0.439,0.429,0.409,0.408,0.618,0.421,0.429,0.425,0.434,0.430,0.428,0.423,0.408],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"SHA-256","kernels":[{"from":0,"name":"sha2 aarch64_sha2 backend (ARMv8 SHA-256 instructions)","why":"One kernel at every size.","mark":"circle"}],"min":[0.466,0.368,0.341,0.343,0.340,0.338,0.338,0.337,0.337,0.337,0.337,0.337,0.337,0.337,0.337,0.337,0.337,0.337,0.337,0.337],"low":[0.478,0.384,0.356,0.350,0.346,0.344,0.343,0.343,0.343,0.343,0.344,0.344,0.343,0.343,0.344,0.343,0.345,0.343,0.342,0.341],"med":[0.479,0.384,0.356,0.350,0.346,0.344,0.344,0.344,0.344,0.343,0.344,0.345,0.344,0.344,0.345,0.344,0.346,0.344,0.342,0.341],"high":[0.481,0.385,0.357,0.351,0.347,0.344,0.344,0.344,0.344,0.344,0.344,0.346,0.345,0.345,0.345,0.345,0.347,0.345,0.343,0.342],"max":[0.519,0.417,0.386,0.372,0.375,0.374,0.373,0.366,0.375,0.375,0.368,0.463,0.384,0.379,0.389,0.375,0.390,0.382,0.467,0.368],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"SHA-1DC","kernels":[{"from":0,"name":"SHA-1 with collision detection, pure Rust","why":"One kernel at every size.","mark":"circle"}],"min":[2.601,1.786,1.426,1.232,1.179,1.125,1.116,1.103,1.098,1.097,1.118,1.133,1.178,1.218,1.226,1.254,1.252,1.247,1.251,1.257],"low":[2.683,1.851,1.468,1.261,1.207,1.153,1.142,1.130,1.128,1.125,1.150,1.168,1.213,1.250,1.265,1.281,1.289,1.300,1.310,1.338],"med":[2.694,1.855,1.474,1.263,1.210,1.155,1.145,1.132,1.130,1.127,1.152,1.172,1.217,1.253,1.269,1.285,1.295,1.308,1.320,1.346],"high":[2.703,1.861,1.478,1.268,1.213,1.158,1.146,1.135,1.131,1.128,1.153,1.174,1.222,1.258,1.276,1.288,1.302,1.316,1.327,1.351],"max":[2.949,1.995,1.658,2.029,1.312,1.272,1.832,1.211,1.239,1.213,1.253,2.438,1.368,1.399,1.392,1.957,1.378,1.392,1.400,1.393],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"BLAKE3 servil","kernels":[{"from":0,"name":"scalar kernel c1, one call","why":"Inputs of one chunk (1 KiB) or less run every block, the root compression included, in one call to the integer-only kernel, with the state in registers throughout.","mark":"circle"},{"from":5,"name":"integer + NEON hybrid kernels","why":"Above one chunk the tree is hashed several chunks at a time; below a full SME2 group of sixteen, the hybrid kernels run scalar chunks on the integer units beside NEON chunks, up to fifteen per call.","mark":"diamond"},{"from":9,"name":"SME2 hash16_chunks kernel","why":"Sixteen whole chunks fill one group on 512-bit streaming vectors, up to eight groups per call; a remainder below sixteen stays on the hybrid kernels.","mark":"square"}],"min":[0.659,0.645,0.641,0.639,0.638,0.456,0.329,0.298,0.274,0.229,0.214,0.204,0.197,0.186,0.178,0.176,0.175,0.176,0.177,0.176],"low":[0.676,0.660,0.655,0.653,0.651,0.471,0.336,0.311,0.280,0.235,0.219,0.209,0.204,0.193,0.183,0.183,0.181,0.181,0.182,0.180],"med":[0.678,0.662,0.656,0.654,0.652,0.471,0.336,0.312,0.281,0.235,0.219,0.209,0.204,0.193,0.183,0.183,0.182,0.182,0.183,0.180],"high":[0.682,0.665,0.658,0.654,0.654,0.471,0.337,0.313,0.281,0.236,0.219,0.209,0.204,0.193,0.184,0.184,0.182,0.182,0.183,0.180],"max":[0.758,0.753,0.711,0.725,0.710,0.532,0.362,0.346,0.306,0.245,0.302,0.355,0.374,0.334,0.326,0.307,0.193,0.200,0.206,0.195],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"SHA-256 ring","kernels":[{"from":0,"name":"sha256_block_data_order_hw (ARMv8 SHA-256 instructions, pipelined schedule)","why":"One kernel at every size.","mark":"circle"}],"min":[0.606,0.405,0.325,0.306,0.298,0.292,0.291,0.290,0.289,0.288,0.288,0.288,0.288,0.288,0.287,0.287,0.287,0.287,0.287,0.287],"low":[0.619,0.414,0.333,0.314,0.304,0.298,0.296,0.295,0.294,0.293,0.293,0.293,0.293,0.293,0.293,0.293,0.292,0.293,0.292,0.291],"med":[0.620,0.414,0.334,0.315,0.304,0.298,0.297,0.296,0.294,0.294,0.294,0.294,0.294,0.294,0.293,0.294,0.293,0.294,0.293,0.291],"high":[0.621,0.415,0.335,0.316,0.304,0.298,0.297,0.296,0.295,0.294,0.294,0.294,0.295,0.294,0.294,0.295,0.294,0.295,0.293,0.292],"max":[0.684,0.448,0.360,0.344,0.339,0.322,0.322,0.321,0.321,0.369,0.317,0.324,0.347,0.332,0.323,0.333,0.320,0.358,0.319,0.334],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"BLAKE3 mt","kernels":[{"from":0,"name":"caller's thread (below one SIMD width of chunks)","why":"One SIMD width of chunks or less is one hash_many call; update_rayon has nothing to split.","mark":"circle"},{"from":8,"name":"rayon::join over the pool","why":"Above one SIMD width of chunks the tree splits recursively with rayon::join, and idle pool threads steal the halves.","mark":"diamond"}],"min":[0.783,0.695,0.683,0.679,0.677,0.701,0.706,0.386,3.314,1.851,1.174,0.732,0.463,0.301,0.202,0.143,0.111,0.126,0.090,0.078],"low":[0.801,0.710,0.700,0.693,0.690,0.714,0.720,0.399,4.676,3.193,1.947,0.940,0.560,0.369,0.264,0.185,0.141,0.155,0.106,0.089],"med":[0.803,0.711,0.701,0.694,0.691,0.715,0.721,0.400,4.773,3.329,2.002,0.954,0.567,0.374,0.268,0.187,0.143,0.157,0.108,0.089],"high":[0.806,0.712,0.702,0.695,0.692,0.716,0.722,0.400,4.926,3.433,2.057,0.965,0.576,0.381,0.273,0.191,0.145,0.158,0.110,0.090],"max":[1.317,0.784,0.924,0.748,0.761,0.773,0.772,0.431,6.787,6.121,3.298,1.344,0.767,0.515,0.404,0.257,0.201,0.216,0.146,0.120],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]},{"name":"BLAKE3 servil mt","kernels":[{"from":0,"name":"scalar kernel c1, one call","why":"Inputs of one chunk (1 KiB) or less run every block, the root compression included, in one call to the integer-only kernel, with the state in registers throughout.","mark":"circle"},{"from":5,"name":"integer + NEON hybrid kernels","why":"Above one chunk the tree is hashed several chunks at a time; below a full SME2 group of sixteen, the hybrid kernels run scalar chunks on the integer units beside NEON chunks, up to fifteen per call.","mark":"diamond"},{"from":9,"name":"SME2 hash16_chunks kernel","why":"Sixteen whole chunks fill one group on 512-bit streaming vectors, up to eight groups per call; a remainder below sixteen stays on the hybrid kernels.","mark":"square"},{"from":11,"name":"subtrees over threads","why":"From here calls may cut the input at subtree boundaries into pieces of 8 KiB to 128 KiB, shrinking toward the end, that the calling thread and this crate's worker threads (one per CPU beyond the first) hash at once; a piece runs on the SME2 kernels while an SME unit is free and on the NEON hybrids otherwise, and the caller merges the chaining values. Concurrent callers' pieces are served in turn; when callers already fill the CPUs, a new call hashes its input whole on its own thread.","mark":"triangle"}],"min":[0.661,0.644,0.641,0.639,0.637,0.456,0.325,0.300,0.270,0.229,0.214,0.160,0.109,0.085,0.071,0.058,0.051,0.049,0.047,0.045],"low":[0.675,0.659,0.654,0.651,0.650,0.470,0.335,0.311,0.280,0.235,0.219,0.191,0.123,0.101,0.078,0.062,0.054,0.052,0.050,0.048],"med":[0.677,0.661,0.656,0.652,0.651,0.470,0.336,0.312,0.281,0.235,0.219,0.193,0.124,0.101,0.078,0.063,0.054,0.052,0.050,0.048],"high":[0.681,0.663,0.657,0.654,0.652,0.471,0.337,0.313,0.282,0.235,0.220,0.194,0.124,0.102,0.079,0.063,0.054,0.052,0.051,0.048],"max":[0.745,0.708,0.744,0.718,0.728,0.513,0.364,0.340,0.303,0.404,0.300,0.327,0.138,0.110,0.092,0.070,0.062,0.064,0.058,0.055],"modes":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0.047,89,0.049,191]]}],"x":[150.00,197.65,245.29,292.94,340.59,388.24,416.11,435.88,483.53,531.18,578.82,626.47,674.12,721.76,769.41,817.06,864.71,892.58,912.35,960.00],"labelY":[382.90,338.90,426.90,250.90,294.90,206.90,162.90],"colors":["#3b82f6","#e07a45","#8a7a1e","#7c3aed","#c2410c","#1e3a8a","#4c1d95"],"sizes":["64 B","128 B","256 B","512 B","1 KiB","2 KiB","3 KiB","4 KiB","8 KiB","16 KiB","32 KiB","64 KiB","128 KiB","256 KiB","512 KiB","1 MiB","2 MiB","3 MiB","4 MiB","8 MiB"],"sharedProv":3,"svgWidth":1300,"plotLeft":110,"plotRight":1000,"plotTop":115,"plotBottom":455,"labelGap":44,"rounds":280,"labelAbove":-11,"labelBelow":17,"labelHeight":11,"spreadNoticeable":0.020,"spreadWide":0.050,"provTop":540,"provLine":14};
 
 const on = DATA.series.map(() => true);
 
@@ -1106,8 +1108,10 @@ function toggleSeries(i) {
 /* Current y mapping, kept by relayout() so the hover panel places itself. */
 let currentMapY = null;
 
-/* The dot under the pointer, so a toggle can rebuild the panel in place. */
+/* The dot the panel describes, so a toggle can rebuild the panel in place. */
 let hovered = null;
+/* The dot a tap pinned the panel to; a mouse leaving a dot then leaves the panel up. */
+let pinned = null;
 
 function gbps(nsPerByte) {
   const t = 1 / nsPerByte;
@@ -1279,11 +1283,32 @@ function hideHover() {
   document.getElementById("hover").style.display = "none";
 }
 
+/*
+ * Two inputs, one panel. A mouse hovers: entering a dot shows the panel,
+ * leaving hides it, unless a click pinned it. A finger taps: pointerenter
+ * fires too, without a matching leave, so touch is handled by tap alone.
+ * Tapping a dot pins the panel to it; tapping it again, or the background,
+ * clears it. Name highlighting follows the mouse only, since a finger
+ * has no way to leave.
+ */
+function hoverDot(event, i, k) { if (event.pointerType === "mouse") showHover(i, k); }
+function leaveDot(event) { if (event.pointerType === "mouse" && !pinned) hideHover(); }
+function tapDot(event, i, k) {
+  event.stopPropagation();
+  if (pinned && pinned[0] === i && pinned[1] === k) { pinned = null; hideHover(); return; }
+  pinned = [i, k];
+  showHover(i, k);
+}
+function tapAway() { pinned = null; hideHover(); }
+function hoverLabel(event, i, active) { if (event.pointerType === "mouse") highlightSeries(i, active); }
+
 window.toggleSeries = toggleSeries;
 window.toggleProv = toggleProv;
-window.highlightSeries = highlightSeries;
-window.showHover = showHover;
-window.hideHover = hideHover;
+window.hoverDot = hoverDot;
+window.leaveDot = leaveDot;
+window.tapDot = tapDot;
+window.tapAway = tapAway;
+window.hoverLabel = hoverLabel;
 window.setUnit = setUnit;
 window.flipUnit = flipUnit;
 relayout();
