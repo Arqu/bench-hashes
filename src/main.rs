@@ -2844,7 +2844,7 @@ fn generate_svg(
 
     writeln!(
         svg,
-        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SVG_WIDTH:.0} {svg_height:.0}" width="{SVG_WIDTH:.0}" height="{svg_height:.0}">"##
+        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SVG_WIDTH:.0} {svg_height:.0}" width="{SVG_WIDTH:.0}" height="{svg_height:.0}" onclick="tapAway()">"##
     )
         .unwrap();
 
@@ -2870,14 +2870,12 @@ fn generate_svg(
     .annotation { font-size: 10px; font-style: italic; fill: #8a8a8a; }
     .prov-head { font-size: 10px; font-weight: 700; fill: #aaaaaa; letter-spacing: 0.1em; }
     .prov-head-row { cursor: pointer; }
-    .prov-head-row:hover .prov-head { text-decoration: underline; }
     .prov { font-size: 9px; fill: #9a9a9a; }
     .grid { stroke: #e8e8e6; stroke-width: 1; }
     .grid-x { stroke: #f0f0ee; stroke-width: 1; }
     .axis { stroke: #55555a; stroke-width: 1; }
     .divider { stroke: #e0e0de; stroke-width: 1; }
     .series-label { cursor: pointer; transition: transform 0.3s ease; }
-    .series-label:hover .series-name { text-decoration: underline; }
     .series-hint { display: none; }
     .marks, .dots { transition: opacity 0.3s ease; }
     .marks { pointer-events: none; }
@@ -2894,7 +2892,11 @@ fn generate_svg(
     .series-swatch { stroke-width: 2; transition: fill 0.3s ease; }
     #unit-switch { cursor: pointer; }
     .unit-track { fill: #e8e8e6; stroke: #c8c8c4; stroke-width: 1; }
-    #unit-switch:hover .unit-track { stroke: #55555a; }
+    @media (hover: hover) {
+      .prov-head-row:hover .prov-head { text-decoration: underline; }
+      .series-label:hover .series-name { text-decoration: underline; }
+      #unit-switch:hover .unit-track { stroke: #55555a; }
+    }
     .unit-knob { fill: #55555a; transition: cy 0.35s ease; }
     .unit-label { font-size: 10px; font-weight: 600; fill: #b0b0b0; transition: fill 0.35s ease; }
     .unit-label.unit-on { fill: #333333; }
@@ -2938,7 +2940,7 @@ fn generate_svg(
     }
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="88" class="method">Dot shape marks the code path a contender used at that size · hover any dot or name to highlight its contender and compare · click a name at right to hide or show that contender</text>"##
+        r##"  <text x="{PLOT_LEFT:.0}" y="88" class="method">Dot shape marks the code path a contender used at that size · hover or tap a dot to compare at that size · hover a name to highlight its contender · click a name at right to hide or show it</text>"##
     )
         .unwrap();
 
@@ -2981,7 +2983,7 @@ fn generate_svg(
      */
     writeln!(
         svg,
-        r##"  <g id="unit-switch" transform="translate({:.1} {:.1})" onclick="flipUnit()">"##,
+        r##"  <g id="unit-switch" transform="translate({:.1} {:.1})" onclick="event.stopPropagation(); flipUnit()">"##,
         PLOT_LEFT - 60.0,
         PLOT_TOP - 50.0,
     )
@@ -3216,7 +3218,7 @@ fn generate_svg(
                 let y = map_y(results[algorithm_index][size_index].duo.unwrap().median);
                 writeln!(
                     dots,
-                    r##"    <g class="dot dot-duo" data-size="{size_index}" transform="translate({x:.2} {y:.2})" onmouseenter="showHover({algorithm_index},{size_index})" onmouseleave="hideHover()"><circle r="4" fill="#fdfdfc" stroke="{color}" stroke-width="2"/></g>"##
+                    r##"    <g class="dot dot-duo" data-size="{size_index}" transform="translate({x:.2} {y:.2})" onpointerenter="hoverDot(event,{algorithm_index},{size_index})" onpointerleave="leaveDot(event)" onclick="tapDot(event,{algorithm_index},{size_index})"><circle r="4" fill="#fdfdfc" stroke="{color}" stroke-width="2"/></g>"##
                 )
                     .unwrap();
             }
@@ -3237,7 +3239,7 @@ fn generate_svg(
             let dots = &mut dot_layers[algorithm_index];
             writeln!(
                 dots,
-                r##"    <g class="dot" data-size="{size_index}" transform="translate({x:.2} {median_y:.2})" onmouseenter="showHover({algorithm_index},{size_index})" onmouseleave="hideHover()">"##,
+                r##"    <g class="dot" data-size="{size_index}" transform="translate({x:.2} {median_y:.2})" onpointerenter="hoverDot(event,{algorithm_index},{size_index})" onpointerleave="leaveDot(event)" onclick="tapDot(event,{algorithm_index},{size_index})">"##,
             )
                 .unwrap();
             writeln!(dots, "      {}", mark_shape(kernel.mark, color, 5.0)).unwrap();
@@ -3284,7 +3286,7 @@ fn generate_svg(
 
         writeln!(
             svg,
-            r##"    <g class="series-label" transform="translate(0 {label_y:.2})" onclick="toggleSeries({algorithm_index})" onmouseenter="highlightSeries({algorithm_index},true)" onmouseleave="highlightSeries({algorithm_index},false)">"##
+            r##"    <g class="series-label" transform="translate(0 {label_y:.2})" onclick="event.stopPropagation(); toggleSeries({algorithm_index})" onpointerenter="hoverLabel(event,{algorithm_index},true)" onpointerleave="hoverLabel(event,{algorithm_index},false)">"##
         )
             .unwrap();
         writeln!(
@@ -3508,7 +3510,7 @@ fn generate_svg(
     for cat in &provenance_cats {
         writeln!(
             svg,
-            r##"  <g class="prov-head-row" data-cat="{}" data-name="{}" data-summary="{}" onclick="toggleProv('{}')">"##,
+            r##"  <g class="prov-head-row" data-cat="{}" data-name="{}" data-summary="{}" onclick="event.stopPropagation(); toggleProv('{}')">"##,
             cat.key,
             xml_escape(cat.name),
             xml_escape(&cat.summary),
@@ -4157,6 +4159,8 @@ function layoutProv() {
 }
 
 function highlightSeries(i, active) {
+/* The dot a tap pinned the panel to; a mouse leaving a dot then leaves the panel up. */
+let pinned = null;
   for (let j = 0; j < DATA.series.length; j++) {
     const series = document.getElementById("series-" + j);
     const dots = document.getElementById("dots-" + j);
@@ -4176,7 +4180,7 @@ function toggleSeries(i) {
 /* Current y mapping, kept by relayout() so the hover panel places itself. */
 let currentMapY = null;
 
-/* The dot under the pointer, so a toggle can rebuild the panel in place. */
+/* The dot the panel describes, so a toggle can rebuild the panel in place. */
 let hovered = null;
 
 function gbps(nsPerByte) {
@@ -4328,6 +4332,25 @@ function showHover(focus, k) {
   const H = y + PAD - 6;
 
   /* Place beside the column, flipping left near the right edge. */
+/*
+ * Two inputs, one panel. A mouse hovers: entering a dot shows the panel,
+ * leaving hides it, unless a click pinned it. A finger taps: pointerenter
+ * fires too, without a matching leave, so touch is handled by tap alone.
+ * Tapping a dot pins the panel to it; tapping it again, or the background,
+ * clears it. Name highlighting follows the mouse only, since a finger
+ * has no way to leave.
+ */
+function hoverDot(event, i, k) { if (event.pointerType === "mouse") showHover(i, k); }
+function leaveDot(event) { if (event.pointerType === "mouse" && !pinned) hideHover(); }
+function tapDot(event, i, k) {
+  event.stopPropagation();
+  if (pinned && pinned[0] === i && pinned[1] === k) { pinned = null; hideHover(); return; }
+  pinned = [i, k];
+  showHover(i, k);
+}
+function tapAway() { pinned = null; hideHover(); }
+function hoverLabel(event, i, active) { if (event.pointerType === "mouse") highlightSeries(i, active); }
+
   const x = DATA.x[k];
   const dotY = currentMapY(f.med[k]);
   let bx = x + 14;
@@ -4351,9 +4374,11 @@ function hideHover() {
 
 window.toggleSeries = toggleSeries;
 window.toggleProv = toggleProv;
-window.highlightSeries = highlightSeries;
-window.showHover = showHover;
-window.hideHover = hideHover;
+window.hoverDot = hoverDot;
+window.leaveDot = leaveDot;
+window.tapDot = tapDot;
+window.tapAway = tapAway;
+window.hoverLabel = hoverLabel;
 window.setUnit = setUnit;
 window.flipUnit = flipUnit;
 relayout();
