@@ -31,9 +31,29 @@ bench-hashes duo on the VM (`--all`; mt·1 from a separate run):
 servil mt wins every cell from 64 KiB, with the bands apart; mt·1 tracks
 servil. Below 64 KiB the call is the serial one.
 
-**The next thing to do is run this on the M4 Max** and commit the
-results under `benchmark-results/AppleM4Max.darwin25/`. What to look at
-there (details and the numbers behind each in the NOTES):
+**The next thing to do is inspect the Mac run that just landed.**
+The M4 Max results are already in the working tree, uncommitted, under
+`benchmark-results/AppleM4Max.darwin25/` (a modified
+`bench-hashes.duo.result.txt` and its graph). Start a fresh session,
+then:
+
+1. Open `benchmark-results/AppleM4Max.darwin25/bench-hashes.duo.graph.svg`
+   in a browser. It defaults to GB/s now (commit `e6c1d07` above), and
+   the y-axis names its log scale; the toggle still flips to ns/B.
+   Read servil mt against servil, BLAKE3 mt, and SHA-256 at every size
+   from 64 KiB up, watching the 95% bands, not just the medians.
+2. Read the numbers behind the plot in `bench-hashes.duo.result.txt`
+   (same directory): medians with min–max beneath, per size per
+   contender. Compare with the VM table above and with the old M4 Max
+   baseline further below (fork `0220be3`, where servil mt lost to
+   servil everywhere).
+3. Decide whether the run is committable as the new
+   `AppleM4Max.darwin25` record: every cell's band should be narrow
+   (no `!` marks on the cells that matter), and the provenance lines at
+   the graph's foot should name the expected kernels and platforms.
+
+What to look for in the numbers (details and the VM measurements behind
+each in the NOTES):
 
 1. 64 KiB, where the VM margin is smallest: the first call of each
    1 ms batch pays one `notify_all` of the sleeping workers (VM: 80–100
