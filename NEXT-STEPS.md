@@ -7,8 +7,9 @@ VM restart run `sh /workspace/vm/setup.sh`.
 
 ## Where the last session stopped (VM now has 16 vCPUs)
 
-The fork's multithreaded path is rebuilt (commit `b3b4bc8` on
-`sme2-bench`, tests green: 54 lib + 15 doc; `--features no_sme2`: 53).
+The fork's multithreaded path is rebuilt (commits `b3b4bc8`..`3f28ff4` on
+`sme2-bench`, tests green: 54 lib + 15 doc; `--features no_sme2`: 53;
+nothing pushed yet).
 Design and measurements: `/workspace/NOTES-sme2-bench.md`, section "The
 pool". In one paragraph: every CPU hashes; a call cuts its input into
 subtree pieces that shrink toward the end (8–128 KiB) and registers a
@@ -19,13 +20,13 @@ hybrids otherwise; workers sleep only after 200 µs without a registered
 job; the pool starts from a background thread so the first call costs a
 call.
 
-bench-hashes duo on the VM (`--contenders blake3-servil,blake3-servil-mt,blake3-servil-mt1`):
+bench-hashes duo on the VM (`--all`; mt·1 from a separate run):
 
     size      servil   servil mt      size      servil   servil mt
-    64 KiB    0.214    0.191          1 MiB     0.186    0.078
-    128 KiB   0.209    0.139          2 MiB     0.183    0.067
-    256 KiB   0.201    0.118          4 MiB     0.186    0.061
-    512 KiB   0.189    0.093          8 MiB     0.184    0.062
+    64 KiB    0.216    0.194          1 MiB     0.190    0.078
+    128 KiB   0.213    0.134          2 MiB     0.187    0.068
+    256 KiB   0.207    0.114          3 MiB     0.181    0.065
+    512 KiB   0.200    0.091          8 MiB     0.184    0.056
 
 servil mt wins every cell from 64 KiB, with the bands apart; mt·1 tracks
 servil. Below 64 KiB the call is the serial one.
