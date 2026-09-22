@@ -46,32 +46,58 @@ Both repositories are in a settled state for the work:
 
 Run: `HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo run --release --manifest-path /workspace/bench-hashes/Cargo.toml -- --all`
 
-### Where the time goes (from the last full runs; see `benchmark-results/`)
+### What winning means
 
-1. **Multithreaded beside a copy of itself.** Under duo, servil mt was
-   slower than serial servil at every size >= 128 KiB (M4 Max: 1 MiB 0.223
-   vs 0.185 ns/B; 8 MiB 0.207 vs 0.181), which means the multithreaded
-   contender currently loses to the single-threaded one on the only score
-   that counts. Suspects:
-   the fair share `ceil(L / callers)` oversubscribes odd lane counts
-   (3 lanes, 2 callers -> 4 claims); `MIN_SPLIT_LEN` (128 KiB) and
-   `MIN_BALANCED_PIECE_LEN` were tuned solo; the admission wait. Measure as
-   an experiment first (`hash_multithreaded_with_budget` gives cheap caps
-   to compare against), then change one thing at a time. Note that BLAKE3
-   mt's duo numbers changed meaning in `5d2fed9` (one shared Rayon pool
-   now), so re-run before comparing against old reports.
-2. **Small inputs (64 B – 1 KiB).** The scalar c1 kernel runs the whole
-   input in one call; the remaining cost is per-call overhead. Compare
-   against upstream's numbers at 64–512 B and against SHA-256's hardware
-   path, which wins below ~3 KiB.
-3. **2–15 chunks.** Hybrid kernels; the crossover with SHA-256 sits near
-   3 KiB. A partial-group SME2 kernel for 3–15 chunks was never tried
-   (streaming-mode entry, ~0.5 µs, is the cost to beat).
-4. **Bulk (>= 16 KiB, SME2 groups).** `DEGREE = 128` amortises the
-   streaming-mode switch; the plateau is ~0.17 ns/B on the VM. Check the
-   parent-level path and the remainder handling below a group.
-5. **E-cluster weight (Apple).** `deal_to_lanes` gives every lane equal
-   bytes; an E-core SME unit is slower. Needs an Apple machine to measure.
+1. **Breadth before margin.** Beating a competitor at a size where servil
+   mt currently loses is worth more than widening a lead at a size where it
+   already wins. Competitors are every other column: other hash functions,
+   the crates.io implementation, and the single-threaded servil call.
+2. **The best result** is BLAKE3 servil mt measurably and reliably better
+   (non-overlapping 95% bands) than every alternative at as many sizes as
+   possible. Below about 3 KiB, SHA-256's hardware path is out of reach;
+   accept that and win everywhere else.
+3. **Portability over this machine.** The code will run on other systems.
+   Avoid strategies that fit this M4 Max and would likely carry a strong
+   penalty elsewhere (a fixed cluster layout, a lane count, a probe result
+   assumed rather than measured). Heuristics that are roughly right
+   anywhere, or a one-time inspection with the answer cached, are fine.
+
+### Baseline (M4 Max, fork `0220be3`, bencher `f81859a`; results committed in `benchmark-results/AppleM4Max.darwin25/`)
+
+Duo medians, ns/B:
+
+    size      BLAKE3  SHA-256  servil  BLAKE3 mt  servil mt
+    64 KiB    0.381   0.344    0.208   0.939      0.208
+    128 KiB   0.382   0.345    0.202   0.566      0.367
+    256 KiB   0.382   0.345    0.192   0.372      0.289
+    512 KiB   0.381   0.344    0.184   0.258      0.246
+    1 MiB     0.379   0.344    0.184   0.186      0.220
+    2 MiB     0.383   0.346    0.182   0.140      0.216
+    4 MiB     0.381   0.343    0.179   0.108      0.196
+    8 MiB     0.382   0.341    0.180   0.088      0.190
+
+Reading it against "what winning means":
+
+- **servil mt loses to single-threaded servil at every size from 128 KiB
+  up** (0.367 vs 0.202 at 128 KiB; 0.190 vs 0.180 at 8 MiB). The
+  multithreaded call is a net loss under duo today. The first job is to
+  find out why: suspects are the fair share `ceil(L / callers)` on three
+  lanes (2 callers -> 4 claims), `MIN_SPLIT_LEN` and
+  `MIN_BALANCED_PIECE_LEN` tuned solo, the 20 ms admission wait, and the
+  hand-off cost at 128–512 KiB. `hash_multithreaded_with_budget` gives
+  cheap caps to compare against; the two-core VM reproduces the shape
+  of the loss but Apple hardware has the three lanes.
+- **BLAKE3 mt (Rayon's global pool shared by the two copies) beats
+  servil mt from 1 MiB up, by more than 2x at 8 MiB.** Work-stealing over
+  every CPU, shared by two callers, wins at bulk sizes on this machine;
+  whatever servil mt does must at least match it there.
+- **servil (single-threaded) beats everything from 3 KiB to 512 KiB.**
+  Below 3 KiB SHA-256 wins, as expected.
+
+So the sizes to win, in order of value: 128 KiB–8 MiB for servil mt
+(currently lost to servil itself, and to BLAKE3 mt at >= 1 MiB), then
+the small end where per-call overhead sets the floor (64 B–1 KiB run at
+~0.68 ns/B on the VM against SHA-256's hardware path).
 
 The fork's own notes for maintainers are `/workspace/NOTES-sme2-bench.md`
 (design, measurements behind each change, open questions). Commit
@@ -94,6 +120,3 @@ doing that.
 
 - The token in `ghtokenclassic.txt` was echoed once into tool output by an
   earlier credential helper; consider rotating it.
-- `benchmark-results/AppleM4Max.darwin25/` holds an untracked M4 Max run
-  from before the vocabulary and pool changes; commit or delete after the
-  next run there.
