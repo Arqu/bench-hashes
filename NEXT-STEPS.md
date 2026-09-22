@@ -5,30 +5,51 @@ Layout and environment (where the repos are, `HOME`, credentials,
 `clang-19`) are in the Environment section of either `AGENTS.md`; after a
 VM restart run `sh /workspace/vm/setup.sh`.
 
-## The goal now: optimise BLAKE3 servil
+## The goal now: optimise BLAKE3 servil for the duo score
 
 Make the servil fork (`/workspace`, branch `sme2-bench`) score as high as
-possible on this benchmark, alone and beside a copy of itself, at every
-input size. Both repositories are in a settled state for that work:
+possible on this benchmark **under duo** at every input size. Duo is the
+only score: two copies of the contender run at once on two threads, and
+the later finish is the sample. There is no single-copy target; `--solo`
+is a diagnostic column, and no effort goes toward looking good in it.
+
+Overfitting: avoid tuning to the exact structure of the M4 Max MacBook Pro
+the results come from. Anything that behaves reasonably across machines
+is fair, for example:
+
+1. Fixed heuristics ("spawn N threads"), accepted as roughly right on many
+   platforms.
+2. Inspecting the machine once at first use (syscalls, topology, a timing
+   probe), caching the answer, and acting on it.
+
+The bencher does not charge a one-time inspection: it calibrates every
+contender at every size and then warms up before the first timed sample,
+so a probe at first use (and the worker pool's start) happens before
+measurement. Were something to land inside the measured phase anyway, it
+would be one ~1 ms sample among 80+ per cell and the median would drop
+it. The fork's current Linux lane probe (~30 ms) is already hidden this
+way.
+
+Both repositories are in a settled state for the work:
 
 - The bencher touches an implementation in three ways only: lists it,
   calls its plain entry point (`hash`, `hash_multithreaded`, or upstream's
   `Hasher::update_rayon` on Rayon's global pool) with no cap or pool of its
   own, and prints the fork's `kernel_report()`. Keep it that way; tune the
   fork, never the harness.
-- Every run is a duo run (two copies at once, later finish scored);
-  `--solo` adds the single-copy column beside it.
 - `blake3-servil-mt1` (`hash_multithreaded_with_budget(input, 1)`) is a
   sanity check and tracks `blake3-servil` within noise on the VM; run it
   again after any change to the multithreaded path.
 
-Run: `HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo run --release --manifest-path /workspace/bench-hashes/Cargo.toml -- --all --solo`
+Run: `HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo run --release --manifest-path /workspace/bench-hashes/Cargo.toml -- --all`
 
 ### Where the time goes (from the last full runs; see `benchmark-results/`)
 
 1. **Multithreaded beside a copy of itself.** Under duo, servil mt was
    slower than serial servil at every size >= 128 KiB (M4 Max: 1 MiB 0.223
-   vs 0.185 ns/B; 8 MiB 0.207 vs 0.181). Solo it is ~2x faster. Suspects:
+   vs 0.185 ns/B; 8 MiB 0.207 vs 0.181), which means the multithreaded
+   contender currently loses to the single-threaded one on the only score
+   that counts. Suspects:
    the fair share `ceil(L / callers)` oversubscribes odd lane counts
    (3 lanes, 2 callers -> 4 claims); `MIN_SPLIT_LEN` (128 KiB) and
    `MIN_BALANCED_PIECE_LEN` were tuned solo; the admission wait. Measure as
