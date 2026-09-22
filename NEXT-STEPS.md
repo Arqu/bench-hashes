@@ -5,6 +5,23 @@ benchmark on the VM, native Mac, and other platforms. Prefer improvements
 that make the implementation simpler and faster together. Shared principles
 and environment commands are in both repositories' `AGENTS.md` files.
 
+## Since the handoff (review session)
+
+- Fork: `blake3_servil::initialize()` is public; the pool starts
+  synchronously (SME unit measurement, about 40 ms on the VM, then the
+  workers) and the first multithreaded call that splits pays it when the
+  program has yet to call it. The contract says "up to tens of
+  milliseconds". The starter thread is gone.
+- Fork: `test_vectors/` and `b3sum/` build again (their manifests name
+  `package = "blake3-servil"`); the official vectors pass.
+- Fork: `jobs_recently` saturates; sleeper/notified bookkeeping is exact
+  under `sleep_lock`; the SME2 build gate reads `CARGO_CFG_TARGET_*`.
+- Benchmark: every run is duo, `--solo` adds the solo column; the
+  `duo`/`solo` flags in code say so; README follows. The SVG separates
+  hover (mouse) from tap (touch): a tap pins the panel, a second tap or
+  the background clears it.
+- Fork doc tests: 16 (the `initialize` example).
+
 ## Where this session stopped
 
 - Fork: `/workspace`, branch `sme2-bench`, commit **04c3394**.
