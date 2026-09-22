@@ -25,6 +25,20 @@ order count from two to eight; nineteen would have been prime and
 multiplied run time by up to seven. Add sizes in multiples that keep
 that property.
 
+**Batch sizes.** The many-messages use case adds twenty points on a
+second axis (1 to 16384 messages of 64 B; 3, 6, 12, 24, 48 beside the
+powers of two to leave SIMD groups partly filled), so the round count
+is `lcm(40, orders)`: 80 for eight contenders, which is what `--all`
+selects on Linux and macOS. Both axes rotate as one list of forty
+points. Samples on that axis divide by messages, so the statistics
+pipeline is unchanged and only the unit names and the rate scale
+(1 GB/s per ns/B; 1000 Mmsg/s per ns/msg) differ per plot. Its golden
+anchors are the SHA-256 of a batch's digests concatenated, one line per
+(batch size, seed), so 16384 reference digests cost one hex string.
+The first run on the VM showed every contender losing a third of its
+rate at 16384 messages (1 MiB in, 512 KiB out per copy, two copies):
+the cache, since the SHA-256 crate loses it too.
+
 **Interleaving.** Williams orders over the contenders, size order
 rotated per round. Every contender takes every position and follows
 every other equally often. Solo and duo samples of a batch are taken

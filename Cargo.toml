@@ -2,7 +2,7 @@
 name = "bench-hashes"
 version = "0.6.0+4693c2fe4a275c15421e987cd95ee1d0331a7b8d"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.88"
 build = "build.rs"
 
 [dependencies]
@@ -37,6 +37,14 @@ default-features = false
 path = ".."
 default-features = false
 features = ["std"]
+
+# BLAKE3 through ab-blake3: const_hash (a const fn copy of the reference
+# tree) for one message, and single_block_hash_many_exact for a batch of
+# 64-byte messages, which hands groups of sixteen blocks to the blake3
+# crate's SIMD hash_many.
+[dependencies.ab-blake3]
+version = "0.2"
+default-features = false
 
 # SHA-1 with collision detection (the SHA-1DC construction git uses), pure
 # Rust; there is no hardware path for the detection.

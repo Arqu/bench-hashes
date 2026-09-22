@@ -5,6 +5,11 @@ BLAKE3 uses the upstream reference implementation in the enclosing fork,
 compiled directly with rustc. SHA-256 and SHA-1 use Python hashlib. Neither
 source calls the optimized servil kernels. Requires Python 3 and rustc.
 Run from bench-hashes: python3 tools/gen-test-vectors.py > src/test_vectors.rs
+
+Two tables. VECTORS: one message of each length, its digests. MANY_VECTORS:
+a batch of N 64-byte messages (the buffer make_input_seeded(64 * N, seed)
+cut into 64-byte slices), and for each family the SHA-256 of the N digests
+concatenated in message order.
 """
 import hashlib
 from pathlib import Path
@@ -17,6 +22,11 @@ MASK = (1 << 64) - 1
 SIZES = sorted(set([1 << n for n in range(6, 24)] + [3 << 10, 3 << 20,
     0, 1, 63, 65, 1023, 1025, (16 << 10) - 1, (16 << 10) + 1,
     (64 << 10) - 1, (64 << 10) + 1, (128 << 10) + 1, (256 << 10) + 1]))
+MESSAGE_LEN = 64
+# The many-messages axis in src/main.rs (POINTS); the batch entry point's
+# const generic accepts exactly these counts.
+BATCHES = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 128, 256, 512, 1024,
+    2048, 4096, 8192, 16384]
 
 
 def make_input(size, seed):
@@ -38,15 +48,23 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(["rustc", "--edition=2024", "--crate-name=reference_impl",
         "--crate-type=rlib", "-O", str(REFERENCE), "-o", str(lib)], check=True)
     driver = tmp / "hash.rs"
+    # With no argument: one digest of stdin. With a message length: one
+    # digest per line for each slice of that length, in order.
     driver.write_text('''use std::io::Read;
 fn main() {
     let mut input = Vec::new();
     std::io::stdin().read_to_end(&mut input).unwrap();
-    let mut hasher = reference_impl::Hasher::new();
-    hasher.update(&input);
-    let mut out = [0u8; 32];
-    hasher.finalize(&mut out);
-    for b in out { print!("{b:02x}"); }
+    let message_len: usize = std::env::args().nth(1).map(|n| n.parse().unwrap()).unwrap_or(input.len());
+    let messages: Vec<&[u8]> = if input.is_empty() { vec![&input[..]] } else { input.chunks_exact(message_len).collect() };
+    assert_eq!(messages.len() * message_len.max(1), input.len().max(1));
+    for message in messages {
+        let mut hasher = reference_impl::Hasher::new();
+        hasher.update(message);
+        let mut out = [0u8; 32];
+        hasher.finalize(&mut out);
+        for b in out { print!("{b:02x}"); }
+        println!();
+    }
 }
 ''')
     binary = tmp / "hash"
@@ -60,8 +78,24 @@ fn main() {
         for seed in [0, 1]:
             data = make_input(size, seed)
             b3 = subprocess.run([str(binary)], input=data, stdout=subprocess.PIPE,
-                check=True).stdout.decode()
+                check=True).stdout.decode().strip()
             assert len(b3) == 64
             digests = [b3, hashlib.sha256(data).hexdigest(), hashlib.sha1(data).hexdigest()]
             print(f'    ({size}, {seed}, ["' + '", "'.join(digests) + '"]),')
+    print("];")
+    print()
+    print("// Batches of N 64-byte messages: SHA-256 over the N concatenated digests. Digests: BLAKE3, SHA-256, SHA-1.")
+    print("pub(super) const MANY_VECTORS: &[(usize, u64, [&str; 3])] = &[")
+    for count in BATCHES:
+        for seed in [0, 1]:
+            data = make_input(MESSAGE_LEN * count, seed)
+            messages = [data[i:i + MESSAGE_LEN] for i in range(0, len(data), MESSAGE_LEN)]
+            b3_lines = subprocess.run([str(binary), str(MESSAGE_LEN)], input=data,
+                stdout=subprocess.PIPE, check=True).stdout.decode().split()
+            assert len(b3_lines) == count
+            b3 = b"".join(bytes.fromhex(line) for line in b3_lines)
+            sha256 = b"".join(hashlib.sha256(m).digest() for m in messages)
+            sha1 = b"".join(hashlib.sha1(m).digest() for m in messages)
+            folded = [hashlib.sha256(d).hexdigest() for d in (b3, sha256, sha1)]
+            print(f'    ({count}, {seed}, ["' + '", "'.join(folded) + '"]),')
     print("];")

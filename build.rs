@@ -55,6 +55,11 @@ fn main() {
         &lock,
         "ring",
     );
+    emit_required_package(
+        "AB_BLAKE3_SOURCE_INFO",
+        &lock,
+        "ab-blake3",
+    );
     emit_path_package(
         "BLAKE3_SERVIL_SOURCE_INFO",
         &manifest_dir,

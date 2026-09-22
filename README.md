@@ -4,14 +4,23 @@ Written by GPT-5.6 Sol and Claude Fable 5 to my (Zooko's) specifications.
 
 A small benchmark comparing BLAKE3, SHA-256, SHA-1DC (SHA-1 with
 collision detection, the construction git uses), BLAKE3 servil (a fork
-with SME2 kernels for Apple M4 and later), and on Apple platforms the
-system's CommonCrypto SHA-256. Two multithreaded contenders, BLAKE3 mt
-(the crates.io crate on a Rayon pool) and BLAKE3 servil mt (the fork's
-`hash_multithreaded`), join default and `--all` runs. Every run measures
-every contender under contention, two copies at once; `--solo` adds a
-single-copy column beside it: see "The duo measurement" below.
+with SME2 kernels for Apple M4 and later), ab-blake3 (a crate with a
+`const fn` BLAKE3 and a batch entry point for many 64-byte messages),
+and on Apple platforms the system's CommonCrypto SHA-256. Two
+multithreaded contenders, BLAKE3 mt (the crates.io crate on a Rayon
+pool) and BLAKE3 servil mt (the fork's `hash_multithreaded`), join
+default and `--all` runs. Every run measures every contender under
+contention, two copies at once; `--solo` adds a single-copy column
+beside it: see "The duo measurement" below.
 
-The benchmark tests every power-of-two input size from 64 B to 8 MiB,
+Every run measures two use cases. **One message per call**: a call
+hashes one input, at twenty sizes from 64 B to 8 MiB, reported per
+byte. **Many messages per call**: a call hashes a batch of 64-byte
+messages, at twenty batch sizes from 1 to 16384 messages, reported per
+message; see "The many-messages use case" below. The graph shows the
+two as two plots, one below the other.
+
+The one-message axis tests every power-of-two input size from 64 B to 8 MiB,
 plus 3 KiB and 3 MiB: 64 B, 128 B, 256 B, 512 B, 1 KiB, 2 KiB, 3 KiB,
 4 KiB, 8 KiB, 16 KiB, 32 KiB, 64 KiB, 128 KiB, 256 KiB, 512 KiB, 1 MiB,
 2 MiB, 3 MiB, 4 MiB, and 8 MiB. Below 1 KiB a BLAKE3 input is one chunk; from 2 KiB to 16 KiB
@@ -79,14 +88,46 @@ cargo run --release -- --solo                        # a solo column beside ever
 cargo run --release -- --list                        # keys and availability here
 ```
 
-Keys: `blake3`, `blake3-servil`, `sha256`, `sha256-ring`, `sha1dc`; and
-`sha256-cc`, which runs only when named with `--contenders`. It stays
+Keys: `blake3`, `ab-blake3`, `blake3-servil`, `sha256`, `sha256-ring`,
+`sha1dc`; and `sha256-cc`, which runs only when named with `--contenders`. It stays
 available for direct comparison; on Apple silicon the ring and sha2
 crates are each faster than CommonCrypto at every size, so the default
 and `--all` runs leave it out. `blake3-mt` and `blake3-servil-mt` are
 the multithreaded contenders; they join default and `--all` runs.
 `blake3-servil-mt1`, the multithreaded call capped at one thread, runs
 when named, as a check that it costs what `blake3-servil` costs.
+
+### The many-messages use case
+
+A program with a queue of small messages to hash (a Merkle tree's
+leaves, a table of records) has two ways to spend a call: one message
+per call of the plain entry point, or a batch per call where the
+implementation offers that. The second use case measures both as they
+are. Every contender loops its plain entry point over the batch, one
+message per call: `for m in batch { hash(m) }`. ab-blake3 alone has a
+batch entry point, `single_block_hash_many_exact::<N>`, which takes N
+messages of exactly one block (64 bytes) as one array and returns N
+digests; the bencher calls it with N the batch size (N is a const
+generic, so each batch size on the axis is its own call). Messages are
+64 bytes for every contender because that is the one size the batch
+entry point accepts.
+
+The axis counts messages per batch: 1, 2, 3, 4, 6, 8, 12, 16, 24, 32,
+48, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384 (1 MiB of input at
+the end). Powers of two up to 16 show a SIMD batch filling (the blake3
+crate's `hash_many` takes four blocks at a time on NEON, sixteen with
+AVX-512); 3, 6, 12, 24, and 48 leave a group partly filled or leave a
+remainder past the sixteen-message groups ab-blake3 forms; from 64 up
+the per-batch overhead amortises and the rate settles. Results read in
+nanoseconds per message and million messages per second.
+
+The multithreaded contenders take no part in this use case: a 64-byte
+message is a call to `hash_multithreaded` that no program would make.
+The bencher writes no wrapper of its own around any contender; the
+contenders' own entry points are the whole of what it calls.
+
+The duo measurement below applies unchanged: each sample runs two copies
+of the contender, each over its own batch, and times the later finish.
 
 ### The duo measurement
 
@@ -206,6 +247,17 @@ BLAKE3 is provided by the blake3 crate through the one-shot
 blake3::hash function, which is single-threaded (see "BLAKE3
 threading").
 
+ab-blake3 is the ab-blake3 crate (0.2), "optimized and more exotic APIs
+around BLAKE3". For one message the bencher calls `const_hash`, a
+`const fn` copy of the reference tree: portable compression at every
+size with no run-time SIMD dispatch, so above one chunk it runs below
+the crates.io crate. For a batch of 64-byte messages it calls
+`single_block_hash_many_exact::<N>`, which hands each full group of
+sixteen blocks to the blake3 crate's platform `hash_many` (the SIMD
+path the BLAKE3 kernel table names) and compresses the blocks past the
+last full group one at a time; below sixteen messages every block is
+its own compression.
+
 SHA-256 is provided by RustCrypto's sha2 crate (0.11), whose built-in
 backends use the ARMv8 SHA-256 instructions on AArch64 and SHA-NI on
 x86, selected at runtime; other targets use its portable code.
@@ -256,9 +308,10 @@ the uncapped call; `--contenders blake3-servil,blake3-servil-mt1` compares
 the one-thread cap with the ordinary single-threaded entry point.
 
 The benchmark touches each implementation in three ways only: it lists
-it, it calls its single-threaded (`hash`) or multithreaded
-(`hash_multithreaded`, `Hasher::update_rayon`) entry point with no cap
-or pool of its own, and it asks the servil fork to describe its kernels
+it, it calls its single-threaded (`hash`, `const_hash`), multithreaded
+(`hash_multithreaded`, `Hasher::update_rayon`), or batch
+(`single_block_hash_many_exact`) entry point with no cap or pool of its
+own, and it asks the servil fork to describe its kernels
 (`kernel_report()`). It asks for no machine capacity, sets no
 environment, and checks returned digests through those same entry points
 before timing. Implementation-specific tests remain in each crate.
@@ -300,9 +353,13 @@ BLAKE3 mt leaves the caller's thread above one SIMD width of chunks;
 BLAKE3 servil mt can split over threads from 64 KiB, its fourth path, drawn
 as a triangle. SHA-256 and SHA-1DC run one path at every size.
 
-The text report lists the kernel at each size for every contender (one
-line for a contender with a single kernel) and marks where a new one
-begins. In the graph, dot shape carries the same information: a circle
+In the many-messages use case a contender looping one message per call
+runs its 64 B kernel at every batch size; ab-blake3's batch entry point
+changes path at sixteen messages, where the first full SIMD group forms.
+
+The text report lists the kernel at each point for every contender in
+each use case (one line for a contender with a single kernel) and marks
+where a new one begins. In the graph, dot shape carries the same information: a circle
 for a contender's first kernel, a diamond for its second, a square for
 its third, a triangle for a fourth. Hovering any dot names its kernel,
 and hovering the first dot of a new kernel adds a sentence on why the
@@ -317,9 +374,13 @@ fork's `src/ffi_sme2.rs` and `src/ffi_neon_hybrid.rs`.
 
 Before calibration, every selected implementation receives identical,
 deterministically generated bytes and checks its digest against
-`src/test_vectors.rs`. These 64 frozen vectors cover both input seeds at
-every benchmark size, empty input, and short boundary tails. Multithreaded
-entries also hash the same vectors in two simultaneous calls.
+`src/test_vectors.rs`. Its 64 one-message vectors cover both input seeds
+at every benchmark size, empty input, and short boundary tails; its 40
+batch vectors cover both seeds at every batch size, each the SHA-256 of
+the batch's digests concatenated in message order, so a batch entry
+point is checked digest by digest against a one-line anchor.
+Multithreaded entries also hash the same vectors in two simultaneous
+calls.
 
 Golden BLAKE3 outputs come from the upstream reference implementation;
 SHA-256 and SHA-1 outputs come from Python's `hashlib`. The generator is
@@ -340,14 +401,15 @@ measurement's cache behavior.
 The contenders run in a Williams design: a set of orders that together
 place every contender in every position equally often and realise every
 "Y right after X" adjacency equally often — the balance all permutations
-would give (n orders for an even count of contenders, 2n for odd). Input-size order
-rotates independently. Each contender/size combination is calibrated
-separately so its timed samples last about 1 ms each.
+would give (n orders for an even count of contenders, 2n for odd). Point
+order (the forty input sizes and batch sizes of the two use cases
+together) rotates independently. Each contender/point combination is
+calibrated separately so its timed samples last about 1 ms each.
 
 Each combination collects about 80 samples: the exact count is the
-smallest multiple of both the size count and the order count at or
-above 80, so every order and every size position recurs equally often
-(80 for two, four, or five contenders; 120 for three or six). The
+smallest multiple of both the point count and the order count at or
+above 80, so every order and every point position recurs equally often
+(80 for two, four, five, or eight contenders; 120 for three or six). The
 runtime budget favours sample count over sample length: the median's
 interval narrows with the square root of the count, and a 1 ms sample
 is long enough that the clock's resolution is far below noise. A whole
@@ -379,28 +441,32 @@ determined. The text report marks such cells with `!`.
 
 ## The graph
 
-The SVG shows median lines with confidence bands on a log-log grid.
+The SVG shows two plots, one per use case, each with median lines and
+confidence bands on a log-log grid: one message per call above, many
+messages per call below.
 
-A switch above the y axis flips the graph between GB/s (the default;
-higher is better) and ns/B (lower is better). GB/s is the reciprocal of
-ns/B, so on the log axis the plot mirrors through its middle: the
-switch animates each point along a straight line to its mirrored
-position over 0.7 s while the two axes cross-fade, and every label,
-value, and hover figure follows the chosen unit. Ratios between
-contenders are unitless and stay put.
+A switch above the first y axis flips both plots between rate (the
+default; higher is better: GB/s above, million messages per second
+below) and time (lower is better: ns/B above, ns per message below).
+Rate is the reciprocal of time, so on the log axis each plot mirrors
+through its middle: the switch animates each point along a straight
+line to its mirrored position over 0.7 s while the axes cross-fade, and
+every label, value, and hover figure follows the chosen unit. Ratios
+between contenders are unitless and stay put.
 
-Hovering a dot opens a panel for that input size: the hovered
-contender's median, range, and code path, then every visible contender ranked
-fastest first with its ns/B, GB/s, and speed relative to the hovered
-one ("▲ 1.35× faster" in green, "about the same" in grey, "▼ 3.22×
+Hovering a dot opens a panel for that point: the hovered
+contender's median, range, and code path, then every visible contender
+of that plot ranked fastest first with its time, rate, and speed
+relative to the hovered one ("▲ 1.35× faster" in green, "about the same" in grey, "▼ 3.22×
 slower" in red; contender colours stay away from those two hues).
 Hidden contenders stay out of the ranking. On a touch screen, tapping a
 dot pins the panel; tapping it again or the background clears it. Name
 highlighting follows the mouse, since a finger has no way to leave.
 
-The names at the right edge are toggles. Clicking one hides that
-contender: its marks fade out, the y axis rescales to the contenders
-still showing, and its provenance line drops out of the block below. The name stays in
+The names at the right edge of either plot are toggles. Clicking one
+hides that contender in both plots: its marks fade out, each y axis
+rescales to the contenders still showing, and its provenance line drops
+out of the block below. The name stays in
 place, greyed with a hollow swatch and a "hidden · click to show" hint,
 anchored toward where its line would sit on the current axis. A viewer
 without script support shows every contender, laid out identically.
