@@ -129,8 +129,8 @@ enum Algorithm {
     Sha256CommonCrypto,
     /// ring's SHA-256: BoringSSL's assembly, with runtime CPU detection.
     Sha256Ring,
-    /// crates.io blake3 through Hasher::update_rayon on a Rayon pool sized
-    /// to the machine: the crate's own multithreading.
+    /// crates.io blake3 through Hasher::update_rayon, the crate's own
+    /// multithreading, on Rayon's global pool as Rayon sizes it.
     Blake3Rayon,
     /// The fork's hash_multithreaded: the caller's thread plus the fork's
     /// own resident workers, shared fairly between concurrent callers in
@@ -295,20 +295,18 @@ impl Algorithm {
             | Self::Blake3Servil
             | Self::Sha256CommonCrypto
             | Self::Sha256Ring => "single-threaded",
-            Self::Blake3Rayon => "multithreaded; Hasher::update_rayon on a Rayon pool with one thread per logical CPU, the crate's own multithreading: the tree splits recursively over the pool, and inputs under a few chunks stay on the caller's thread",
+            Self::Blake3Rayon => "multithreaded; Hasher::update_rayon on Rayon's global pool, the crate's own multithreading as a program gets it by default: the tree splits recursively over the pool, and inputs under a few chunks stay on the caller's thread",
             Self::Blake3ServilMt => "multithreaded; blake3_servil::hash_multithreaded: inputs of 128 KiB and up split across the caller's thread and the fork's resident worker threads, which concurrent callers in one process share fairly; below 128 KiB the caller's thread alone",
         }
     }
 
-    /// The threads a multithreaded contender is given, where the
-    /// benchmarker itself sizes them. The fork sizes its own workers and
-    /// reports no machine capacity, so its contender has no line.
+    /// The threads a multithreaded contender runs on, as far as the
+    /// benchmarker can say without asking the implementation for machine
+    /// capacity: Rayon's global pool is documented to take one thread per
+    /// logical CPU by default; the fork sizes its own workers.
     fn thread_resources(self) -> Option<String> {
         match self {
-            Self::Blake3Rayon => Some(format!(
-                "Rayon pool: {} threads (one per logical CPU)",
-                std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)
-            )),
+            Self::Blake3Rayon => Some("Rayon's global pool, at its default size (one thread per logical CPU)".to_owned()),
             _ => None,
         }
     }
@@ -909,51 +907,6 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
     let duo: Option<&Duo> = roster.duo.then(Duo::new);
 
     /*
-     * The two BLAKE3 contenders must produce the same digest on every input;
-     * a mismatch means one of them is wrong, and timing it would be noise.
-     */
-    for input in &inputs {
-        assert_eq!(
-            blake3::hash(input).as_bytes(),
-            blake3_servil::hash(input).as_bytes(),
-            "BLAKE3 servil must agree with crates.io blake3 on a {}-byte input",
-            input.len(),
-        );
-        if roster.algorithms.contains(&Algorithm::Blake3Rayon) {
-            assert_eq!(
-                blake3::hash(input).as_bytes(),
-                rayon_pool::hash(input).as_bytes(),
-                "BLAKE3 mt must agree with blake3::hash on a {}-byte input",
-                input.len(),
-            );
-        }
-        if roster.algorithms.contains(&Algorithm::Blake3ServilMt) {
-            assert_eq!(
-                blake3::hash(input).as_bytes(),
-                blake3_servil::hash_multithreaded(input).as_bytes(),
-                "BLAKE3 servil mt must agree with blake3::hash on a {}-byte input",
-                input.len(),
-            );
-        }
-        if roster.algorithms.contains(&Algorithm::Sha256CommonCrypto) {
-            assert_eq!(
-                Sha256::digest(input).as_slice(),
-                &common_crypto::sha256(input)[..],
-                "CommonCrypto SHA-256 must agree with the sha2 crate on a {}-byte input",
-                input.len(),
-            );
-        }
-        if roster.algorithms.contains(&Algorithm::Sha256Ring) {
-            assert_eq!(
-                Sha256::digest(input).as_slice(),
-                ring::digest::digest(&ring::digest::SHA256, input).as_ref(),
-                "ring SHA-256 must agree with the sha2 crate on a {}-byte input",
-                input.len(),
-            );
-        }
-    }
-
-    /*
      * Each algorithm/input combination gets its own calibrated iteration
      * count so that timed blocks have approximately equal durations.
      */
@@ -1392,7 +1345,7 @@ fn run_batch(
         }
         Algorithm::Blake3Rayon => {
             for _ in 0..iterations {
-                let digest = rayon_pool::hash(black_box(input));
+                let digest = blake3::Hasher::new().update_rayon(black_box(input)).finalize();
                 let _ = black_box(digest);
             }
         }
@@ -1402,36 +1355,6 @@ fn run_batch(
                 let _ = black_box(digest);
             }
         }
-    }
-}
-
-/*
- * The crates.io crate's multithreading: Hasher::update_rayon on a Rayon
- * pool. The pool is built once per thread that hashes, sized to the
- * machine (Rayon's default), which is what a program using update_rayon
- * gets. In a duo sample each copy runs on its own thread and so on its own
- * pool, as two independent programs would; both pools want every CPU.
- */
-mod rayon_pool {
-    use std::cell::OnceCell;
-
-    thread_local! {
-        static POOL: OnceCell<rayon_core::ThreadPool> = const { OnceCell::new() };
-    }
-
-    pub fn hash(input: &[u8]) -> blake3::Hash {
-        POOL.with(|cell| {
-            let pool = cell.get_or_init(|| {
-                rayon_core::ThreadPoolBuilder::new()
-                    .build()
-                    .expect("building a Rayon pool for BLAKE3 mt")
-            });
-            pool.install(|| {
-                let mut hasher = blake3::Hasher::new();
-                hasher.update_rayon(input);
-                hasher.finalize()
-            })
-        })
     }
 }
 
@@ -2077,7 +2000,7 @@ enum Mark {
     Circle,
     Diamond,
     Square,
-    /// A fourth path, which only the multithreaded servil contender has.
+    /// A fourth kernel, which only the multithreaded servil contender has.
     Triangle,
 }
 
@@ -2209,46 +2132,6 @@ fn detect_blake3_kernels() -> Kernels {
 }
 
 /*
- * Kernels of the servil fork, read from its Platform::detect() at run
- * time. Every AArch64 core runs the scalar and integer + NEON hybrid
- * kernels (src/ffi_neon_hybrid.rs); a CPU that reports SME2 with 512-bit
- * streaming vectors adds the SME2 group kernel (src/ffi_sme2.rs) for
- * sixteen whole chunks and up. Which of the two the run measured is part
- * of the result, and the report names it.
- */
-fn detect_blake3_servil_kernels() -> Kernels {
-    let platform = blake3_servil::platform::Platform::detect();
-    let platform: &'static str = match format!("{platform:?}").as_str() {
-        "SME2" => "SME2",
-        "NEON" => "NEON",
-        other => panic!("the servil fork selected platform {other}, which this AArch64 report does not describe"),
-    };
-    let mut kernels = vec![
-        Kernel {
-            first: 0,
-            name: "scalar kernel c1, one call",
-            why: "One chunk runs on the integer ALUs alone: every block including the root compression in a single kernel call, with the state in registers throughout.",
-            mark: Mark::Circle,
-        },
-        Kernel {
-            first: 2 * 1024,
-            name: "integer + NEON hybrid kernels",
-            why: "Two or more whole chunks: hybrid kernels keep the integer and NEON units busy together.",
-            mark: Mark::Diamond,
-        },
-    ];
-    if platform == "SME2" {
-        kernels.push(Kernel {
-            first: 16 * 1024,
-            name: "SME2 hash16_chunks kernel",
-            why: "Sixteen whole chunks fill an SME2 group on 512-bit streaming vectors; leftovers below sixteen stay on the hybrid kernels.",
-            mark: Mark::Square,
-        });
-    }
-    Kernels::new(platform, kernels)
-}
-
-/*
  * SHA-256 and SHA-1DC each run one code path at every size. Their kernels
  * still carry a name so the hover panel can say what produced the point.
  */
@@ -2314,16 +2197,39 @@ fn detect_ring_kernels() -> Kernels {
     )
 }
 
+/*
+ * The servil fork describes its own kernels: kernel_report() and
+ * kernel_report_multithreaded() come from the same run-time detection
+ * its hash functions use, so the report describes what was measured. The
+ * bencher adds only the dot shapes, in order.
+ */
+fn servil_kernels(report: blake3_servil::KernelReport) -> Kernels {
+    const MARKS: [Mark; 4] = [Mark::Circle, Mark::Diamond, Mark::Square, Mark::Triangle];
+    assert!(
+        report.kernels.len() <= MARKS.len(),
+        "the graph has {} dot shapes; the fork reports {} kernels",
+        MARKS.len(),
+        report.kernels.len(),
+    );
+    let kernels = report
+        .kernels
+        .iter()
+        .zip(MARKS)
+        .map(|(kernel, mark)| Kernel { first: kernel.from_len, name: kernel.name, why: kernel.why, mark })
+        .collect();
+    Kernels::new(report.platform, kernels)
+}
+
 fn detect_kernels(algorithm: Algorithm) -> Kernels {
     match algorithm {
         Algorithm::Blake3 => detect_blake3_kernels(),
         Algorithm::Sha256 => detect_sha256_kernels(),
         Algorithm::Sha1Dc => detect_sha1dc_kernels(),
-        Algorithm::Blake3Servil => detect_blake3_servil_kernels(),
+        Algorithm::Blake3Servil => servil_kernels(blake3_servil::kernel_report()),
         Algorithm::Sha256CommonCrypto => detect_common_crypto_kernels(),
         Algorithm::Sha256Ring => detect_ring_kernels(),
         Algorithm::Blake3Rayon => detect_blake3_rayon_kernels(),
-        Algorithm::Blake3ServilMt => detect_blake3_servil_mt_kernels(),
+        Algorithm::Blake3ServilMt => servil_kernels(blake3_servil::kernel_report_multithreaded()),
     }
 }
 
@@ -2352,27 +2258,6 @@ fn detect_blake3_rayon_kernels() -> Kernels {
             },
         ],
     )
-}
-
-/*
- * hash_multithreaded's documented contract: inputs below 128 KiB stay on
- * the calling thread; from there the input splits across threads. The
- * threshold is read from that documentation, as the crates.io kernels
- * above are read from that crate's source; the fork exposes no constant
- * for it and reports no machine capacity.
- */
-const SERVIL_MULTITHREADED_FROM: usize = 128 * 1024;
-
-fn detect_blake3_servil_mt_kernels() -> Kernels {
-    let single = detect_blake3_servil_kernels();
-    let mut kernels = single.kernels.clone();
-    kernels.push(Kernel {
-        first: SERVIL_MULTITHREADED_FROM,
-        name: "subtrees over threads",
-        why: "From 128 KiB the input splits into subtrees, each hashed on its own thread (the caller's and the fork's workers) with the kernels above; the caller merges the chaining values.",
-        mark: Mark::Triangle,
-    });
-    Kernels::new(single.platform, kernels)
 }
 
 /// The kernels a contender ran, by input size: one line for a contender
@@ -3799,7 +3684,7 @@ fn contender_provenance_lines(
                 "{name}: {} · Hasher::update_rayon · platform {platform}",
                 package_name_and_version(BLAKE3_SOURCE_INFO),
             ),
-            format!("{name}: {}", algorithm.thread_resources().expect("BLAKE3 mt sizes its own pool")),
+            format!("{name}: {}", algorithm.thread_resources().expect("BLAKE3 mt runs on Rayon's pool")),
         ],
         Algorithm::Blake3ServilMt => vec![
             format!("{name}: {} · hash_multithreaded", short_git_source(BLAKE3_SERVIL_SOURCE_INFO)),

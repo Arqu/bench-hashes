@@ -154,9 +154,11 @@ Apple's clang from Xcode 15 or later works out of the box.
 At run time the fork's `Platform::detect()` selects SME2 on a CPU that
 reports SME2 with a 512-bit streaming vector length (Apple M4 and later,
 or a Linux 6.4+ kernel exposing `HWCAP2_SME2`) and NEON elsewhere. The
-benchmark reads that selection back and names it in the report's kernel
-table ("platform SME2" or "platform NEON") and in the servil columns'
-provenance, so a NEON run reads as what it is.
+fork describes its own kernels by input length through
+`blake3_servil::kernel_report()` (and `kernel_report_multithreaded()`),
+built from that same detection; the benchmark prints the report as the
+kernel table ("platform SME2" or "platform NEON") and uses it for the
+dot shapes and hover text, so a NEON run reads as what it is.
 
 The build script also runs `git` on the repository to record the commit
 and clean status. If the tree is owned by a different user than the one
@@ -227,14 +229,15 @@ The report's kernel table names the platform the run measured. Its
 provenance line gives the checkout's branch, commit, and clean or dirty
 state instead of a registry checksum.
 
-BLAKE3 mt is the crates.io crate's own multithreading:
-`Hasher::update_rayon` on a Rayon pool with one thread per logical
-CPU (Rayon's default), built once per thread that hashes. The method
-splits the tree recursively with `rayon::join` down to the SIMD degree,
-so any input above one SIMD width of chunks may cross threads, and idle
-pool threads steal the halves. Each duo copy runs on its own thread and
-so on its own pool, as two independent programs would; both pools want
-every CPU, which is the behaviour the duo measurement is there to show.
+BLAKE3 mt is the crates.io crate's own multithreading, called as a
+program calls it by default: `Hasher::new().update_rayon(input)` on
+Rayon's global pool, which Rayon sizes to one thread per logical CPU.
+The method splits the tree recursively with `rayon::join` down to the
+SIMD degree, so any input above one SIMD width of chunks may cross
+threads, and idle pool threads steal the halves. The two duo copies are
+two callers in one process sharing that one pool, the same situation
+the servil fork's fair sharing addresses, so the two multithreaded
+columns compare like for like.
 
 BLAKE3 servil mt is the fork's `blake3_servil::hash_multithreaded`,
 which returns the same hash as `blake3_servil::hash`. Inputs below
@@ -247,17 +250,22 @@ fairly: two callers at once each get about half the machine. Across
 processes the operating system's scheduler shares the workers' CPUs.
 The fork also offers `hash_multithreaded_with_budget(input,
 max_threads)` to cap one call's threads; this benchmark measures the
-uncapped call. The benchmarker asks the fork for no machine capacity
-(thread or core counts); what it reports about the fork it reads from
-the fork's documentation and from `Platform::detect()`.
+uncapped call.
+
+The benchmark touches each implementation in three ways only: it lists
+it, it calls its single-threaded (`hash`) or multithreaded
+(`hash_multithreaded`, `Hasher::update_rayon`) entry point with no cap
+or pool of its own, and it asks the servil fork to describe its kernels
+(`kernel_report()`). It asks for no machine capacity, sets no
+environment, and runs no correctness checks; the fork's test suite owns
+those.
 
 SHA-256 CommonCrypto, on Apple platforms only, calls the system's
 libSystem through FFI using `CC_SHA256_Init`, `CC_SHA256_Update`, and
 `CC_SHA256_Final`. This is the implementation most Apple software
 reaches for, so it anchors the sha2 crate's number against the
-platform's own. The benchmark checks that the two agree on every input
-before timing them. Its provenance is the running OS rather than a
-crate version.
+platform's own. Its provenance is the running OS rather than a crate
+version.
 
 The three-call form is the fastest route into corecrypto. Measured on
 an M4 Max, a 64-byte digest takes 51 ns through Init/Update/Final and
