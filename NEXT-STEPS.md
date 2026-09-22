@@ -5,6 +5,78 @@ Layout and environment (where the repos are, `HOME`, credentials,
 `clang-19`) are in the Environment section of either `AGENTS.md`; after a
 VM restart run `sh /workspace/vm/setup.sh`.
 
+## Where the last session stopped (VM restart pending for more cores)
+
+Uncommitted in the fork, all tests green (`cargo test --release --lib`: 56;
+with `--features no_sme2`: 55):
+
+- `src/ffi_neon_hybrid.rs`: `GROUP = 16`; chunk plans for 13–16 inputs lead
+  with k10 (`[10,3] [10,4] [10,5] [10,6]`), parent plan 16 = `[8,8]`; the
+  count test runs 1..=16.
+- `src/platform.rs`: `Platform::NEON.simd_degree()` is 16 when the SHA-3
+  extension is present (`MAX_SIMD_DEGREE` 16 under `blake3_neon_hybrid`);
+  the hash_many name says "integer + NEON hybrid kernels (16 chunks per
+  call)".
+- `src/lib.rs`: the kernel report's NEON sentence says sixteen per call.
+
+Why: raw kernel rates on the VM (`examples/probe2.rs`), 1 MiB of chunks
+through `Platform::NEON.hash_many` at a fixed group size: k4 0.289 ns/B,
+k8 0.255, k9 0.228, **k10 0.212**, k15 0.239, 16 = 15 + 1: 0.265. The tree
+walk hands the NEON platform its degree at a time, so degree 4 kept it on
+k4. Still to do: measure whole-hash `blake3_servil::hash` on the NEON
+platform before and after (`cargo run --release --features no_sme2
+--example rate`); after the change it reads 0.242 ns/B at 64 KiB–8 MiB.
+The "before" run was lost to a `git stash` without `HOME=/workspace/vm/home`.
+Then commit with the numbers.
+
+Scratch helpers, uncommitted: `examples/probe.rs` (SME2 vs NEON rates,
+alone and in pairs), `examples/probe2.rs` (NEON rate by group size),
+`examples/rate.rs` (`hash()` rate by size on the detected platform).
+
+Finding that shapes the mt plan (`examples/probe.rs`, VM): two threads
+SME2 + NEON run at almost full speed each (0.164 / 0.302 ns/B), while
+SME2 + SME2 sometimes collide (0.23 each, when the host puts both vCPUs on
+one cluster). The SME unit is per cluster; the NEON units are per core.
+
+### Plan for the multithreaded path
+
+On the M4 Max, servil mt uses 3 lanes (one SME2 thread per cluster) and
+BLAKE3 mt uses 16 NEON cores; that is why Rayon wins from 1 MiB up. The
+plan is to use every core, each with the kernel it can run at full speed:
+
+1. One pool of `available_parallelism() - 1` resident workers. A worker
+   takes a piece only while hashing threads (callers inside a call plus
+   workers with a piece) number fewer than the CPUs, so two callers on a
+   two-CPU machine run serial, and never three threads on two CPUs.
+2. Each call registers a job (its pieces, an atomic cursor, a done count)
+   in the pool's active list; workers serve jobs round-robin, one piece
+   at a time via `fetch_add` on the cursor; the caller takes pieces from
+   its own job and waits for `done`. This replaces the lanes/callers
+   admission word, the fair share, and the 20 ms wait: fairness comes
+   from the round-robin, balance from the dynamic pull.
+3. `lane_count()` SME2 permits (an atomic count). A thread takes a permit
+   before each piece if one is free and hashes with `Platform::SME2`;
+   otherwise with `Platform::NEON` (degree 16 → k10, ~0.21–0.29 ns/B).
+   Needs a way to hash a piece with an explicit platform (`Hasher` takes
+   its platform from `Platform::detect()` today; add a crate-internal
+   constructor).
+4. Pieces: subtrees from `split_subtrees`, target size around 128 KiB
+   (one SME2 streaming entry) for bulk; many pieces let slow threads
+   (E cores) take fewer. Tail is one piece on the slowest thread; if that
+   shows on the M4, cut the last pieces finer.
+5. `hash_multithreaded_with_budget(input, n)`: a per-job cap on threads
+   with a piece in hand.
+
+Expected on the M4 Max under duo at 8 MiB: 3 SME lanes (~5.5 GB/s each)
+plus 13 NEON cores (~3.4 GB/s each) ≈ 50 GB/s for two copies, against
+Rayon's 0.088 ns/B (≈ 23 GB/s). Even at half efficiency it wins.
+
+The VM cannot show most of this (two CPUs, both SME2 lanes); it checks
+correctness, per-piece overhead, and the two-callers-serial case. Once the
+VM has more cores, `nproc` and a spin test (N busy processes, wall time
+against N) tell whether they are real; with two CPUs the time doubled
+exactly from 2 to 4 to 8 processes.
+
 ## The goal now: optimise BLAKE3 servil for the duo score
 
 Make the servil fork (`/workspace`, branch `sme2-bench`) score as high as
