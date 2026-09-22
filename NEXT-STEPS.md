@@ -5,77 +5,69 @@ Layout and environment (where the repos are, `HOME`, credentials,
 `clang-19`) are in the Environment section of either `AGENTS.md`; after a
 VM restart run `sh /workspace/vm/setup.sh`.
 
-## Where the last session stopped (VM restart pending for more cores)
+## Where the last session stopped (VM now has 16 vCPUs)
 
-Uncommitted in the fork, all tests green (`cargo test --release --lib`: 56;
-with `--features no_sme2`: 55):
+The fork's multithreaded path is rebuilt (commit `b3b4bc8` on
+`sme2-bench`, tests green: 54 lib + 15 doc; `--features no_sme2`: 53).
+Design and measurements: `/workspace/NOTES-sme2-bench.md`, section "The
+pool". In one paragraph: every CPU hashes; a call cuts its input into
+subtree pieces that shrink toward the end (8–128 KiB) and registers a
+job in a lock-free slot table; `cpus - 1` resident workers pull pieces
+from the registered jobs round-robin; a piece runs on SME2 while one of
+the machine's SME units is free (a permit per unit) and on the NEON
+hybrids otherwise; workers sleep only after 200 µs without a registered
+job; the pool starts from a background thread so the first call costs a
+call.
 
-- `src/ffi_neon_hybrid.rs`: `GROUP = 16`; chunk plans for 13–16 inputs lead
-  with k10 (`[10,3] [10,4] [10,5] [10,6]`), parent plan 16 = `[8,8]`; the
-  count test runs 1..=16.
-- `src/platform.rs`: `Platform::NEON.simd_degree()` is 16 when the SHA-3
-  extension is present (`MAX_SIMD_DEGREE` 16 under `blake3_neon_hybrid`);
-  the hash_many name says "integer + NEON hybrid kernels (16 chunks per
-  call)".
-- `src/lib.rs`: the kernel report's NEON sentence says sixteen per call.
+bench-hashes duo on the VM (`--contenders blake3-servil,blake3-servil-mt,blake3-servil-mt1`):
 
-Why: raw kernel rates on the VM (`examples/probe2.rs`), 1 MiB of chunks
-through `Platform::NEON.hash_many` at a fixed group size: k4 0.289 ns/B,
-k8 0.255, k9 0.228, **k10 0.212**, k15 0.239, 16 = 15 + 1: 0.265. The tree
-walk hands the NEON platform its degree at a time, so degree 4 kept it on
-k4. Still to do: measure whole-hash `blake3_servil::hash` on the NEON
-platform before and after (`cargo run --release --features no_sme2
---example rate`); after the change it reads 0.242 ns/B at 64 KiB–8 MiB.
-The "before" run was lost to a `git stash` without `HOME=/workspace/vm/home`.
-Then commit with the numbers.
+    size      servil   servil mt      size      servil   servil mt
+    64 KiB    0.214    0.191          1 MiB     0.186    0.078
+    128 KiB   0.209    0.139          2 MiB     0.183    0.067
+    256 KiB   0.201    0.118          4 MiB     0.186    0.061
+    512 KiB   0.189    0.093          8 MiB     0.184    0.062
 
-Scratch helpers, uncommitted: `examples/probe.rs` (SME2 vs NEON rates,
-alone and in pairs), `examples/probe2.rs` (NEON rate by group size),
-`examples/rate.rs` (`hash()` rate by size on the detected platform).
+servil mt wins every cell from 64 KiB, with the bands apart; mt·1 tracks
+servil. Below 64 KiB the call is the serial one.
 
-Finding that shapes the mt plan (`examples/probe.rs`, VM): two threads
-SME2 + NEON run at almost full speed each (0.164 / 0.302 ns/B), while
-SME2 + SME2 sometimes collide (0.23 each, when the host puts both vCPUs on
-one cluster). The SME unit is per cluster; the NEON units are per core.
+**The next thing to do is run this on the M4 Max** and commit the
+results under `benchmark-results/AppleM4Max.darwin25/`. What to look at
+there (details and the numbers behind each in the NOTES):
 
-### Plan for the multithreaded path
+1. 64 KiB, where the VM margin is smallest: the first call of each
+   1 ms batch pays one `notify_all` of the sleeping workers (VM: 80–100
+   µs on the caller; macOS unknown). If it hurts, the options measured
+   and rejected on the VM (cascades, delegated wake, longer spin) are in
+   the NOTES with their numbers; a native machine may rank them
+   differently, in particular a longer `SPIN_BEFORE_SLEEP` costs nothing
+   there but power.
+2. Three SME permits vs none: on the VM they tie, because a piece's
+   SME2 ↔ NEON round trip costs ~4 µs there; the M4 pays ~1 µs and its
+   SME2 is 1.5–2× NEON per thread, so permits should show a gain at
+   ≥ 512 KiB. `examples/duo.rs` with a permit override would tell; the
+   override was removed before the commit, re-add it locally.
+3. E-cores: the shrinking pieces are the answer to a slow thread's last
+   piece; `examples/duo.rs` prints solo and duo by size.
+4. The 8 MiB duo cell against Rayon's 0.088.
 
-On the M4 Max, servil mt uses 3 lanes (one SME2 thread per cluster) and
-BLAKE3 mt uses 16 NEON cores; that is why Rayon wins from 1 MiB up. The
-plan is to use every core, each with the kernel it can run at full speed:
+Harness note, for the bencher's maintainers: calibration's first probe
+of a size runs one iteration; a contender whose *first ever* call is
+slow (a pool starting) gets a 1-iteration batch for that size and every
+sample of the cell is then a cold call. The fork now starts its pool in
+the background so its first call is ordinary; a warm-up call per
+contender before calibration would make the harness robust to any
+contender's start (Rayon's global pool starts the same way).
 
-1. One pool of `available_parallelism() - 1` resident workers. A worker
-   takes a piece only while hashing threads (callers inside a call plus
-   workers with a piece) number fewer than the CPUs, so two callers on a
-   two-CPU machine run serial, and never three threads on two CPUs.
-2. Each call registers a job (its pieces, an atomic cursor, a done count)
-   in the pool's active list; workers serve jobs round-robin, one piece
-   at a time via `fetch_add` on the cursor; the caller takes pieces from
-   its own job and waits for `done`. This replaces the lanes/callers
-   admission word, the fair share, and the 20 ms wait: fairness comes
-   from the round-robin, balance from the dynamic pull.
-3. `lane_count()` SME2 permits (an atomic count). A thread takes a permit
-   before each piece if one is free and hashes with `Platform::SME2`;
-   otherwise with `Platform::NEON` (degree 16 → k10, ~0.21–0.29 ns/B).
-   Needs a way to hash a piece with an explicit platform (`Hasher` takes
-   its platform from `Platform::detect()` today; add a crate-internal
-   constructor).
-4. Pieces: subtrees from `split_subtrees`, target size around 128 KiB
-   (one SME2 streaming entry) for bulk; many pieces let slow threads
-   (E cores) take fewer. Tail is one piece on the slowest thread; if that
-   shows on the M4, cut the last pieces finer.
-5. `hash_multithreaded_with_budget(input, n)`: a per-job cap on threads
-   with a piece in hand.
+Scratch examples in the fork (`cargo run --release --example NAME`):
+`duo` (serial / mt duo / mt solo by size), `interleave` (the bencher's
+pattern: 1 ms mt batches with 4 ms of other work between), `wake`
+(condvar wake cost), `transition` (SME2 ↔ NEON round-trip cost),
+`probe` / `probe3` (SME2 vs NEON rates, pairs and N threads), `probe4`
+(per-piece cost by piece length), `probe2` (NEON rate by group size),
+`rate` (`hash()` by size).
 
-Expected on the M4 Max under duo at 8 MiB: 3 SME lanes (~5.5 GB/s each)
-plus 13 NEON cores (~3.4 GB/s each) ≈ 50 GB/s for two copies, against
-Rayon's 0.088 ns/B (≈ 23 GB/s). Even at half efficiency it wins.
-
-The VM cannot show most of this (two CPUs, both SME2 lanes); it checks
-correctness, per-piece overhead, and the two-callers-serial case. Once the
-VM has more cores, `nproc` and a spin test (N busy processes, wall time
-against N) tell whether they are real; with two CPUs the time doubled
-exactly from 2 to 4 to 8 processes.
+Run everything with a timeout (`timeout 2400 cargo run ...`): a hang
+in the pool during development once ran for hours unnoticed.
 
 ## The goal now: optimise BLAKE3 servil for the duo score
 
