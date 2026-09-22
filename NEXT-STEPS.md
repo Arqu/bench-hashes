@@ -5,157 +5,88 @@ benchmark on the VM, native Mac, and other platforms. Prefer improvements
 that make the implementation simpler and faster together. Shared principles
 and environment commands are in both repositories' `AGENTS.md` files.
 
-## Since the handoff (review session)
-
-- Fork: `blake3_servil::initialize()` is public; the pool starts
-  synchronously (SME unit measurement, about 40 ms on the VM, then the
-  workers) and the first multithreaded call that splits pays it when the
-  program has yet to call it. The contract says "up to tens of
-  milliseconds". The starter thread is gone.
-- Fork: `test_vectors/` and `b3sum/` build again (their manifests name
-  `package = "blake3-servil"`); the official vectors pass.
-- Fork: `jobs_recently` saturates; sleeper/notified bookkeeping is exact
-  under `sleep_lock`; the SME2 build gate reads `CARGO_CFG_TARGET_*`.
-- Benchmark: every run is duo, `--solo` adds the solo column; the
-  `duo`/`solo` flags in code say so; README follows. The SVG separates
-  hover (mouse) from tap (touch): a tap pins the panel, a second tap or
-  the background clears it.
-- Fork doc tests: 16 (the `initialize` example).
-
 ## Where this session stopped
 
-- Fork: `/workspace`, branch `sme2-bench`, commit **04c3394**.
-- Benchmark: `/workspace/bench-hashes`, branch `main`; this handoff ships
-  with the golden-vector checks, documentation cleanup, and latest Mac
-  graph/text record. Use `git log -1` for its commit.
-- VM currently has **16 vCPUs**. Inspect `nproc` after a restart; run
-  `sh /workspace/vm/setup.sh` to restore the toolchain environment.
-- The next priority is interpreting and repeating the latest Mac run,
-  then improving bulk latency without restoring complicated coordination.
+- Fork: `/workspace`, branch `sme2-bench`, commit **604abc4**, clean, pushed.
+- Benchmark: `/workspace/bench-hashes`, branch `main`, commit **2c5f272**,
+  tag **`v0.6.0+4693c2fe…`**, clean, pushed.
+- Latest Mac record: `benchmark-results/AppleM4Max.darwin25/bench-hashes.duo.*`,
+  **2026-09-22 17:18:13 UTC**, `--all`, provenance clean on both commits.
+- VM: 16 vCPUs; run `sh /workspace/vm/setup.sh` after a restart.
 
-### Fork changes retained
+## What the last session did
 
-1. Pieces reuse the one-shot subtree code, with explicit key, counter,
-   flags, and platform. The duplicate owned-mode enum and per-piece
-   incremental Hasher setup are gone.
-2. The caller merges CVs through SIMD a level at a time, in place. The
-   old recursive merger remains only as a structural test oracle.
-3. One active-thread count enforces each call's budget and signals its
-   completion. Reservations are atomic, fixing the old cap-check race.
-   The caller clears its slot and drains readers before waiting for zero;
-   this ordering is essential to the raw job-pointer lifetime proof.
-4. Global admission happens once per call. A call arriving when callers
-   already fill the CPUs hashes its input whole, sharing the same SME
-   permits as workers. The pool-wide busy count is gone. The fixed pool
-   and caller threads may overlap; **the old whole-machine thread-count
-   ceiling is no longer the contract**. Each call's explicit budget remains
-   exact. A single-CPU call now works; the old merge could panic there.
-5. Removed redundant unsafe Send/Sync declarations, unused permit-total
-   state, and a racy global quiet-state test. ARM-specific diagnostic
-   examples now build on configurations without NEON, including `pure`.
+A review of both repositories for bugs, security, and stale material.
 
-The shrinking 8–128 KiB schedule, 64 KiB split threshold, SME permit
-policy, and yielding/sleeping mechanism remain. Equal-size pieces, extra
-cache-line padding, a live-slot bitmap, retained CPU reservations, and
-fixed-width recursion failed to justify their cost or complexity.
-Details and measurements are in `/workspace/NOTES-sme2-bench.md`.
+Fork:
 
-### What measurements establish
+1. **`initialize()` is public and its cost is the contract.** It creates
+   the pool synchronously: on Linux it measures the SME unit count (about
+   40 ms on the VM, every CPU busy; Apple reads `sysctl`), then spawns the
+   workers. The first multithreaded call that leaves its thread does the
+   same when the program has yet to call it; the docs say "up to tens of
+   milliseconds". The starter thread and the permits-grow-later state are
+   gone. `measure_sme_units` uses `REPEAT = 20` (was 40, 78 ms); six runs
+   gave the same unit count.
+2. Sleeper bookkeeping (`sleepers`, `notified`) is exact under
+   `sleep_lock`; `notified` can no longer stay stale after a sleeper takes
+   a piece without waiting. `jobs_recently` saturates instead of wrapping
+   (a debug-build panic in a worker under a clock/store race).
+3. `test_vectors/` and `b3sum/` build again: their manifests name
+   `package = "blake3-servil"`. The official published vectors pass:
+   `cargo test --release --manifest-path test_vectors/Cargo.toml`.
+4. `build.rs` gates the SME2 kernel on `CARGO_CFG_TARGET_VENDOR`/`_OS`,
+   matching `platform.rs` and `Cargo.toml` (an `aarch64-linux-android`
+   build would have failed to compile).
+5. Metadata points at the fork; the README opens with a note on what the
+   branch is; `NOTES-sme2-bench.md` records the start-up contract and the
+   in-tree vector harness.
 
-Two baseline and two candidate runs through the same updated benchmark,
-ABBA order, 240 rounds each, with serial/mt/mt·1 selected:
+Benchmark:
 
-| Input | Baseline mt (`2ce77d7`) | Candidate mt |
-|---|---:|---:|
-| 64 KiB | .174–.175 | .161–.162 |
-| 128 KiB | .125–.126 | .113–.115 |
-| 256 KiB | .108 | .095–.096 |
-| 512 KiB | .089 | .080–.081 |
-| 1 MiB | .074–.076 | .069–.073 |
-| 8 MiB | .055–.056 | .055–.059 |
+6. Every run is duo; `--solo` adds the solo column. The code has one
+   `solo` flag (the always-true `duo` option, `duo_only()`, the `--duo`
+   flag, and the `roster.duo = solo` reuse are gone). README and AGENTS
+   describe the current design, including that cycle normalisation applies
+   to `--solo` samples alone and that this repository lives inside the fork
+   checkout at `..`.
+7. **Touch screens.** The graph separates hover from tap: a mouse hovering
+   a dot shows the panel and leaving hides it; a tap pins the panel, and a
+   second tap or the background clears it. Name highlighting follows the
+   mouse only. `:hover` styles sit under `@media (hover: hover)`.
 
-Values are duo ns/B, ranges across runs. **64–512 KiB improves about
-7–12% with disjoint 95% median bands.** Bulk results show between-run
-variation; an established bulk gain remains open. The final permit-policy
-refactor's check was .161/.114/.096/.080/.069/.061/.060/.059/.056 across
-64 KiB–8 MiB, all median intervals narrower than 5%. mt·1 tracks serial.
-The --all VM run still leads other algorithms from 64 KiB upward.
+Reviewed and found sound: the SIMD merge (3000 random lengths against the
+recursive oracle), the slot-reader/active-count lifetime argument, the
+reservation cap, the wait/notify handshakes, the SME2 assembly's mode
+switching and register saving, the golden-vector generator.
 
-One-/two-CPU affinity diagnostics and 2–32-caller diagnostics were also
-run. Single-CPU correctness is fixed; constrained-CPU and high-caller
-results are promising. Treat diagnostic examples as probes, not formal
-confidence-band measurements.
+Left alone by choice: a worker panic inside `hash_piece` hangs its caller
+(a contract violation; DBC says no defensive code); `blake3_sme2_*` symbol
+prefixes; the credential helper in `vm/` answers every host (scope it to
+`github.com` if that ever matters).
 
-Raw logs, snapshots and SVGs persist under `/workspace/tmp/mt-session/`:
-`checked-baseline-*`, `checked-candidate-*`, `review-final.*`,
-`checked-all.*`, and `many-{baseline,candidate}.log`. Binaries under `/tmp`
-are disposable. `examples/many.rs` is now committed.
+## Latest Mac record
 
-## Latest Mac record: inspect this first
+`--all` at fork 604abc4, the first native run of the simplified pool.
+Servil mt duo medians, 64 KiB through 8 MiB in the usual nine-size order:
+`.193, .124, .101, .078, .063, .054, .052, .050, .048` ns/B. The 15:21
+record at fork `2ce77d7`/dirty was `.203, .134, .107, .078, .063, .055,
+.053, .051, .049`: 64–256 KiB improved 5–6%, bulk is level. The three
+marked cells belong to Rayon. Servil mt's 64 KiB range is `.160–.327`,
+wider than its neighbours; that cell and bulk latency remain the targets.
 
-`benchmark-results/AppleM4Max.darwin25/bench-hashes.duo.{result.txt,graph.svg}`
-was updated on the host during wrap-up, timestamp **2026-09-22 15:21:35 UTC**.
-The graph and text are preserved together. This run passed the golden
-checks and recorded the dirty fork fingerprint
-`e776ddc89e599403d809ab9ac21fea22ab1f031a0b55f4b88baba5c589409ee3`
-on base `2ce77d7`; retain that provenance as historical evidence.
+## Next priorities
 
-Servil mt medians, 64 KiB through 8 MiB in the usual nine-size order:
-`.203, .134, .107, .078, .063, .055, .053, .051, .049` ns/B.
-The mt bands are narrow; its four marked cells belong to Rayon.
-The earlier 13:05 host run was `.198, .133, .107, .081, .067, .056,
-.053, .051, .049`. Native 512 KiB and 1 MiB look promising; 64 KiB
-needs attention, and bulk is similar. Repeat native A/B runs and inspect
-bands before attributing the differences to code.
+1. **Bulk latency** (2–8 MiB): profile stragglers and wake costs before
+   adding mechanisms; keep comparisons interleaved ABBA between baseline
+   and candidate builds, and inspect bands before attributing differences.
+2. **The 64 KiB tail.** The caller waits for the last pieces; it could take
+   the smallest pieces itself, or the cut could end finer.
+3. **Incremental `Hasher` over the pool** and **SME2 for 2–15 chunks**.
 
-On the host, from the fork checkout:
+## Commands
 
-`cargo run --release --manifest-path bench-hashes/Cargo.toml -- --thorough --contenders blake3-servil,blake3-servil-mt,blake3-servil-mt1`
-
-Then run `--all`. Results overwrite that machine's files, so preserve
-baseline artifacts before a comparison. The graph defaults to GB/s and
-labels its logarithmic axis; the toggle also shows ns/B.
-
-## Correctness policy and benchmark checks
-
-The benchmark now has **64 fixed known-input/known-output vectors** in
-`src/test_vectors.rs`. Inputs come from a frozen deterministic RNG, both
-seeds, every timed size, and twelve additional boundary/empty lengths.
-Golden BLAKE3 digests were generated with the upstream reference code;
-SHA-256 and SHA-1 with Python hashlib. The generator records the reference
-source hash and never uses the optimized servil implementation.
-
-Before calibration, each selected implementation checks the same bytes
-against those golden digests. Multithreaded entries also check simultaneous
-calls. `hash_batch` is the single dispatch used for checking and timing;
-its monomorphized callback asserts or black-boxes the digest. Timed duo
-copies still use separate, differently seeded buffers. A failed check
-stops the run and names the implementation, family, length, seed and digests.
-
-Regeneration is explicit: from the benchmark repo,
-`python3 tools/gen-test-vectors.py > src/test_vectors.rs`.
-Review changes; tests/builds never regenerate expectations automatically.
-
-**Fixed vectors can test every execution mode**, including thread budgets
-and concurrent scheduling. Do not conflate fixed input data with fixed
-execution order. Existing fork differential/reference tests remain useful;
-further golden-vector expansion in the fork is follow-up work. Preserve
-published vectors and independent expected answers when extending them.
-The benchmark calls public entry points and kernel reports; it supplies
-no private pool, worker cap, or tuning environment to improve a score.
-
-## Validation and commands
-
-Latest suites pass:
-
-- Fork default: 56 library + 15 doc tests.
-- `no_sme2`: 55 + 15; `pure`: 46 + 15, including example builds.
-- Rayon library: 57; debug library: 56; no-default-features check passed.
-- Benchmark: 3 tests, including all available implementations on all
-  golden vectors, published empty-input hashes, and mismatch diagnostics.
-- Single-CPU hash/mode test and two-CPU concurrent-caller test passed.
-
-In the VM, from `/workspace`:
+From `/workspace` in the VM (every `git`/`cargo` command takes this `HOME`):
 
 `HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo test --release`
 
@@ -163,11 +94,30 @@ In the VM, from `/workspace`:
 
 `HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo test --release --features pure`
 
+`HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo test --release --manifest-path /workspace/test_vectors/Cargo.toml`
+
 `HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo test --release --manifest-path /workspace/bench-hashes/Cargo.toml`
 
-`HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo run --release --manifest-path /workspace/bench-hashes/Cargo.toml -- --all`
+Benchmark runs write `benchmark-results/` relative to the **current
+directory**; run them from `/workspace/bench-hashes` so results land in
+the repository:
+
+`cd /workspace/bench-hashes && HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo run --release -- --all`
+
+On the Mac, from `bench-hashes`: `cargo run --release -- --all` (add
+`--thorough` for narrower bands). Results overwrite that machine's files;
+copy a baseline aside before a comparison. Commit before publishing so the
+provenance reads `clean`.
+
+Release: `python3 tools/gen-ver.py X.Y.Z` from a clean tree makes two
+version commits and a lightweight tag `vX.Y.Z+<commit>`; push with
+`git push origin main` and then the tag by name (`--follow-tags` skips
+lightweight tags).
+
+Expected suites: fork 56 library + 16 doc tests (`no_sme2` 55 + 16,
+`pure` 46 + 16); official vectors 2; benchmark 3.
 
 Use no timeout for long commands; let progress stream. Never sleep in
 commands. If a network operation fails, report it and stop; the user
-chooses retries. Every git/cargo command in this VM uses the HOME above.
-Never print the credential token. Only `/workspace` survives VM restarts.
+chooses retries. Never print the credential token. Only `/workspace`
+survives VM restarts.
