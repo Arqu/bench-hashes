@@ -501,10 +501,13 @@ struct Roster {
     /// Each sample runs two independent copies of the contender at once
     /// and times the later finish (see Duo).
     duo: bool,
+    /// Also take a solo sample (one copy, one thread) beside each duo
+    /// sample and report both. Off by default; --solo enables it.
+    solo: bool,
 }
 
 impl Roster {
-    fn new(algorithms: Vec<Algorithm>, thorough: bool, duo: bool) -> Self {
+    fn new(algorithms: Vec<Algorithm>, thorough: bool, duo: bool, solo: bool) -> Self {
         assert!(
             (2..=8).contains(&algorithms.len()),
             "a run compares two to eight contenders; {} were selected",
@@ -524,7 +527,7 @@ impl Roster {
         let step = lcm(INPUT_COUNT, orders.len());
         let target = SAMPLE_ROUNDS_TARGET * if thorough { THOROUGH_MULTIPLIER } else { 1 };
         let rounds = target.div_ceil(step) * step;
-        Self { algorithms, orders, rounds, duo }
+        Self { algorithms, orders, rounds, duo, solo }
     }
 
     fn len(&self) -> usize {
@@ -589,15 +592,12 @@ bench-hashes: hash throughput by input size
   bench-hashes --list              contenders and their availability here
 
 Keys: blake3, blake3-servil, sha256, sha256-ring, sha1dc; sha256-cc on request;
-      blake3-mt and blake3-servil-mt (multithreaded) in --all and default runs
-      with --duo, or when named
+      blake3-mt and blake3-servil-mt (multithreaded) in --all and default runs,
+      or when named
 
-  --duo                            every sample runs two independent copies of
-                                   the contender at once, on two threads, and
-                                   records when the later one finishes: the
-                                   cost of a hash when the machine is shared.
-                                   A contender that takes the whole machine to
-                                   go faster alone shows its price here
+  --solo                           also take a solo sample (one copy, one
+                                   thread) beside each duo sample and report
+                                   solo and duo side by side
   --thorough                       three times the sample rounds, for narrower
                                    bands; about three times the run time
   --trace-clocks PATH              also write one CSV line per sample with
@@ -613,12 +613,13 @@ struct Options {
     trace_path: Option<std::path::PathBuf>,
     thorough: bool,
     duo: bool,
+    solo: bool,
 }
 
 fn parse_arguments() -> Options {
     let mut arguments: Vec<String> = std::env::args().skip(1).collect();
 
-    /* --thorough and --duo may accompany any selection. */
+    /* --thorough and --solo may accompany any selection. Every run is a duo run. */
     let mut take_flag = |flag: &str| {
         arguments
             .iter()
@@ -629,7 +630,10 @@ fn parse_arguments() -> Options {
             .is_some()
     };
     let thorough = take_flag("--thorough");
-    let duo = take_flag("--duo");
+    let solo = take_flag("--solo");
+    /* --duo is accepted for compatibility; every run already measures duo. */
+    take_flag("--duo");
+    let duo = true;
 
     /* --trace-clocks PATH may accompany any selection. */
     let trace_path = arguments
@@ -643,7 +647,7 @@ fn parse_arguments() -> Options {
         });
 
     let (selection, explicit) = parse_selection(&arguments);
-    Options { selection, explicit, trace_path, thorough, duo }
+    Options { selection, explicit, trace_path, thorough, duo, solo }
 }
 
 fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
@@ -654,7 +658,7 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
             for algorithm in Algorithm::ALL {
                 let status = match algorithm.availability() {
                     Ok(()) if algorithm.on_request_only() => "available; runs only when named with --contenders".to_owned(),
-                    Ok(()) if algorithm.duo_only() => "available; in --all and default runs with --duo, or when named".to_owned(),
+                    Ok(()) if algorithm.duo_only() => "available; in --all and default runs, or when named".to_owned(),
                     Ok(()) => "available".to_owned(),
                     Err(reason) => format!("unavailable: {reason}"),
                 };
@@ -689,11 +693,11 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
 }
 
 fn main() {
-    let Options { selection, explicit, trace_path, thorough, duo } = parse_arguments();
+    let Options { selection, explicit, trace_path, thorough, duo, solo } = parse_arguments();
     let mut trace = trace_path.map(ClockTrace::new);
     assert!(
-        !(duo && trace.is_some()),
-        "--trace-clocks reads one thread's clocks; --duo times two, so the two options are exclusive"
+        trace.is_none() || solo,
+        "--trace-clocks reads one thread's clocks around the solo sample, so it needs --solo"
     );
     let available: Vec<Algorithm> = Algorithm::ALL
         .into_iter()
@@ -712,22 +716,22 @@ fn main() {
      * keeps the Pareto-best per family and reports on those alone. Timing
      * cost is the same as --all; only the report narrows.
      */
-    let (roster, results, basis, selection_note) = match selection {
+    let (mut roster, results, basis, selection_note) = match selection {
         Selection::Explicit => {
-            let roster = Roster::new(explicit, thorough, duo);
+            let roster = Roster::new(explicit, thorough, duo, solo);
             let (results, basis) = measure_all(&roster, trace.as_mut());
             (roster, results, basis, String::from("contenders chosen on the command line"))
         }
         Selection::All => {
-            let roster = Roster::new(available, thorough, duo);
+            let roster = Roster::new(available, thorough, duo, solo);
             let (results, basis) = measure_all(&roster, trace.as_mut());
             (roster, results, basis, String::from("every contender available on this machine"))
         }
         Selection::Best => {
-            let full = Roster::new(available, thorough, duo);
+            let full = Roster::new(available, thorough, duo, solo);
             let (full_results, basis) = measure_all(&full, trace.as_mut());
             let (keep, note) = choose_best_per_family(&full, &full_results);
-            let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect(), thorough, duo);
+            let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect(), thorough, duo, solo);
             let results: Results = full_results
                 .iter()
                 .enumerate()
@@ -742,10 +746,12 @@ fn main() {
         trace.write();
     }
 
-    let selection_note = if duo {
+    /* Duo-only runs reuse the single-column display; cells hold duo data. */
+    roster.duo = solo;
+    let selection_note = if solo {
         format!("{selection_note}; solo and duo (two copies at once, later finish) side by side")
     } else {
-        selection_note
+        format!("{selection_note}; duo (two copies at once, later finish)")
     };
     let text = generate_text(&roster, &results, &machine, &selection_note, basis);
     let svg = generate_svg(&roster, &results, &machine, &selection_note, basis);
@@ -761,8 +767,8 @@ fn main() {
         )
     });
 
-    /* Duo results sit beside the solo ones under their own names. */
-    let stem = if duo { "bench-hashes.duo" } else { "bench-hashes" };
+    /* Every run measures duo; --solo adds solo beside it under the same names. */
+    let stem = "bench-hashes.duo";
     let text_path = directory.join(format!("{stem}.result.txt"));
     let svg_path = directory.join(format!("{stem}.graph.svg"));
 
@@ -1001,7 +1007,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
     }
 
     let mut samples: Samples = (0..roster.len())
-        .map(|_| std::array::from_fn(|_| Vec::with_capacity(roster.rounds)))
+        .map(|_| std::array::from_fn(|_| Vec::with_capacity(if roster.solo { roster.rounds } else { 0 })))
         .collect();
     let mut duo_samples: DuoSamples = (0..roster.len())
         .map(|_| std::array::from_fn(|_| Vec::with_capacity(if roster.duo { roster.rounds } else { 0 })))
@@ -1015,7 +1021,11 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
     progress.phase("measuring");
 
     for round in 0..roster.rounds {
-        progress.round(round, &samples);
+        if roster.solo {
+            progress.round(round, &samples);
+        } else {
+            progress.round_duo(round, &duo_samples);
+        }
 
         let algorithm_order = &roster.orders[round % roster.orders.len()];
 
@@ -1043,21 +1053,25 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                 };
 
                 /*
-                 * The solo sample: this thread runs the batch and its own
-                 * cycle counter describes the work.
+                 * The solo sample (--solo only): this thread runs the batch
+                 * and its own cycle counter describes the work.
                  */
-                let cycles0 = trace_clocks::thread_cycles();
-                let started = sample_clock::now();
-                run_batch(algorithm, input, iterations);
-                let elapsed_ns = sample_clock::since_ns(started);
-                let cycles = trace_clocks::thread_cycles() - cycles0;
+                let (elapsed_ns, cycles) = if roster.solo {
+                    let cycles0 = trace_clocks::thread_cycles();
+                    let started = sample_clock::now();
+                    run_batch(algorithm, input, iterations);
+                    let elapsed_ns = sample_clock::since_ns(started);
+                    (elapsed_ns, trace_clocks::thread_cycles() - cycles0)
+                } else {
+                    (0, 0)
+                };
 
                 /*
-                 * The duo sample, right after it in a duo run: two threads run
-                 * a batch each and the sample is the time to the later
-                 * finish. Taken beside the solo sample, under the same
-                 * conditions, so the two columns compare. The copies' cycle
-                 * counts describe two threads, so duo times are measured time.
+                 * The duo sample: two threads run a batch each and the
+                 * sample is the time to the later finish. With --solo it is
+                 * taken beside the solo sample, under the same conditions,
+                 * so the two columns compare. The copies' cycle counts
+                 * describe two threads, so duo times are measured time.
                  */
                 if let Some(duo) = duo {
                     let later_ns = duo.run(algorithm, input, &duo_inputs[size_index], iterations);
@@ -1089,39 +1103,50 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                     ));
                 }
 
-                let total_bytes = input.len() as u64 * iterations as u64;
+                if roster.solo {
+                    let total_bytes = input.len() as u64 * iterations as u64;
 
-                /* Rounded to the nearest picosecond per byte. */
-                let elapsed_ps = elapsed_ns
-                    .checked_mul(PS_PER_NS)
-                    .expect("a sample of under a second fits in picoseconds");
-                let ps_per_byte = (elapsed_ps + total_bytes / 2) / total_bytes;
+                    /* Rounded to the nearest picosecond per byte. */
+                    let elapsed_ps = elapsed_ns
+                        .checked_mul(PS_PER_NS)
+                        .expect("a sample of under a second fits in picoseconds");
+                    let ps_per_byte = (elapsed_ps + total_bytes / 2) / total_bytes;
 
-                assert!(ps_per_byte > 0, "every timing sample must be positive");
+                    assert!(ps_per_byte > 0, "every timing sample must be positive");
 
-                /* Rounded to the nearest millicycle per byte; zero without a counter. */
-                let millicycles_per_byte = (cycles * 1_000 + total_bytes / 2) / total_bytes;
+                    /* Rounded to the nearest millicycle per byte; zero without a counter. */
+                    let millicycles_per_byte = (cycles * 1_000 + total_bytes / 2) / total_bytes;
 
-                samples[algorithm_index][size_index]
-                    .push(Sample { ps_per_byte, millicycles_per_byte, elapsed_ns, cycles });
+                    samples[algorithm_index][size_index]
+                        .push(Sample { ps_per_byte, millicycles_per_byte, elapsed_ns, cycles });
+                }
             }
         }
     }
 
-    progress.finish(&samples);
+    if roster.solo {
+        progress.finish(&samples);
+    } else {
+        progress.finish_duo(&duo_samples);
+    }
 
-    let basis = time_basis(&samples);
+    /* Duo-only runs report measured time; --solo runs keep the cycle-normalised basis. */
+    let basis = if roster.solo { time_basis(&samples) } else { TimeBasis::Measured };
 
     let mut results: Results = vec![[Cell::ZERO; INPUT_COUNT]; roster.len()];
 
     for algorithm_index in 0..roster.len() {
         for size_index in 0..INPUT_COUNT {
-            let mut cell = summarize_cell(&samples[algorithm_index][size_index], roster.rounds, basis);
-            if roster.duo {
-                let duo = &mut duo_samples[algorithm_index][size_index];
-                assert_eq!(duo.len(), roster.rounds, "one duo sample per round");
+            let duo = &mut duo_samples[algorithm_index][size_index];
+            assert_eq!(duo.len(), roster.rounds, "one duo sample per round");
+            let cell = if roster.solo {
+                let mut cell = summarize_cell(&samples[algorithm_index][size_index], roster.rounds, basis);
                 cell.duo = Some(summarize(duo));
-            }
+                cell
+            } else {
+                /* Duo-only: the reported column is the duo measurement. */
+                Cell { time: summarize(duo), duo: None }
+            };
             results[algorithm_index][size_index] = cell;
         }
     }
@@ -1204,6 +1229,15 @@ impl<'a> Progress<'a> {
 
     /* Called at the start of each round; `samples` holds every round so far. */
     fn round(&mut self, round: usize, samples: &Samples) {
+        self.round_inner(round, &running_medians(self.roster, samples, INPUT_COUNT - 1));
+    }
+
+    /* Duo-only runs track the duo samples instead. */
+    fn round_duo(&mut self, round: usize, samples: &DuoSamples) {
+        self.round_inner(round, &running_duo_medians(self.roster, samples, INPUT_COUNT - 1));
+    }
+
+    fn round_inner(&mut self, round: usize, medians: &str) {
         let measuring_started = self
             .measuring_started
             .expect("round() runs inside the measuring phase");
@@ -1221,20 +1255,26 @@ impl<'a> Progress<'a> {
         };
 
         self.draw(&format!(
-            "[{:>5.1}s] measuring {bar} {:>3}/{rounds} rounds · {remaining} · {}",
+            "[{:>5.1}s] measuring {bar} {:>3}/{rounds} rounds · {remaining} · {medians}",
             self.started.elapsed().as_secs_f64(),
             round,
-            running_medians(self.roster, samples, INPUT_COUNT - 1),
         ));
     }
 
     fn finish(&mut self, samples: &Samples) {
+        self.finish_inner(&running_medians(self.roster, samples, INPUT_COUNT - 1));
+    }
+
+    fn finish_duo(&mut self, samples: &DuoSamples) {
+        self.finish_inner(&running_duo_medians(self.roster, samples, INPUT_COUNT - 1));
+    }
+
+    fn finish_inner(&mut self, medians: &str) {
         let bar = "█".repeat(Self::BAR_WIDTH);
         let rounds = self.roster.rounds;
         self.draw(&format!(
-            "[{:>5.1}s] measured  {bar} {rounds}/{rounds} rounds · {}",
+            "[{:>5.1}s] measured  {bar} {rounds}/{rounds} rounds · {medians}",
             self.started.elapsed().as_secs_f64(),
-            running_medians(self.roster, samples, INPUT_COUNT - 1),
         ));
         eprintln!();
     }
@@ -1270,6 +1310,21 @@ fn running_medians(roster: &Roster, samples: &Samples, size_index: usize) -> Str
         })
         .collect();
 
+    format!("{} ns/B at {}", parts.join(" · "), INPUT_SIZES[size_index].label)
+}
+
+/* Duo-only progress: medians over the duo samples collected so far. */
+fn running_duo_medians(roster: &Roster, samples: &DuoSamples, size_index: usize) -> String {
+    if samples[0][size_index].is_empty() {
+        return format!("medians at {} pending", INPUT_SIZES[size_index].label);
+    }
+    let parts: Vec<String> = (0..roster.len())
+        .map(|algorithm_index| {
+            let mut sorted = samples[algorithm_index][size_index].clone();
+            sorted.sort_unstable();
+            format!("{} {}", roster.algorithms[algorithm_index].name(), format_ps(median_of_sorted(&sorted)))
+        })
+        .collect();
     format!("{} ns/B at {}", parts.join(" · "), INPUT_SIZES[size_index].label)
 }
 
@@ -2393,6 +2448,12 @@ fn generate_text(
             "Measurement: solo and duo. Every sample interval took a solo sample (one copy, one thread) and then a duo sample: two independent copies of the contender at once, on two threads over two inputs of the size, released together, timed to the later finish, per byte of one copy. A contender that takes the whole machine to go faster alone runs beside a copy of itself in the duo sample and shows what that costs. Duo times are measured time; solo times follow the reported-time rule above."
         )
         .unwrap();
+    } else {
+        writeln!(
+            output,
+            "Measurement: duo. Every sample ran two independent copies of the contender at once, on two threads over two inputs of the size, released together, timed to the later finish, per byte of one copy. A contender that takes the whole machine to go faster alone runs beside a copy of itself and shows what that costs. Duo times are measured time. Pass --solo to also take a solo sample beside each duo sample."
+        )
+        .unwrap();
     }
     writeln!(output).unwrap();
 
@@ -2424,6 +2485,12 @@ fn generate_text(
         writeln!(
             output,
             "Each contender has two columns. solo: one copy on one thread, the machine otherwise idle. duo: two independent copies at once on two threads, the time to the later finish, per byte of one copy. A contender that takes the whole machine to go faster alone shows the difference between the two."
+        )
+        .unwrap();
+    } else {
+        writeln!(
+            output,
+            "Each contender has one column: duo, two independent copies at once on two threads, the time to the later finish, per byte of one copy."
         )
         .unwrap();
     }
@@ -2880,12 +2947,21 @@ fn generate_svg(
     )
         .unwrap();
 
-    writeln!(
-        svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Line and dot: median of {} interleaved samples · shaded band: 95% confidence interval of that median; a deeper tint or dashed outline marks a median that is less certain · single-threaded</text>"##,
-        roster.rounds,
-    )
+    if roster.duo {
+        writeln!(
+            svg,
+            r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Solid line and dot: solo median of {} interleaved samples · dashed line: duo median (two copies at once, later finish) · shaded band: 95% confidence interval of that median; a deeper tint or dashed outline marks a median that is less certain</text>"##,
+            roster.rounds,
+        )
         .unwrap();
+    } else {
+        writeln!(
+            svg,
+            r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Line and dot: median of {} interleaved duo samples (two copies at once, later finish) · shaded band: 95% confidence interval of that median; a deeper tint or dashed outline marks a median that is less certain</text>"##,
+            roster.rounds,
+        )
+        .unwrap();
+    }
     writeln!(
         svg,
         r##"  <text x="{PLOT_LEFT:.0}" y="88" class="method">Dot shape marks the code path a contender used at that size; a ringed dot is where a new path begins · hover any dot to compare contenders and see the path · click a name at right to hide or show that contender</text>"##

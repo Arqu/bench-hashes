@@ -36,12 +36,11 @@ version = "0.17"
 default-features = false
 
 # BLAKE3 with the SME2 kernels (Apple M4 and later), from the local
-# checkout of the fork's sme2-bench branch (sibling directory ../BLAKE3).
-# Same single-threaded blake3::hash API; the crate requires SME2 at build
-# time and run time and fails stop otherwise. Edits to ../BLAKE3 take
-# effect on the next build.
+# checkout of the fork's sme2-bench branch. In this workspace copy the fork
+# is the parent directory (..); upstream bench-hashes expects a sibling
+# (../BLAKE3). Edits there take effect on the next build.
 [dependencies.blake3_sme2]
-path = "../BLAKE3"
+path = ".."
 default-features = false
 features = ["std"]
 

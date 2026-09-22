@@ -143,7 +143,8 @@ fn git_text_allow_failure(
 
 /// Where Cargo.toml points the `blake3_sme2` path dependency, relative to
 /// this crate's manifest directory. Cargo.toml and this constant agree.
-const BLAKE3_SME2_PATH: &str = "../BLAKE3";
+/// (".." here: this workspace copy nests inside the fork checkout.)
+const BLAKE3_SME2_PATH: &str = "..";
 
 /// What `git` reports about a checkout: its origin URL, HEAD commit,
 /// nearest release tag, current branch, and whether the tree is clean.
@@ -305,6 +306,12 @@ fn git_state(repository: &Path) -> GitState {
         {
             let path = String::from_utf8(path_bytes.to_vec())
                 .expect("untracked Git paths must be UTF-8");
+
+            /* A nested checkout (a directory) contributes its own provenance;
+               its contents are not hashed here. */
+            if repository.join(&path).is_dir() {
+                continue;
+            }
 
             let contents = fs::read(repository.join(&path))
                 .unwrap_or_else(|error| {
