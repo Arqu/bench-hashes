@@ -1,207 +1,156 @@
 # Next steps
 
-Read this file first in a new session; both `AGENTS.md` files point here.
-Layout and environment (where the repos are, `HOME`, credentials,
-`clang-19`) are in the Environment section of either `AGENTS.md`; after a
-VM restart run `sh /workspace/vm/setup.sh`.
+Read this file first. The work is optimizing the servil fork for the duo
+benchmark on the VM, native Mac, and other platforms. Prefer improvements
+that make the implementation simpler and faster together. Shared principles
+and environment commands are in both repositories' `AGENTS.md` files.
 
-## Where the last session stopped (VM now has 16 vCPUs)
+## Where this session stopped
 
-The fork's multithreaded path is rebuilt (commits `b3b4bc8`..`3f28ff4` on
-`sme2-bench`, tests green: 54 lib + 15 doc; `--features no_sme2`: 53;
-nothing pushed yet).
-Design and measurements: `/workspace/NOTES-sme2-bench.md`, section "The
-pool". In one paragraph: every CPU hashes; a call cuts its input into
-subtree pieces that shrink toward the end (8–128 KiB) and registers a
-job in a lock-free slot table; `cpus - 1` resident workers pull pieces
-from the registered jobs round-robin; a piece runs on SME2 while one of
-the machine's SME units is free (a permit per unit) and on the NEON
-hybrids otherwise; workers sleep only after 200 µs without a registered
-job; the pool starts from a background thread so the first call costs a
-call.
+- Fork: `/workspace`, branch `sme2-bench`, commit **04c3394**.
+- Benchmark: `/workspace/bench-hashes`, branch `main`; this handoff ships
+  with the golden-vector checks, documentation cleanup, and latest Mac
+  graph/text record. Use `git log -1` for its commit.
+- VM currently has **16 vCPUs**. Inspect `nproc` after a restart; run
+  `sh /workspace/vm/setup.sh` to restore the toolchain environment.
+- The next priority is interpreting and repeating the latest Mac run,
+  then improving bulk latency without restoring complicated coordination.
 
-bench-hashes duo on the VM (`--all`; mt·1 from a separate run):
+### Fork changes retained
 
-    size      servil   servil mt      size      servil   servil mt
-    64 KiB    0.216    0.194          1 MiB     0.190    0.078
-    128 KiB   0.213    0.134          2 MiB     0.187    0.068
-    256 KiB   0.207    0.114          3 MiB     0.181    0.065
-    512 KiB   0.200    0.091          8 MiB     0.184    0.056
+1. Pieces reuse the one-shot subtree code, with explicit key, counter,
+   flags, and platform. The duplicate owned-mode enum and per-piece
+   incremental Hasher setup are gone.
+2. The caller merges CVs through SIMD a level at a time, in place. The
+   old recursive merger remains only as a structural test oracle.
+3. One active-thread count enforces each call's budget and signals its
+   completion. Reservations are atomic, fixing the old cap-check race.
+   The caller clears its slot and drains readers before waiting for zero;
+   this ordering is essential to the raw job-pointer lifetime proof.
+4. Global admission happens once per call. A call arriving when callers
+   already fill the CPUs hashes its input whole, sharing the same SME
+   permits as workers. The pool-wide busy count is gone. The fixed pool
+   and caller threads may overlap; **the old whole-machine thread-count
+   ceiling is no longer the contract**. Each call's explicit budget remains
+   exact. A single-CPU call now works; the old merge could panic there.
+5. Removed redundant unsafe Send/Sync declarations, unused permit-total
+   state, and a racy global quiet-state test. ARM-specific diagnostic
+   examples now build on configurations without NEON, including `pure`.
 
-servil mt wins every cell from 64 KiB, with the bands apart; mt·1 tracks
-servil. Below 64 KiB the call is the serial one.
+The shrinking 8–128 KiB schedule, 64 KiB split threshold, SME permit
+policy, and yielding/sleeping mechanism remain. Equal-size pieces, extra
+cache-line padding, a live-slot bitmap, retained CPU reservations, and
+fixed-width recursion failed to justify their cost or complexity.
+Details and measurements are in `/workspace/NOTES-sme2-bench.md`.
 
-**The next thing to do is inspect the Mac run that just landed.**
-The M4 Max results are already in the working tree, uncommitted, under
-`benchmark-results/AppleM4Max.darwin25/` (a modified
-`bench-hashes.duo.result.txt` and its graph). Start a fresh session,
-then:
+### What measurements establish
 
-1. Open `benchmark-results/AppleM4Max.darwin25/bench-hashes.duo.graph.svg`
-   in a browser. It defaults to GB/s now (commit `e6c1d07` above), and
-   the y-axis names its log scale; the toggle still flips to ns/B.
-   Read servil mt against servil, BLAKE3 mt, and SHA-256 at every size
-   from 64 KiB up, watching the 95% bands, not just the medians.
-2. Read the numbers behind the plot in `bench-hashes.duo.result.txt`
-   (same directory): medians with min–max beneath, per size per
-   contender. Compare with the VM table above and with the old M4 Max
-   baseline further below (fork `0220be3`, where servil mt lost to
-   servil everywhere).
-3. Decide whether the run is committable as the new
-   `AppleM4Max.darwin25` record: every cell's band should be narrow
-   (no `!` marks on the cells that matter), and the provenance lines at
-   the graph's foot should name the expected kernels and platforms.
+Two baseline and two candidate runs through the same updated benchmark,
+ABBA order, 240 rounds each, with serial/mt/mt·1 selected:
 
-What to look for in the numbers (details and the VM measurements behind
-each in the NOTES):
+| Input | Baseline mt (`2ce77d7`) | Candidate mt |
+|---|---:|---:|
+| 64 KiB | .174–.175 | .161–.162 |
+| 128 KiB | .125–.126 | .113–.115 |
+| 256 KiB | .108 | .095–.096 |
+| 512 KiB | .089 | .080–.081 |
+| 1 MiB | .074–.076 | .069–.073 |
+| 8 MiB | .055–.056 | .055–.059 |
 
-1. 64 KiB, where the VM margin is smallest: the first call of each
-   1 ms batch pays one `notify_all` of the sleeping workers (VM: 80–100
-   µs on the caller; macOS unknown). If it hurts, the options measured
-   and rejected on the VM (cascades, delegated wake, longer spin) are in
-   the NOTES with their numbers; a native machine may rank them
-   differently, in particular a longer `SPIN_BEFORE_SLEEP` costs nothing
-   there but power.
-2. Three SME permits vs none: on the VM they tie, because a piece's
-   SME2 ↔ NEON round trip costs ~4 µs there; the M4 pays ~1 µs and its
-   SME2 is 1.5–2× NEON per thread, so permits should show a gain at
-   ≥ 512 KiB. `examples/duo.rs` with a permit override would tell; the
-   override was removed before the commit, re-add it locally.
-3. E-cores: the shrinking pieces are the answer to a slow thread's last
-   piece; `examples/duo.rs` prints solo and duo by size.
-4. The 8 MiB duo cell against Rayon's 0.088.
+Values are duo ns/B, ranges across runs. **64–512 KiB improves about
+7–12% with disjoint 95% median bands.** Bulk results show between-run
+variation; an established bulk gain remains open. The final permit-policy
+refactor's check was .161/.114/.096/.080/.069/.061/.060/.059/.056 across
+64 KiB–8 MiB, all median intervals narrower than 5%. mt·1 tracks serial.
+The --all VM run still leads other algorithms from 64 KiB upward.
 
-Harness note, for the bencher's maintainers: calibration's first probe
-of a size runs one iteration; a contender whose *first ever* call is
-slow (a pool starting) gets a 1-iteration batch for that size and every
-sample of the cell is then a cold call. The fork now starts its pool in
-the background so its first call is ordinary; a warm-up call per
-contender before calibration would make the harness robust to any
-contender's start (Rayon's global pool starts the same way).
+One-/two-CPU affinity diagnostics and 2–32-caller diagnostics were also
+run. Single-CPU correctness is fixed; constrained-CPU and high-caller
+results are promising. Treat diagnostic examples as probes, not formal
+confidence-band measurements.
 
-Scratch examples in the fork (`cargo run --release --example NAME`):
-`duo` (serial / mt duo / mt solo by size), `interleave` (the bencher's
-pattern: 1 ms mt batches with 4 ms of other work between), `wake`
-(condvar wake cost), `transition` (SME2 ↔ NEON round-trip cost),
-`probe` / `probe3` (SME2 vs NEON rates, pairs and N threads), `probe4`
-(per-piece cost by piece length), `probe2` (NEON rate by group size),
-`rate` (`hash()` by size).
+Raw logs, snapshots and SVGs persist under `/workspace/tmp/mt-session/`:
+`checked-baseline-*`, `checked-candidate-*`, `review-final.*`,
+`checked-all.*`, and `many-{baseline,candidate}.log`. Binaries under `/tmp`
+are disposable. `examples/many.rs` is now committed.
 
-Run everything with a timeout (`timeout 2400 cargo run ...`): a hang
-in the pool during development once ran for hours unnoticed.
+## Latest Mac record: inspect this first
 
-## The goal now: optimise BLAKE3 servil for the duo score
+`benchmark-results/AppleM4Max.darwin25/bench-hashes.duo.{result.txt,graph.svg}`
+was updated on the host during wrap-up, timestamp **2026-09-22 15:21:35 UTC**.
+The graph and text are preserved together. This run passed the golden
+checks and recorded the dirty fork fingerprint
+`e776ddc89e599403d809ab9ac21fea22ab1f031a0b55f4b88baba5c589409ee3`
+on base `2ce77d7`; retain that provenance as historical evidence.
 
-Make the servil fork (`/workspace`, branch `sme2-bench`) score as high as
-possible on this benchmark **under duo** at every input size. Duo is the
-only score: two copies of the contender run at once on two threads, and
-the later finish is the sample. There is no single-copy target; `--solo`
-is a diagnostic column, and no effort goes toward looking good in it.
+Servil mt medians, 64 KiB through 8 MiB in the usual nine-size order:
+`.203, .134, .107, .078, .063, .055, .053, .051, .049` ns/B.
+The mt bands are narrow; its four marked cells belong to Rayon.
+The earlier 13:05 host run was `.198, .133, .107, .081, .067, .056,
+.053, .051, .049`. Native 512 KiB and 1 MiB look promising; 64 KiB
+needs attention, and bulk is similar. Repeat native A/B runs and inspect
+bands before attributing the differences to code.
 
-Overfitting: avoid tuning to the exact structure of the M4 Max MacBook Pro
-the results come from. Anything that behaves reasonably across machines
-is fair, for example:
+On the host, from the fork checkout:
 
-1. Fixed heuristics ("spawn N threads"), accepted as roughly right on many
-   platforms.
-2. Inspecting the machine once at first use (syscalls, topology, a timing
-   probe), caching the answer, and acting on it.
+`cargo run --release --manifest-path bench-hashes/Cargo.toml -- --thorough --contenders blake3-servil,blake3-servil-mt,blake3-servil-mt1`
 
-The bencher does not charge a one-time inspection, and cannot without
-becoming a different benchmark: calibration runs every contender at every
-size to pick iteration counts before the first timed sample, so a probe
-at first use (and the worker pool's start) happens there. Were something
-to land inside the measured phase anyway, it would be one ~1 ms sample
-among 80+ per cell and the median would drop it. The fork's current Linux
-lane probe (~30 ms) is hidden this way. The separate warm-up phase was
-redundant with calibration and is gone (`bench-hashes` after `cb022f1`).
-Cold-start cost is therefore invisible here; a cold-process benchmark
-would be the tool for it.
+Then run `--all`. Results overwrite that machine's files, so preserve
+baseline artifacts before a comparison. The graph defaults to GB/s and
+labels its logarithmic axis; the toggle also shows ns/B.
 
-Both repositories are in a settled state for the work:
+## Correctness policy and benchmark checks
 
-- The bencher touches an implementation in three ways only: lists it,
-  calls its plain entry point (`hash`, `hash_multithreaded`, or upstream's
-  `Hasher::update_rayon` on Rayon's global pool) with no cap or pool of its
-  own, and prints the fork's `kernel_report()`. Keep it that way; tune the
-  fork, never the harness.
-- `blake3-servil-mt1` (`hash_multithreaded_with_budget(input, 1)`) is a
-  sanity check and tracks `blake3-servil` within noise on the VM; run it
-  again after any change to the multithreaded path.
+The benchmark now has **64 fixed known-input/known-output vectors** in
+`src/test_vectors.rs`. Inputs come from a frozen deterministic RNG, both
+seeds, every timed size, and twelve additional boundary/empty lengths.
+Golden BLAKE3 digests were generated with the upstream reference code;
+SHA-256 and SHA-1 with Python hashlib. The generator records the reference
+source hash and never uses the optimized servil implementation.
 
-Run: `HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo run --release --manifest-path /workspace/bench-hashes/Cargo.toml -- --all`
+Before calibration, each selected implementation checks the same bytes
+against those golden digests. Multithreaded entries also check simultaneous
+calls. `hash_batch` is the single dispatch used for checking and timing;
+its monomorphized callback asserts or black-boxes the digest. Timed duo
+copies still use separate, differently seeded buffers. A failed check
+stops the run and names the implementation, family, length, seed and digests.
 
-### What winning means
+Regeneration is explicit: from the benchmark repo,
+`python3 tools/gen-test-vectors.py > src/test_vectors.rs`.
+Review changes; tests/builds never regenerate expectations automatically.
 
-1. **Breadth before margin.** Beating a competitor at a size where servil
-   mt currently loses is worth more than widening a lead at a size where it
-   already wins. Competitors are every other column: other hash functions,
-   the crates.io implementation, and the single-threaded servil call.
-2. **The best result** is BLAKE3 servil mt measurably and reliably better
-   (non-overlapping 95% bands) than every alternative at as many sizes as
-   possible. Below about 3 KiB, SHA-256's hardware path is out of reach;
-   accept that and win everywhere else.
-3. **Portability over this machine.** The code will run on other systems.
-   Avoid strategies that fit this M4 Max and would likely carry a strong
-   penalty elsewhere (a fixed cluster layout, a lane count, a probe result
-   assumed rather than measured). Heuristics that are roughly right
-   anywhere, or a one-time inspection with the answer cached, are fine.
+**Fixed vectors can test every execution mode**, including thread budgets
+and concurrent scheduling. Do not conflate fixed input data with fixed
+execution order. Existing fork differential/reference tests remain useful;
+further golden-vector expansion in the fork is follow-up work. Preserve
+published vectors and independent expected answers when extending them.
+The benchmark calls public entry points and kernel reports; it supplies
+no private pool, worker cap, or tuning environment to improve a score.
 
-### Baseline (M4 Max, fork `0220be3`, bencher `f81859a`; results committed in `benchmark-results/AppleM4Max.darwin25/`)
+## Validation and commands
 
-Duo medians, ns/B:
+Latest suites pass:
 
-    size      BLAKE3  SHA-256  servil  BLAKE3 mt  servil mt
-    64 KiB    0.381   0.344    0.208   0.939      0.208
-    128 KiB   0.382   0.345    0.202   0.566      0.367
-    256 KiB   0.382   0.345    0.192   0.372      0.289
-    512 KiB   0.381   0.344    0.184   0.258      0.246
-    1 MiB     0.379   0.344    0.184   0.186      0.220
-    2 MiB     0.383   0.346    0.182   0.140      0.216
-    4 MiB     0.381   0.343    0.179   0.108      0.196
-    8 MiB     0.382   0.341    0.180   0.088      0.190
+- Fork default: 56 library + 15 doc tests.
+- `no_sme2`: 55 + 15; `pure`: 46 + 15, including example builds.
+- Rayon library: 57; debug library: 56; no-default-features check passed.
+- Benchmark: 3 tests, including all available implementations on all
+  golden vectors, published empty-input hashes, and mismatch diagnostics.
+- Single-CPU hash/mode test and two-CPU concurrent-caller test passed.
 
-Reading it against "what winning means":
+In the VM, from `/workspace`:
 
-- **servil mt loses to single-threaded servil at every size from 128 KiB
-  up** (0.367 vs 0.202 at 128 KiB; 0.190 vs 0.180 at 8 MiB). The
-  multithreaded call is a net loss under duo today. The first job is to
-  find out why: suspects are the fair share `ceil(L / callers)` on three
-  lanes (2 callers -> 4 claims), `MIN_SPLIT_LEN` and
-  `MIN_BALANCED_PIECE_LEN` tuned solo, the 20 ms admission wait, and the
-  hand-off cost at 128–512 KiB. `hash_multithreaded_with_budget` gives
-  cheap caps to compare against; the two-core VM reproduces the shape
-  of the loss but Apple hardware has the three lanes.
-- **BLAKE3 mt (Rayon's global pool shared by the two copies) beats
-  servil mt from 1 MiB up, by more than 2x at 8 MiB.** Work-stealing over
-  every CPU, shared by two callers, wins at bulk sizes on this machine;
-  whatever servil mt does must at least match it there.
-- **servil (single-threaded) beats everything from 3 KiB to 512 KiB.**
-  Below 3 KiB SHA-256 wins, as expected.
+`HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo test --release`
 
-So the sizes to win, in order of value: 128 KiB–8 MiB for servil mt
-(currently lost to servil itself, and to BLAKE3 mt at >= 1 MiB), then
-the small end where per-call overhead sets the floor (64 B–1 KiB run at
-~0.68 ns/B on the VM against SHA-256's hardware path).
+`HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo test --release --features no_sme2`
 
-The fork's own notes for maintainers are `/workspace/NOTES-sme2-bench.md`
-(design, measurements behind each change, open questions). Commit
-messages on `sme2-bench` carry the numbers behind each change; keep
-doing that.
+`HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo test --release --features pure`
 
-### Method reminders
+`HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo test --release --manifest-path /workspace/bench-hashes/Cargo.toml`
 
-- Change the fork, rebuild the bencher (path dependency at `..`), run,
-  compare medians; the bands are 95% intervals of the median, so a
-  difference inside overlapping bands is nothing.
-- The VM has two cores and SME2; Apple hardware differs in absolute
-  numbers and in lane count (M4 Max: 3 clusters). Relative comparisons on
-  the VM hold; anything about lane counts above two needs Apple.
-- Keep `cargo test --release` green in the fork (unit + doc tests);
-  `lanes::test` covers split shapes, merges, admission arithmetic, and
-  that every budget gives `hash()`'s result.
+`HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo run --release --manifest-path /workspace/bench-hashes/Cargo.toml -- --all`
 
-## Housekeeping
-
-- The token in `ghtokenclassic.txt` was echoed once into tool output by an
-  earlier credential helper; consider rotating it.
+Use no timeout for long commands; let progress stream. Never sleep in
+commands. If a network operation fails, report it and stop; the user
+chooses retries. Every git/cargo command in this VM uses the HOME above.
+Never print the credential token. Only `/workspace` survives VM restarts.

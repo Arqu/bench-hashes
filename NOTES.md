@@ -42,9 +42,20 @@ normalises the later finish.
 threads, each over its own input of the size (different contents, so
 the copies share no cache lines), released together, scored by the
 later finish per byte of one copy. Every contender in the run gets it,
-single-threaded ones included, so columns compare. The report shows
-solo and duo side by side in every cell; the graph draws duo as a
-dashed line with hollow dots.
+single-threaded ones included, so columns compare. Every run measures duo. `--solo` also reports solo beside duo; in that
+view the graph draws duo as a dashed line with hollow dots.
+
+**Correctness.** Before calibration, selected contenders hash identical
+inputs and assert equality with checked-in golden digests. The deterministic
+RNG and both seeds are frozen by 64 vectors in `src/test_vectors.rs`.
+Expected digests were established with the BLAKE3 reference implementation
+and Python hashlib, independently of the optimized fork. Regeneration is
+an explicit review step using `tools/gen-test-vectors.py`. Checks cover
+both timed input sets, empty input and short boundary tails,
+and two simultaneous calls to multithreaded entries. `hash_batch` contains
+the one dispatch used by both checking and timing; a monomorphized callback
+asserts digest equality or black-boxes the digest. Timed duo copies retain
+their separate, differently seeded buffers. A failed check stops the run.
 
 **Provenance.** The build script embeds the git state of this
 repository and of the fork checkout (branch, commit, clean or a hash of
@@ -128,11 +139,9 @@ automatically.
   way to cap threads. The fork reads no `BLAKE3_*` variables now, so the
   report has nothing to record there.
 
-- **Solo-tuned defaults.** A contender may be tuned for the solo
-  columns. The duo columns exist to catch exactly this. Both are shown
-  so the reader sees the trade, but the summary "best per family" logic
-  still uses solo medians only. Deciding how duo should weigh into
-  "best" is open.
+- **Solo-tuned defaults.** The default report uses duo medians, including
+  "best per family" selection. With `--solo`, selection still uses the
+  solo column; interpreting that diagnostic view needs care.
 
 ## Open questions and next steps
 
@@ -151,29 +160,29 @@ automatically.
 
 - **Idle between calls.** See "persistent worker threads" above.
 
-- **Best-per-family under duo.** `choose_best_per_family` ignores
-  duo. Options: Pareto over (solo, duo) pairs; or report two bests.
+- **Best-per-family with `--solo`.** Consider Pareto over both columns
+  or reporting two bests. The default duo-only selection already uses duo.
 
-- **Apple `--trace-clocks` under duo** is refused (two threads, one
-  trace). Per-copy traces would be useful and aren't hard.
+- **Per-copy clock traces.** `--trace-clocks` requires `--solo` and records
+  the solo sample. A trace for each duo copy would extend the diagnosis.
 
-- **Noise floor.** `!` marks cells whose 95% median interval exceeds
-  5%. On the 2-CPU VM about 15–25% of duo cells are marked; on the M4
-  Max with 16 cores, about 2%. If VM results are ever quoted, quote the
-  M4 Max instead.
+- **Noise floor.** `!` marks cells whose 95% median interval is at least
+  5% of its median. Keep VM and native results separate: both are target
+  deployments. Narrow within-run bands still allow between-run drift;
+  alternate baseline and candidate builds when assessing small gains.
 
 ## Running it
 
-    cargo run --release -- --all --thorough            # solo, ~35 s on the VM
-    cargo run --release -- --duo --all --thorough      # solo + duo, ~60 s
-    cargo run --release -- --contenders blake3,blake3-servil-mt --duo
+    cargo run --release -- --all --thorough
+    cargo run --release -- --all --solo
+    cargo run --release -- --contenders blake3,blake3-servil-mt
 
-Results: `benchmark-results/{CPU}.{OS}/bench-hashes.result.txt` and
-`.graph.svg`; duo runs write `bench-hashes.duo.*` beside them. On the
-VM prefix `HOME=/tmp/home CC=clang-19 TMPDIR=/tmp CARGO_TARGET_DIR=/tmp/target`
-(see `AGENTS.md`). On macOS, none of that.
+Every run measures duo; `--solo` adds the diagnostic single-copy column.
+Results are `benchmark-results/{CPU}.{OS}/bench-hashes.duo.result.txt`
+and `.graph.svg`. In the VM prefix commands with
+`HOME=/workspace/vm/home CC=clang-19 TMPDIR=/tmp CARGO_TARGET_DIR=/tmp/target`.
+On macOS these environment overrides are unnecessary.
 
-The fork is a path dependency at `../BLAKE3`. To pin the benchmark to a
-specific fork commit for a publication, note the commit the provenance
-line prints; to compare two fork versions, check out each in `../BLAKE3`
-and run twice — the provenance line in each report names which.
+The fork is the path dependency `..`. Its provenance records the commit
+and working-tree fingerprint. Keep that provenance with each measurement;
+changing the fork rebuilds the benchmark against the new code.

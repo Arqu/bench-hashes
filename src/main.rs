@@ -1,3 +1,5 @@
+mod test_vectors;
+
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 use std::fs;
@@ -305,7 +307,7 @@ impl Algorithm {
             | Self::Sha256CommonCrypto
             | Self::Sha256Ring => "single-threaded",
             Self::Blake3Rayon => "multithreaded; Hasher::update_rayon on Rayon's global pool, the crate's own multithreading as a program gets it by default: the tree splits recursively over the pool, and inputs under a few chunks stay on the caller's thread",
-            Self::Blake3ServilMt => "multithreaded; blake3_servil::hash_multithreaded: inputs of 128 KiB and up split across the caller's thread and the fork's resident worker threads, which concurrent callers in one process share fairly; below 128 KiB the caller's thread alone",
+            Self::Blake3ServilMt => "multithreaded; blake3_servil::hash_multithreaded: the fork chooses whether to use its shared resident workers; the kernel table below shows the input-size threshold",
             Self::Blake3ServilMt1 => "capped at one thread; blake3_servil::hash_multithreaded_with_budget(input, 1): the single-threaded path through the multithreaded entry point, a check that it costs what hash() costs",
         }
     }
@@ -915,16 +917,28 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
      */
     let duo_inputs: [Vec<u8>; INPUT_COUNT] =
         std::array::from_fn(|index| make_input_seeded(INPUT_SIZES[index].bytes, 1));
+    let mut progress = Progress::new(roster);
+    progress.phase("checking digests");
+    // Both timed input sets visit every implementation's selected kernels.
+    // Empty and short tails cover boundaries absent from the timing grid.
+    for (seed, buffers) in [(0, &inputs), (1, &duo_inputs)] {
+        for input in buffers {
+            check_input(&roster.algorithms, input, seed);
+        }
+    }
+    for &(len, seed, _) in test_vectors::VECTORS {
+        if !INPUT_SIZES.iter().any(|size| size.bytes == len) {
+            check_input(&roster.algorithms, &make_input_seeded(len, seed), seed);
+        }
+    }
     let duo: Option<&Duo> = roster.duo.then(Duo::new);
 
     /*
      * Each algorithm/input combination gets its own calibrated iteration
      * count so that timed blocks have approximately equal durations.
-     * Calibration is the first time each contender runs, so any one-time
-     * work an implementation does at first use (a machine probe, starting
-     * a worker pool) happens here, before the first timed sample.
+     * The digest checks have already called each contender at every size.
+     * Startup and calibration both happen before the timed samples.
      */
-    let mut progress = Progress::new(roster);
     progress.phase("calibrating");
 
     let mut batch_iterations: Vec<[usize; INPUT_COUNT]> = vec![[1usize; INPUT_COUNT]; roster.len()];
@@ -1273,10 +1287,9 @@ fn make_input(size: usize) -> Vec<u8> {
 }
 
 /// A second buffer of the same size with different contents: `seed` 0 is
-/// make_input's buffer, other seeds differ from it and from each other.
+/// make_input's buffer. Positive-length buffers vary by seed; size zero
+/// produces the empty input. This stream is frozen by test_vectors.rs.
 fn make_input_seeded(size: usize, seed: u64) -> Vec<u8> {
-    assert!(size > 0, "input size must be positive");
-
     let mut input = vec![0_u8; size];
 
     /*
@@ -1296,10 +1309,63 @@ fn make_input_seeded(size: usize, seed: u64) -> Vec<u8> {
     input
 }
 
-fn run_batch(
+/// Check exactly the entry points used by timed batches, on identical
+/// bytes against checked-in golden digests. Multithreaded entries also run
+/// two simultaneous calls over the same vectors, exercising shared pools.
+fn check_input(algorithms: &[Algorithm], input: &[u8], seed: u64) {
+    assert!(!algorithms.is_empty(), "correctness checks need a contender");
+    for &algorithm in algorithms {
+        assert!(algorithm.availability().is_ok(), "{} must be available", algorithm.key());
+        let expected = expected_digest(algorithm.family(), input.len(), seed);
+        let check = || hash_batch(algorithm, input, 1, |digest| {
+            assert_digest_matches(algorithm, input.len(), seed, &expected, digest);
+        });
+        check();
+        if algorithm.multithreaded() {
+            let barrier = std::sync::Barrier::new(2);
+            std::thread::scope(|scope| {
+                for _ in 0..2 {
+                    scope.spawn(|| {
+                        barrier.wait();
+                        check();
+                    });
+                }
+            });
+        }
+    }
+}
+
+/// Every checked input has a frozen (length, seed) vector. Hex decoding
+/// and lookup happen outside timed batches.
+fn expected_digest(family: Family, len: usize, seed: u64) -> Vec<u8> {
+    let (_, _, digests) = test_vectors::VECTORS.iter()
+        .find(|&&(n, s, _)| n == len && s == seed)
+        .unwrap_or_else(|| panic!("missing golden vector for length {len}, seed {seed}"));
+    let index = match family { Family::Blake3 => 0, Family::Sha256 => 1, Family::Sha1Dc => 2 };
+    let hex = digests[index];
+    assert_eq!(hex.len(), if family == Family::Sha1Dc { 40 } else { 64 });
+    (0..hex.len()).step_by(2).map(|i|
+        u8::from_str_radix(&hex[i..i + 2], 16).expect("golden digests are hexadecimal")
+    ).collect()
+}
+
+fn assert_digest_matches(algorithm: Algorithm, len: usize, seed: u64, expected: &[u8], actual: &[u8]) {
+    assert_eq!(actual, expected, "{} ({}) disagrees with golden vector on {} input bytes, seed {}",
+        algorithm.key(), algorithm.family().name(), len, seed);
+}
+
+fn run_batch(algorithm: Algorithm, input: &[u8], iterations: usize) {
+    hash_batch(algorithm, input, iterations, |digest| { black_box(digest); });
+}
+
+/// One dispatch for both timing and correctness checks. The callback is
+/// monomorphized: timed batches black-box each digest, and checking batches
+/// compare it. Selection and allocation stay outside the per-hash loop.
+fn hash_batch(
     algorithm: Algorithm,
     input: &[u8],
     iterations: usize,
+    mut consume: impl FnMut(&[u8]),
 ) {
     assert!(iterations > 0, "batch size must be positive");
 
@@ -1307,55 +1373,55 @@ fn run_batch(
         Algorithm::Blake3 => {
             for _ in 0..iterations {
                 let digest = blake3::hash(black_box(input));
-                let _ = black_box(digest);
+                consume(digest.as_bytes());
             }
         }
         Algorithm::Sha256 => {
             for _ in 0..iterations {
                 let digest = Sha256::digest(black_box(input));
-                let _ = black_box(digest);
+                consume(digest.as_ref());
             }
         }
         Algorithm::Sha1Dc => {
             for _ in 0..iterations {
                 let result = sha1_checked::Sha1::try_digest(black_box(input));
-                let _ = black_box(result.hash());
+                consume(result.hash());
             }
         }
         Algorithm::Blake3Servil => {
             for _ in 0..iterations {
                 let digest = blake3_servil::hash(black_box(input));
-                let _ = black_box(digest);
+                consume(digest.as_bytes());
             }
         }
         Algorithm::Sha256CommonCrypto => {
             for _ in 0..iterations {
                 let digest = common_crypto::sha256(black_box(input));
-                let _ = black_box(digest);
+                consume(digest.as_ref());
             }
         }
         Algorithm::Sha256Ring => {
             for _ in 0..iterations {
                 let digest = ring::digest::digest(&ring::digest::SHA256, black_box(input));
-                let _ = black_box(digest);
+                consume(digest.as_ref());
             }
         }
         Algorithm::Blake3Rayon => {
             for _ in 0..iterations {
                 let digest = blake3::Hasher::new().update_rayon(black_box(input)).finalize();
-                let _ = black_box(digest);
+                consume(digest.as_bytes());
             }
         }
         Algorithm::Blake3ServilMt => {
             for _ in 0..iterations {
                 let digest = blake3_servil::hash_multithreaded(black_box(input));
-                let _ = black_box(digest);
+                consume(digest.as_bytes());
             }
         }
         Algorithm::Blake3ServilMt1 => {
             for _ in 0..iterations {
                 let digest = blake3_servil::hash_multithreaded_with_budget(black_box(input), 1);
-                let _ = black_box(digest);
+                consume(digest.as_bytes());
             }
         }
     }
@@ -2327,6 +2393,7 @@ fn generate_text(
     writeln!(output, "Target features: {TARGET_FEATURES}").unwrap();
     writeln!(output, "Sample clock: {}", sample_clock::NAME).unwrap();
     writeln!(output, "Reported time: {}", basis.describe()).unwrap();
+    writeln!(output, "Correctness: selected implementations match checked-in golden digests on identical deterministic inputs before calibration; checks cover both timed input sets, boundary lengths, and concurrent multithreaded calls.").unwrap();
     writeln!(output, "Contenders: {}", selection_note).unwrap();
     for algorithm in &roster.algorithms {
         writeln!(output, "{} source: {}", algorithm.name(), algorithm.source()).unwrap();
@@ -4418,4 +4485,41 @@ fn xml_escape(input: &str) -> String {
     }
 
     escaped
+}
+
+#[cfg(test)]
+mod correctness_tests {
+    use super::*;
+
+    #[test]
+    fn same_input_agrees_across_available_implementations() {
+        let algorithms: Vec<_> = Algorithm::ALL.into_iter()
+            .filter(|a| a.availability().is_ok()).collect();
+        for &(len, seed, _) in test_vectors::VECTORS {
+            check_input(&algorithms, &make_input_seeded(len, seed), seed);
+        }
+    }
+
+    #[test]
+    fn batch_observes_every_digest_and_matches_empty_vectors() {
+        for (algorithm, expected) in [
+            (Algorithm::Blake3, "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"),
+            (Algorithm::Sha256, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+            (Algorithm::Sha1Dc, "da39a3ee5e6b4b0d3255bfef95601890afd80709"),
+        ] {
+            let mut calls = 0;
+            hash_batch(algorithm, &[], 3, |digest| {
+                let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+                assert_eq!(hex, expected);
+                calls += 1;
+            });
+            assert_eq!(calls, 3);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "blake3-servil (BLAKE3) disagrees with golden vector on 65 input bytes, seed 0")]
+    fn digest_mismatch_fails_stop_with_context() {
+        assert_digest_matches(Algorithm::Blake3Servil, 65, 0, &[0; 32], &[1; 32]);
+    }
 }

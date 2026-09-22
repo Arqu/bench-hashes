@@ -24,6 +24,38 @@ Sixteen actions that improve writing:
 15. Name responsibility
 16. Trim metadiscourse
 
+## Simplicity
+
+Prefer the simplest design that meets the contract and performs well.
+Simplicity has several dimensions:
+
+- **Conceptual ease:** a reader can understand and predict the design with
+  a few familiar concepts.
+- **Less code and information:** fewer moving parts, less state, and fewer
+  facts to carry in working memory.
+- **Fewer runtime cases:** fewer branches, special cases, tuning knobs,
+  and distinct operating regimes.
+
+Use one clear mechanism wherever it serves. Added complexity earns its
+place through a concrete need and a demonstrated benefit. When approaches
+perform similarly, choose the simpler one. Apply this standard to code,
+interfaces, documentation, and performance optimizations.
+
+## Correctness tests
+
+Use reproducible inputs and fixed, independently established expected
+outputs. A deterministic RNG is a compact specification of test bytes;
+record its algorithm, seed, and length, and check in the expected digests.
+Published test vectors and independent reference implementations establish
+the answers. Regenerating golden outputs is an explicit, reviewed action.
+Tests never silently regenerate their own expected answers.
+
+The same fixed vectors can exercise different kernels, thread budgets,
+concurrent calls, and scheduling interleavings. Input generation and
+execution scheduling are separate concerns. Differential tests supplement
+these anchors. Keep benchmark correctness checks outside timed intervals,
+and share the implementation dispatch between checking and timing.
+
 ## Coding: integers first
 
 Avoid floating point except where the domain is continuous by nature (pixel coordinates on a log axis, an elapsed-seconds display). Measurements, statistics, ratios, and thresholds are integers in fixed units: picoseconds per byte for time, permille for ratios and spreads, hundredths for opacities. Integer arithmetic is exact and reproducible; round explicitly (`(a + b / 2) / b`) at the one place a division happens. Convert to `f64` at the last moment, for drawing only.
@@ -42,7 +74,7 @@ Read `NEXT-STEPS.md` first: it says what the work is now and where the last sess
 
 Results land in `benchmark-results/{CPU}.{OS}/` as a text report and an SVG. Every run overwrites them. The fork fails stop at build time when the assembler lacks SME2. At run time it selects its kernels from the CPU: the SME2 group kernel where the CPU reports SME2 with 512-bit streaming vectors, the integer + NEON hybrid kernels alone elsewhere. Both are real results; the report's kernel table names the platform the run measured.
 
-Vocabulary: an *implementation* is a crate (crates.io `blake3`, the servil fork, `sha2`, ...) and is what `--list` and `--contenders` select. A *kernel* is the code path an implementation runs at one input size, chosen at run time and reported per size. A *mode* is how many threads a contender may use: single-threaded or multithreaded. Availability is a property of the build's platform (CommonCrypto on Apple), never of the machine's capacity. The benchmarker touches an implementation in three ways only: listing it, calling its plain single- or multithreaded entry point (no cap, no pool of its own), and asking the servil fork for `kernel_report()` / `kernel_report_multithreaded()`. It asks for no machine capacity and runs no digest cross-checks; the crates.io `blake3` kernel table is hand-written from that crate's source because it offers no report.
+Vocabulary: an *implementation* is a crate (crates.io `blake3`, the servil fork, `sha2`, ...) and is what `--list` and `--contenders` select. A *kernel* is the code path an implementation runs at one input size, chosen at run time and reported per size. A *mode* is how many threads a contender may use: single-threaded or multithreaded. Availability is a property of the build's platform (CommonCrypto on Apple), never of the machine's capacity. The benchmarker touches an implementation in three ways only: listing it, calling its plain single- or multithreaded entry point (no cap, no pool of its own), and asking the servil fork for `kernel_report()` / `kernel_report_multithreaded()`. Before calibration it checks that the same algorithm's implementations return identical digests for identical inputs, using the same entry-point dispatch as timed batches. It asks for no implementation capacity; the crates.io `blake3` kernel table is hand-written from that crate's source because it offers no report.
 
 # Environment
 
@@ -54,7 +86,7 @@ Vocabulary: an *implementation* is a crate (crates.io `blake3`, the servil fork,
 
 ## Building and running
 
-- The VM is Debian 12 on AArch64 with two cores. Its CPU exposes SME2 with 512-bit streaming vectors (`/proc/cpuinfo` lists `sme2`), so the fork's kernels run here. Absolute timings differ from Apple hardware; relative comparisons hold.
+- The VM is Debian 12 on AArch64 with 16 vCPUs (inspect `nproc` after a restart). Its CPU exposes SME2 with 512-bit streaming vectors (`/proc/cpuinfo` lists `sme2`), so the fork's kernels run here. Absolute timings differ from Apple hardware; relative comparisons hold.
 - The fork's SME2 kernel is `c/blake3_sme2_aarch64.S`, compiled by the `cc` crate with `-march=armv9-a+sme2`. The system `cc` (GCC 12) and `as` (binutils 2.40) predate SME2, so the fork's build script fails under them with a message naming the fix. `clang-19` assembles SME2; `TMPDIR` gives clang a temporary directory that exists in the guest.
 - Run: `HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo run --release --manifest-path /workspace/bench-hashes/Cargo.toml -- --contenders blake3,blake3-servil`
 - Every `git` and `cargo` command takes `HOME=/workspace/vm/home`; files on the mount show as uid 501 while the guest runs as uid 0, which `safe.directory` covers. `CARGO_TARGET_DIR=/tmp/target` is a tmpfs build cache; `CARGO_HOME=/usr/local/cargo`. The toolchain is rustc 1.98.1 without the `rustfmt` component, so there is no formatting check in the guest.
