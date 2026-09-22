@@ -169,7 +169,7 @@ with "dubious ownership" and the build fails; allow it with
 ## Progress
 
 While measuring, the benchmark reports on stderr: the current phase
-(calibrating, warming up, measuring), a bar over the sample rounds with
+(calibrating, measuring), a bar over the sample rounds with
 elapsed and estimated remaining time, and the running median for every
 contender at the largest input size. On a terminal the line redraws in
 place; in a log each update is its own line. Stdout carries the final

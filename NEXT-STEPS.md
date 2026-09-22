@@ -22,13 +22,16 @@ is fair, for example:
 2. Inspecting the machine once at first use (syscalls, topology, a timing
    probe), caching the answer, and acting on it.
 
-The bencher does not charge a one-time inspection: it calibrates every
-contender at every size and then warms up before the first timed sample,
-so a probe at first use (and the worker pool's start) happens before
-measurement. Were something to land inside the measured phase anyway, it
-would be one ~1 ms sample among 80+ per cell and the median would drop
-it. The fork's current Linux lane probe (~30 ms) is already hidden this
-way.
+The bencher does not charge a one-time inspection, and cannot without
+becoming a different benchmark: calibration runs every contender at every
+size to pick iteration counts before the first timed sample, so a probe
+at first use (and the worker pool's start) happens there. Were something
+to land inside the measured phase anyway, it would be one ~1 ms sample
+among 80+ per cell and the median would drop it. The fork's current Linux
+lane probe (~30 ms) is hidden this way. The separate warm-up phase was
+redundant with calibration and is gone (`bench-hashes` after `cb022f1`).
+Cold-start cost is therefore invisible here; a cold-process benchmark
+would be the tool for it.
 
 Both repositories are in a settled state for the work:
 

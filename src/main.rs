@@ -920,6 +920,9 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
     /*
      * Each algorithm/input combination gets its own calibrated iteration
      * count so that timed blocks have approximately equal durations.
+     * Calibration is the first time each contender runs, so any one-time
+     * work an implementation does at first use (a machine probe, starting
+     * a worker pool) happens here, before the first timed sample.
      */
     let mut progress = Progress::new(roster);
     progress.phase("calibrating");
@@ -936,29 +939,12 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
         }
     }
 
-    progress.phase("warming up");
-
     /*
-     * Warm every algorithm in every ordering position, on every input size.
-     * The input size that runs first is rotated as well.
+     * No warm-up phase. Calibration has just run every contender at every
+     * size, and a cold-start cost that survived it would be one sample
+     * among the rounds, which the median drops. A separate warm-up would
+     * change nothing measurable and cost a minute of run time.
      */
-    for warmup_round in 0..roster.orders.len() {
-        let order = &roster.orders[warmup_round];
-
-        for size_offset in 0..INPUT_COUNT {
-            let size_index =
-                (size_offset + warmup_round) % INPUT_COUNT;
-
-            for &algorithm_index in order {
-                let algorithm = roster.algorithms[algorithm_index];
-                let iterations = batch_iterations[algorithm_index][size_index];
-                run_batch(algorithm, &inputs[size_index], iterations);
-                if let Some(duo) = duo {
-                    duo.run(algorithm, &inputs[size_index], &duo_inputs[size_index], iterations);
-                }
-            }
-        }
-    }
 
     let mut samples: Samples = (0..roster.len())
         .map(|_| std::array::from_fn(|_| Vec::with_capacity(if roster.solo { roster.rounds } else { 0 })))
