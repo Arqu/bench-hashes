@@ -2610,12 +2610,6 @@ fn format_ps(ps: PsPerByte) -> String {
     format!("{}.{:03}", ps / PS_PER_NS, ps % PS_PER_NS)
 }
 
-/// Picoseconds per byte as nanoseconds with two decimals, rounded: 437 → "0.44".
-fn format_ps_2(ps: PsPerByte) -> String {
-    let centi = (ps + 5) / 10;
-    format!("{}.{:02}", centi / 100, centi % 100)
-}
-
 /*
  * Throughput from picoseconds per byte: 1 B/ps = 1000 GB/s, so GB/s =
  * 1000 / ps. Shown to one decimal below 10 GB/s, whole numbers above.
@@ -2726,13 +2720,21 @@ fn generate_svg(
         .min()
         .expect("there are results");
 
-    let (axis_min, axis_max) = log_axis_bounds(ps_to_ns(observed_min), ps_to_ns(observed_max));
+    /*
+     * The static render shows gigabytes per second, the default unit: the
+     * axis spans the reciprocals of the observed times, so on the log
+     * axis the plot mirrors a time-per-byte one, fastest at the top. The
+     * script rebuilds all of this when the unit flips.
+     */
+    let observed_lo_gbps = 1.0 / ps_to_ns(observed_max);
+    let observed_hi_gbps = 1.0 / ps_to_ns(observed_min);
+    let (axis_min, axis_max) = log_axis_bounds(observed_lo_gbps, observed_hi_gbps);
 
     let log_min = axis_min.ln();
     let log_max = axis_max.ln();
 
-    /* Pixel y for a nanoseconds-per-byte value on the log axis. */
-    let map_ns = |value: f64| {
+    /* Pixel y for a gigabytes-per-second value on the log axis. */
+    let map_gbps = |value: f64| {
         assert!(value > 0.0);
 
         PLOT_BOTTOM
@@ -2743,7 +2745,7 @@ fn generate_svg(
     /* Pixel y for a measured value. */
     let map_y = |ps: PsPerByte| {
         assert!(ps > 0);
-        map_ns(ps_to_ns(ps))
+        map_gbps(1.0 / ps_to_ns(ps))
     };
 
     let x_positions: [f64; INPUT_COUNT] =
@@ -2876,19 +2878,20 @@ fn generate_svg(
     /* Horizontal grid and y-axis tick labels; the script rebuilds these. */
     writeln!(svg, r##"  <g id="y-axis">"##).unwrap();
     for value in log_ticks(axis_min, axis_max) {
-        let y = map_ns(value);
+        let y = map_gbps(value);
+        let ns = 1.0 / value;
         writeln!(
             svg,
-            r##"    <line x1="{PLOT_LEFT:.1}" y1="{y:.2}" x2="{PLOT_RIGHT:.1}" y2="{y:.2}" class="grid" data-ns="{value}"/>"##
+            r##"    <line x1="{PLOT_LEFT:.1}" y1="{y:.2}" x2="{PLOT_RIGHT:.1}" y2="{y:.2}" class="grid" data-ns="{ns}"/>"##
         )
             .unwrap();
 
         writeln!(
             svg,
-            r##"    <text x="{:.1}" y="{:.2}" class="tick-label" text-anchor="end" data-ns="{value}">{}</text>"##,
+            r##"    <text x="{:.1}" y="{:.2}" class="tick-label" text-anchor="end" data-ns="{ns}">{}</text>"##,
             PLOT_LEFT - 10.0,
             y + 3.5,
-            format_tick(value),
+            format_gbps_tick(value),
         )
             .unwrap();
     }
@@ -2896,7 +2899,7 @@ fn generate_svg(
 
     writeln!(
         svg,
-        r##"  <text id="y-title" x="30" y="{:.1}" class="axis-title" text-anchor="middle" transform="rotate(-90 30 {:.1})">Nanoseconds per byte · lower is better</text>"##,
+        r##"  <text id="y-title" x="30" y="{:.1}" class="axis-title" text-anchor="middle" transform="rotate(-90 30 {:.1})">Gigabytes per second (log scale) · higher is better</text>"##,
         (PLOT_TOP + PLOT_BOTTOM) / 2.0,
         (PLOT_TOP + PLOT_BOTTOM) / 2.0,
     )
@@ -2906,7 +2909,7 @@ fn generate_svg(
      * Unit switch, above the y axis: a vertical track with a knob that
      * slides between GB/s (top) and ns/B (bottom). Clicking anywhere on
      * the switch flips it. The knob's position is the state; the label
-     * beside it reads darker. Without script the graph stays in ns/B and
+     * beside it reads darker. Without script the graph stays in GB/s and
      * the switch is inert.
      */
     writeln!(
@@ -2919,9 +2922,9 @@ fn generate_svg(
     writeln!(svg, r##"    <title>Switch between nanoseconds per byte and gigabytes per second</title>"##).unwrap();
     writeln!(svg, r##"    <rect class="unit-hit" x="-4" y="-4" width="60" height="42" fill="transparent"/>"##).unwrap();
     writeln!(svg, r##"    <rect class="unit-track" x="0" y="0" width="14" height="34" rx="7"/>"##).unwrap();
-    writeln!(svg, r##"    <circle id="unit-knob" class="unit-knob" cx="7" cy="27" r="5"/>"##).unwrap();
-    writeln!(svg, r##"    <text class="unit-label" data-unit="gbps" x="20" y="11">GB/s</text>"##).unwrap();
-    writeln!(svg, r##"    <text class="unit-label unit-on" data-unit="ns" x="20" y="31">ns/B</text>"##).unwrap();
+    writeln!(svg, r##"    <circle id="unit-knob" class="unit-knob" cx="7" cy="7" r="5"/>"##).unwrap();
+    writeln!(svg, r##"    <text class="unit-label unit-on" data-unit="gbps" x="20" y="11">GB/s</text>"##).unwrap();
+    writeln!(svg, r##"    <text class="unit-label" data-unit="ns" x="20" y="31">ns/B</text>"##).unwrap();
     writeln!(svg, "  </g>").unwrap();
 
     /*
@@ -3200,7 +3203,7 @@ fn generate_svg(
                 svg,
                 r##"      <text class="value-label" data-size="{size_index}" x="{label_x:.2}" y="{:.2}" fill="{color}" text-anchor="{anchor}">{}</text>"##,
                 value_label_y[algorithm_index][size_index],
-                format_result_value(statistics.median),
+                format_gbps_value(statistics.median),
             )
                 .unwrap();
         }
@@ -3264,10 +3267,10 @@ fn generate_svg(
             .unwrap();
         writeln!(
             svg,
-            r##"      <text class="series-detail" x="{:.1}" y="18">{} ns/B · {} at {}</text>"##,
+            r##"      <text class="series-detail" x="{:.1}" y="18">{} · {} ns/B at {}</text>"##,
             name_x,
-            format_result_value(statistics.median),
             gigabytes_per_second(statistics.median),
+            format_ps(statistics.median),
             xml_escape(INPUT_SIZES[INPUT_COUNT - 1].label),
         )
             .unwrap();
@@ -3820,7 +3823,7 @@ const on = DATA.series.map(() => true);
  * from the bottom to the top. Every drawn or printed value goes through
  * val() and fmt(); ratios between contenders are unitless and stay put.
  */
-let unit = "ns";
+let unit = "gbps";
 
 /*
  * Blend between the units. 1 ns/B is 1 GB/s, so GB/s is the reciprocal of
@@ -3830,7 +3833,7 @@ let unit = "ns";
  * mirrors through its middle. Text follows the unit from the midpoint; the
  * two axes cross-fade.
  */
-let blend = 0;
+let blend = 1;
 const valAt = (ns, b) => Math.exp((1 - 2 * b) * Math.log(ns));
 const val = ns => valAt(ns, blend);
 /* Values in the settled unit, for text. */
@@ -3845,7 +3848,7 @@ const otherUnitLabel = () => unit === "ns" ? "GB/s" : "ns/B";
 const fmtOther = ns => unit === "ns" ? gbps(ns) : ns.toFixed(3) + " ns/B";
 
 let animation = null;
-let chosen = "ns";
+let chosen = "gbps";
 function flipUnit() { setUnit(chosen === "ns" ? "gbps" : "ns"); }
 function setUnit(u) {
   chosen = u;
@@ -3872,7 +3875,7 @@ function setUnit(u) {
     /* Text follows the unit once the plot is past halfway. */
     unit = blend >= 0.5 ? "gbps" : "ns";
     document.getElementById("y-title").textContent =
-      unit === "ns" ? "Nanoseconds per byte · lower is better" : "Gigabytes per second · higher is better";
+      unit === "ns" ? "Nanoseconds per byte (log scale) · lower is better" : "Gigabytes per second (log scale) · higher is better";
     outgoing.setAttribute("opacity", (1 - e).toFixed(3));
     incoming.setAttribute("opacity", e.toFixed(3));
     relayout();
@@ -4374,7 +4377,7 @@ fn log_ticks(axis_min: f64, axis_max: f64) -> Vec<f64> {
     ticks
 }
 
-fn format_tick(value: f64) -> String {
+fn format_gbps_tick(value: f64) -> String {
     assert!(
         value > 0.0,
         "log-axis ticks must be positive"
@@ -4382,15 +4385,22 @@ fn format_tick(value: f64) -> String {
 
     if value >= 10.0 {
         format!("{value:.0}")
-    } else if value >= 1.0 {
-        format!("{value:.1}")
     } else {
-        format!("{value:.2}")
+        format!("{value:.1}")
     }
 }
 
-fn format_result_value(ps: PsPerByte) -> String {
-    format_ps_2(ps)
+/// A measured value as a bare GB/s number, as the graph's value labels
+/// show it in the default unit: whole numbers at 10 and above, one
+/// decimal below.
+fn format_gbps_value(ps: PsPerByte) -> String {
+    assert!(ps > 0);
+    let gbps = 1000.0 / ps as f64;
+    if gbps >= 10.0 {
+        format!("{gbps:.0}")
+    } else {
+        format!("{gbps:.1}")
+    }
 }
 
 fn xml_escape(input: &str) -> String {
