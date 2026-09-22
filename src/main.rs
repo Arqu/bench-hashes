@@ -99,8 +99,9 @@ const INPUT_SIZES: [InputSize; INPUT_COUNT] = [
 
 /// results[contender_index][size_index], contenders in the roster's order.
 type Results = Vec<[Cell; INPUT_COUNT]>;
+/// Solo samples; empty vectors without --solo.
 type Samples = Vec<[Vec<Sample>; INPUT_COUNT]>;
-/// Duo samples, in the same shape; empty vectors in a solo run.
+/// Duo samples, in the same shape, one per round.
 type DuoSamples = Vec<[Vec<u64>; INPUT_COUNT]>;
 
 #[derive(Clone, Copy)]
@@ -212,15 +213,6 @@ impl Algorithm {
      */
     fn on_request_only(self) -> bool {
         matches!(self, Self::Sha256CommonCrypto | Self::Blake3ServilMt1)
-    }
-
-    /// Contenders that run in --all and default runs only with --duo: a
-    /// multithreaded hash measured alone shows what it takes from an idle
-    /// machine, and the duo measurement is what makes that number fair to
-    /// read beside the single-threaded ones. Named with --contenders they
-    /// run either way.
-    fn duo_only(self) -> bool {
-        self.multithreaded()
     }
 
     /// Whether this contender can run in this build, or why not. A
@@ -501,16 +493,15 @@ struct Roster {
     orders: Vec<Vec<usize>>,
     /// Sample rounds: a multiple of INPUT_COUNT and of orders.len().
     rounds: usize,
-    /// Each sample runs two independent copies of the contender at once
-    /// and times the later finish (see Duo).
-    duo: bool,
-    /// Also take a solo sample (one copy, one thread) beside each duo
-    /// sample and report both. Off by default; --solo enables it.
+    /// Every sample runs two independent copies of the contender at once
+    /// and times the later finish (see Duo). With `solo`, a solo sample
+    /// (one copy, one thread) is taken beside each duo sample and the
+    /// report shows both columns. Off by default; --solo enables it.
     solo: bool,
 }
 
 impl Roster {
-    fn new(algorithms: Vec<Algorithm>, thorough: bool, duo: bool, solo: bool) -> Self {
+    fn new(algorithms: Vec<Algorithm>, thorough: bool, solo: bool) -> Self {
         assert!(
             (2..=8).contains(&algorithms.len()),
             "a run compares two to eight contenders; {} were selected",
@@ -530,7 +521,7 @@ impl Roster {
         let step = lcm(INPUT_COUNT, orders.len());
         let target = SAMPLE_ROUNDS_TARGET * if thorough { THOROUGH_MULTIPLIER } else { 1 };
         let rounds = target.div_ceil(step) * step;
-        Self { algorithms, orders, rounds, duo, solo }
+        Self { algorithms, orders, rounds, solo }
     }
 
     fn len(&self) -> usize {
@@ -616,7 +607,7 @@ struct Options {
     explicit: Vec<Algorithm>,
     trace_path: Option<std::path::PathBuf>,
     thorough: bool,
-    duo: bool,
+    /// Also take a solo sample beside each duo sample.
     solo: bool,
 }
 
@@ -635,9 +626,6 @@ fn parse_arguments() -> Options {
     };
     let thorough = take_flag("--thorough");
     let solo = take_flag("--solo");
-    /* --duo is accepted for compatibility; every run already measures duo. */
-    take_flag("--duo");
-    let duo = true;
 
     /* --trace-clocks PATH may accompany any selection. */
     let trace_path = arguments
@@ -651,7 +639,7 @@ fn parse_arguments() -> Options {
         });
 
     let (selection, explicit) = parse_selection(&arguments);
-    Options { selection, explicit, trace_path, thorough, duo, solo }
+    Options { selection, explicit, trace_path, thorough, solo }
 }
 
 fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
@@ -662,7 +650,6 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
             for algorithm in Algorithm::ALL {
                 let status = match algorithm.availability() {
                     Ok(()) if algorithm.on_request_only() => "available; runs only when named with --contenders".to_owned(),
-                    Ok(()) if algorithm.duo_only() => "available; in --all and default runs, or when named".to_owned(),
                     Ok(()) => "available".to_owned(),
                     Err(reason) => format!("unavailable: {reason}"),
                 };
@@ -697,7 +684,7 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
 }
 
 fn main() {
-    let Options { selection, explicit, trace_path, thorough, duo, solo } = parse_arguments();
+    let Options { selection, explicit, trace_path, thorough, solo } = parse_arguments();
     let mut trace = trace_path.map(ClockTrace::new);
     assert!(
         trace.is_none() || solo,
@@ -705,11 +692,7 @@ fn main() {
     );
     let available: Vec<Algorithm> = Algorithm::ALL
         .into_iter()
-        .filter(|algorithm| {
-            algorithm.availability().is_ok()
-                && !algorithm.on_request_only()
-                && (duo || !algorithm.duo_only())
-        })
+        .filter(|algorithm| algorithm.availability().is_ok() && !algorithm.on_request_only())
         .collect();
 
     let machine = machine_metadata();
@@ -720,23 +703,23 @@ fn main() {
      * keeps the Pareto-best per family and reports on those alone. Timing
      * cost is the same as --all; only the report narrows.
      */
-    let (mut roster, results, basis, selection_note) = match selection {
+    let (roster, results, basis, selection_note) = match selection {
         Selection::Explicit => {
             let keys = explicit.iter().map(|algorithm| algorithm.key()).collect::<Vec<_>>().join(",");
-            let roster = Roster::new(explicit, thorough, duo, solo);
+            let roster = Roster::new(explicit, thorough, solo);
             let (results, basis) = measure_all(&roster, trace.as_mut());
             (roster, results, basis, format!("--contenders {keys}"))
         }
         Selection::All => {
-            let roster = Roster::new(available, thorough, duo, solo);
+            let roster = Roster::new(available, thorough, solo);
             let (results, basis) = measure_all(&roster, trace.as_mut());
             (roster, results, basis, String::from("every contender available on this machine"))
         }
         Selection::Best => {
-            let full = Roster::new(available, thorough, duo, solo);
+            let full = Roster::new(available, thorough, solo);
             let (full_results, basis) = measure_all(&full, trace.as_mut());
             let (keep, note) = choose_best_per_family(&full, &full_results);
-            let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect(), thorough, duo, solo);
+            let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect(), thorough, solo);
             let results: Results = full_results
                 .iter()
                 .enumerate()
@@ -751,9 +734,7 @@ fn main() {
         trace.write();
     }
 
-    /* Duo-only runs reuse the single-column display; cells hold duo data. */
-    roster.duo = solo;
-    /* The Measurement section already explains duo; the note names the selection only. */
+    /* The Measurement section explains duo; the note names the selection only. */
     let text = generate_text(&roster, &results, &machine, &selection_note, basis);
     let svg = generate_svg(&roster, &results, &machine, &selection_note, basis);
 
@@ -931,7 +912,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
             check_input(&roster.algorithms, &make_input_seeded(len, seed), seed);
         }
     }
-    let duo: Option<&Duo> = roster.duo.then(Duo::new);
+    let duo = Duo::new();
 
     /*
      * Each algorithm/input combination gets its own calibrated iteration
@@ -964,7 +945,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
         .map(|_| std::array::from_fn(|_| Vec::with_capacity(if roster.solo { roster.rounds } else { 0 })))
         .collect();
     let mut duo_samples: DuoSamples = (0..roster.len())
-        .map(|_| std::array::from_fn(|_| Vec::with_capacity(if roster.duo { roster.rounds } else { 0 })))
+        .map(|_| std::array::from_fn(|_| Vec::with_capacity(roster.rounds)))
         .collect();
 
     /*
@@ -1027,12 +1008,10 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                  * so the two columns compare. The copies' cycle counts
                  * describe two threads, so duo times are measured time.
                  */
-                if let Some(duo) = duo {
-                    let later_ns = duo.run(algorithm, input, &duo_inputs[size_index], iterations);
-                    let total_bytes = input.len() as u64 * iterations as u64;
-                    let later_ps = later_ns.checked_mul(PS_PER_NS).expect("a sample of under a second fits in picoseconds");
-                    duo_samples[algorithm_index][size_index].push((later_ps + total_bytes / 2) / total_bytes);
-                }
+                let later_ns = duo.run(algorithm, input, &duo_inputs[size_index], iterations);
+                let total_bytes = input.len() as u64 * iterations as u64;
+                let later_ps = later_ns.checked_mul(PS_PER_NS).expect("a sample of under a second fits in picoseconds");
+                duo_samples[algorithm_index][size_index].push((later_ps + total_bytes / 2) / total_bytes);
 
                 if let Some(trace) = trace.as_deref_mut() {
                     let perf1 = trace_clocks::perf_counters();
@@ -1433,9 +1412,9 @@ fn hash_batch(
  * from a shared release to the later finish. A hash that takes the whole
  * machine to go faster alone runs beside a copy of itself here and shows
  * what that costs; a hash that leaves room finishes at its solo speed.
- * In a duo run every sample interval takes a solo sample and then a duo
- * sample of the same batch, so each cell reports both, side by side, from
- * the same moment of the run.
+ * Every run measures duo; with --solo every sample interval takes a solo
+ * sample and then a duo sample of the same batch, so each cell reports
+ * both, side by side, from the same moment of the run.
  *
  * The two copy threads persist for the run. The caller posts a job, and
  * each copy takes it and polls a generation counter (yielding between
@@ -1841,7 +1820,7 @@ mod trace_clocks {
  * (CLOCK_THREAD_CPUTIME_ID) is scheduler accounting instead: an
  * interruption mid-sample can leave the slice under-counted, so the sample
  * reports a hash faster than the hardware allows. On an M4 Max three
- * unrelated SHA-256 kernels_by_contender shared one minimum 12% under their
+ * unrelated SHA-256 contenders shared one minimum 12% under their
  * own steady medians. The measure-clocks3 repository demonstrates this.
  */
 mod sample_clock {
@@ -2406,7 +2385,7 @@ fn generate_text(
             writeln!(output, "{} threads: {}", algorithm.name(), resources).unwrap();
         }
     }
-    if roster.duo {
+    if roster.solo {
         writeln!(
             output,
             "Measurement: solo and duo. Every sample interval took a solo sample (one copy, one thread) and then a duo sample: two independent copies of the contender at once, on two threads over two inputs of the size, released together, timed to the later finish, per byte of one copy. A contender that takes the whole machine to go faster alone runs beside a copy of itself in the duo sample and shows what that costs. Duo times are measured time; solo times follow the reported-time rule above."
@@ -2444,7 +2423,7 @@ fn generate_text(
         "Time per byte in ns/B: median, with minimum–maximum beneath; lower is better. Bands in the graph are the 95% interval of each median."
     )
         .unwrap();
-    if roster.duo {
+    if roster.solo {
         writeln!(
             output,
             "Each contender has two columns. solo: one copy on one thread, the machine otherwise idle. duo: two independent copies at once on two threads, the time to the later finish, per byte of one copy. A contender that takes the whole machine to go faster alone shows the difference between the two."
@@ -2465,14 +2444,14 @@ fn generate_text(
      */
     write!(output, "  {:<8}", "size").unwrap();
     for algorithm in &roster.algorithms {
-        if roster.duo {
+        if roster.solo {
             write!(output, "  {:>27}", column_heading(*algorithm)).unwrap();
         } else {
             write!(output, "  {:>13}", column_heading(*algorithm)).unwrap();
         }
     }
     writeln!(output).unwrap();
-    if roster.duo {
+    if roster.solo {
         write!(output, "  {:<8}", "").unwrap();
         for _ in &roster.algorithms {
             write!(output, "  {:>13}{:>14}", "solo", "duo").unwrap();
@@ -2923,7 +2902,7 @@ fn generate_svg(
     )
         .unwrap();
 
-    if roster.duo {
+    if roster.solo {
         writeln!(
             svg,
             r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Solid line and dot: solo median of {} interleaved samples · dashed line: duo median (two copies at once, later finish) · shaded band: 95% confidence interval of that median; a deeper tint marks a median that is less certain</text>"##,
@@ -3196,7 +3175,7 @@ fn generate_svg(
          * on the solid one; where a contender pays for sharing the machine
          * the dashed line rises above it, and the gap is the price.
          */
-        if roster.duo {
+        if roster.solo {
             let mut duo_path = String::new();
             for size_index in 0..INPUT_COUNT {
                 let x = x_positions[size_index];
@@ -3416,7 +3395,7 @@ fn generate_svg(
         }
         /* The shapes alone mark new paths, so no ring entry follows. */
         /* In a duo run: the dashed line and hollow dot, on the left of the row. */
-        if roster.duo {
+        if roster.solo {
             let x = PLOT_LEFT;
             writeln!(
                 svg,
@@ -3822,7 +3801,7 @@ fn write_interaction_script(
                 write!(data, "{}", format_ps(pick(results[algorithm_index][size_index].time))).unwrap();
             }
         }
-        if roster.duo {
+        if roster.solo {
             for (key, pick) in [
                 ("duoLow", (|t: Statistics| t.low) as fn(Statistics) -> u64),
                 ("duoMed", |t| t.median),
@@ -4159,8 +4138,6 @@ function layoutProv() {
 }
 
 function highlightSeries(i, active) {
-/* The dot a tap pinned the panel to; a mouse leaving a dot then leaves the panel up. */
-let pinned = null;
   for (let j = 0; j < DATA.series.length; j++) {
     const series = document.getElementById("series-" + j);
     const dots = document.getElementById("dots-" + j);
@@ -4182,6 +4159,8 @@ let currentMapY = null;
 
 /* The dot the panel describes, so a toggle can rebuild the panel in place. */
 let hovered = null;
+/* The dot a tap pinned the panel to; a mouse leaving a dot then leaves the panel up. */
+let pinned = null;
 
 function gbps(nsPerByte) {
   const t = 1 / nsPerByte;
@@ -4332,25 +4311,6 @@ function showHover(focus, k) {
   const H = y + PAD - 6;
 
   /* Place beside the column, flipping left near the right edge. */
-/*
- * Two inputs, one panel. A mouse hovers: entering a dot shows the panel,
- * leaving hides it, unless a click pinned it. A finger taps: pointerenter
- * fires too, without a matching leave, so touch is handled by tap alone.
- * Tapping a dot pins the panel to it; tapping it again, or the background,
- * clears it. Name highlighting follows the mouse only, since a finger
- * has no way to leave.
- */
-function hoverDot(event, i, k) { if (event.pointerType === "mouse") showHover(i, k); }
-function leaveDot(event) { if (event.pointerType === "mouse" && !pinned) hideHover(); }
-function tapDot(event, i, k) {
-  event.stopPropagation();
-  if (pinned && pinned[0] === i && pinned[1] === k) { pinned = null; hideHover(); return; }
-  pinned = [i, k];
-  showHover(i, k);
-}
-function tapAway() { pinned = null; hideHover(); }
-function hoverLabel(event, i, active) { if (event.pointerType === "mouse") highlightSeries(i, active); }
-
   const x = DATA.x[k];
   const dotY = currentMapY(f.med[k]);
   let bx = x + 14;
@@ -4371,6 +4331,25 @@ function hideHover() {
   highlightSeries(0, false);
   document.getElementById("hover").style.display = "none";
 }
+
+/*
+ * Two inputs, one panel. A mouse hovers: entering a dot shows the panel,
+ * leaving hides it, unless a click pinned it. A finger taps: pointerenter
+ * fires too, without a matching leave, so touch is handled by tap alone.
+ * Tapping a dot pins the panel to it; tapping it again, or the background,
+ * clears it. Name highlighting follows the mouse only, since a finger
+ * has no way to leave.
+ */
+function hoverDot(event, i, k) { if (event.pointerType === "mouse") showHover(i, k); }
+function leaveDot(event) { if (event.pointerType === "mouse" && !pinned) hideHover(); }
+function tapDot(event, i, k) {
+  event.stopPropagation();
+  if (pinned && pinned[0] === i && pinned[1] === k) { pinned = null; hideHover(); return; }
+  pinned = [i, k];
+  showHover(i, k);
+}
+function tapAway() { pinned = null; hideHover(); }
+function hoverLabel(event, i, active) { if (event.pointerType === "mouse") highlightSeries(i, active); }
 
 window.toggleSeries = toggleSeries;
 window.toggleProv = toggleProv;

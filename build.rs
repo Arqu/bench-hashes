@@ -142,8 +142,8 @@ fn git_text_allow_failure(
 }
 
 /// Where Cargo.toml points the `blake3-servil` path dependency, relative to
-/// this crate's manifest directory. Cargo.toml and this constant agree.
-/// (".." here: this workspace copy nests inside the fork checkout.)
+/// this crate's manifest directory: the enclosing fork checkout. Cargo.toml
+/// and this constant agree.
 const BLAKE3_SME2_PATH: &str = "..";
 
 /// What `git` reports about a checkout: its origin URL, HEAD commit,
@@ -402,7 +402,7 @@ fn emit_path_package(
 
     assert!(
         repository.join("Cargo.toml").is_file(),
-        "{package_name} must be checked out at {} (a sibling of this repository); clone github.com/johnservil/BLAKE3 there and check out its sme2-bench branch",
+        "{package_name} must be checked out at {} (this repository lives inside that checkout); clone github.com/johnservil/BLAKE3 there and check out its sme2-bench branch",
         repository.display()
     );
 

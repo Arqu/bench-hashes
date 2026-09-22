@@ -7,9 +7,9 @@ collision detection, the construction git uses), BLAKE3 servil (a fork
 with SME2 kernels for Apple M4 and later), and on Apple platforms the
 system's CommonCrypto SHA-256. Two multithreaded contenders, BLAKE3 mt
 (the crates.io crate on a Rayon pool) and BLAKE3 servil mt (the fork's
-`hash_multithreaded`), join with `--duo`, which measures
-every contender under contention and reports solo and duo side by side:
-see "The duo measurement" below.
+`hash_multithreaded`), join default and `--all` runs. Every run measures
+every contender under contention, two copies at once; `--solo` adds a
+single-copy column beside it: see "The duo measurement" below.
 
 The benchmark tests every power-of-two input size from 64 B to 8 MiB,
 plus 3 KiB and 3 MiB: 64 B, 128 B, 256 B, 512 B, 1 KiB, 2 KiB, 3 KiB,
@@ -31,7 +31,9 @@ its threads unequal work there.
 It reports median, minimum, and maximum time per byte in integer
 picoseconds. Lower is better.
 
-On Apple silicon the reported time is **cycles per byte at the run's
+Duo samples report measured time: the copies' cycle counters describe
+two threads, and no one rate normalises the later finish. Solo samples
+(`--solo`) on Apple silicon report **cycles per byte at the run's
 sustained clock**. Each sample reads the thread's cycle counter
 (`thread_selfcounts`) around the work; the run's sustained clock is the
 median over every sample of cycles ÷ elapsed time; and each sample's
@@ -73,6 +75,7 @@ so it costs the same as `--all`.
 cargo run --release -- --all                         # every contender this machine can run
 cargo run --release -- --contenders sha256,sha256-cc # exactly these, in this column order
 cargo run --release -- --thorough                    # three times the rounds, narrower bands
+cargo run --release -- --solo                        # a solo column beside every duo column
 cargo run --release -- --list                        # keys and availability here
 ```
 
@@ -81,40 +84,37 @@ Keys: `blake3`, `blake3-servil`, `sha256`, `sha256-ring`, `sha1dc`; and
 available for direct comparison; on Apple silicon the ring and sha2
 crates are each faster than CommonCrypto at every size, so the default
 and `--all` runs leave it out. `blake3-mt` and `blake3-servil-mt` are
-the multithreaded contenders; they join default and `--all` runs under
-`--duo`, and run in any mode when named.
+the multithreaded contenders; they join default and `--all` runs.
+`blake3-servil-mt1`, the multithreaded call capped at one thread, runs
+when named, as a check that it costs what `blake3-servil` costs.
 
 ### The duo measurement
-
-```sh
-cargo run --release -- --duo --all                   # every contender, two copies at once
-```
 
 A hash tuned to take every core finishes sooner on an idle machine and
 later on a busy one: when the cores it counted on are running something
 else, its threads queue behind that work, and the pair finishes after
-two single-threaded hashes would have. Solo timing shows the first
-case alone. `--duo` shows both: every sample interval takes a solo
-sample and then a duo sample of the same batch, in which two
-independent copies of the contender run at the same time, each on its
-own thread over its own input of the size, released together, timed to
-the later finish, per byte of one copy. The text report gives every
-contender a `solo` and a `duo` column; the graph draws the duo medians
-as a dashed line with hollow dots in the contender's colour, beside the
-solid solo line, and the hover panel gives both with the ratio. Every
-contender is measured this way in a duo run, single-threaded ones
-included, so the columns compare; a single-threaded hash costs about
-the same either way (the two copies share memory bandwidth and, under
-a hypervisor, a scheduler), and a multithreaded one shows what its
-threads cost when the machine is shared. The two multithreaded
-contenders are the reason for the mode and join `--all` and default
-runs only under it: their solo numbers describe an idle machine, which
-is the one case a multithreaded hash is built for, and the duo numbers
-describe the rest.
+two single-threaded hashes would have. Every sample is therefore a duo
+sample: two independent copies of the contender run at the same time,
+each on its own thread over its own input of the size, released
+together, timed to the later finish, per byte of one copy. Every
+contender is measured this way, single-threaded ones included, so the
+columns compare; a single-threaded hash costs about the same either way
+(the two copies share memory bandwidth and, under a hypervisor, a
+scheduler), and a multithreaded one shows what its threads cost when
+the machine is shared.
+
+`--solo` adds the idle-machine view: every sample interval then takes a
+solo sample (one copy, one thread) and a duo sample of the same batch,
+the text report gives every contender a `solo` and a `duo` column, and
+the graph draws the duo medians as a dashed line with hollow dots in the
+contender's colour beside the solid solo line, with both and their ratio
+in the hover panel. A multithreaded contender's solo number describes an
+idle machine, the one case it is built for; its duo number describes the
+rest, and the default report is that number alone.
 
 Duo samples report measured time: the copies' cycle counters describe
 two threads, and no one rate normalises the later finish. Solo samples
-in the same run follow the reported-time rule described at the top.
+follow the reported-time rule described at the top.
 
 `--trace-clocks PATH` writes one CSV line per sample with the wall
 (`Instant`), thread-CPU, process-CPU, and `mach_absolute_time` readings
@@ -124,17 +124,20 @@ disagree and says what shape the disagreement has.
 
 ### Requirements
 
-The BLAKE3 servil contender is a path dependency on a local checkout of
-github.com/johnservil/BLAKE3 at `../BLAKE3`, a sibling of this
-repository, with its `sme2-bench` branch checked out:
+The BLAKE3 servil contender is a path dependency on a checkout of
+github.com/johnservil/BLAKE3 at `..`, with its `sme2-bench` branch
+checked out: this repository lives inside that checkout, as
+`BLAKE3/bench-hashes` (the fork's `.git/info/exclude` keeps it out of
+the fork's status).
 
 ```sh
-git clone --branch sme2-bench https://github.com/johnservil/BLAKE3 ../BLAKE3
+git clone --branch sme2-bench https://github.com/johnservil/BLAKE3
+git clone https://github.com/johnservil/bench-hashes BLAKE3/bench-hashes
 ```
 
-Edits to that checkout take effect on the next build, and the build
-script records the checkout's branch, commit, and clean or dirty state
-in the provenance.
+Edits to the fork take effect on the next build, and the build script
+records the checkout's branch, commit, and clean or dirty state in the
+provenance.
 
 The fork's SME2 kernels are assembly, so building them needs a C
 toolchain whose assembler understands `-march=armv9-a+sme2`: Clang/LLVM
@@ -391,7 +394,9 @@ contender's median, range, and code path, then every visible contender ranked
 fastest first with its ns/B, GB/s, and speed relative to the hovered
 one ("▲ 1.35× faster" in green, "about the same" in grey, "▼ 3.22×
 slower" in red; contender colours stay away from those two hues).
-Hidden contenders stay out of the ranking.
+Hidden contenders stay out of the ranking. On a touch screen, tapping a
+dot pins the panel; tapping it again or the background clears it. Name
+highlighting follows the mouse, since a finger has no way to leave.
 
 The names at the right edge are toggles. Clicking one hides that
 contender: its marks fade out, the y axis rescales to the contenders
