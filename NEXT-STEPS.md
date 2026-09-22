@@ -9,8 +9,8 @@ and environment commands are in both repositories' `AGENTS.md` files.
 
 - Fork: `/workspace`, branch `sme2-bench`, commit **6485bd9**, clean,
   **unpushed**.
-- Benchmark: `/workspace/bench-hashes`, branch `main`, commit **(this
-  commit)**, clean, **unpushed**, no release tag yet (0.6.0 is the last).
+- Benchmark: `/workspace/bench-hashes`, branch `main`, commit **fbc3f9a** (plus this
+  NEXT-STEPS commit), clean, **unpushed**, no release tag yet (0.6.0 is the last).
   Run `python3 tools/gen-ver.py 0.7.0` and push both repositories once
   the Mac has confirmed the numbers.
 - Latest Mac record is still the 17:18 run of 0.6.0 (one plot). The VM
