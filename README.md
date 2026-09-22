@@ -6,8 +6,8 @@ A small benchmark comparing BLAKE3, SHA-256, SHA-1DC (SHA-1 with
 collision detection, the construction git uses), BLAKE3 servil (a fork
 with SME2 kernels for Apple M4 and later), and on Apple platforms the
 system's CommonCrypto SHA-256. Two multithreaded contenders, BLAKE3 mt
-(the crates.io crate on a Rayon pool) and BLAKE3 servil mt (the fork
-over the machine's execution lanes), join with `--duo`, which measures
+(the crates.io crate on a Rayon pool) and BLAKE3 servil mt (the fork's
+`hash_multithreaded`), join with `--duo`, which measures
 every contender under contention and reports solo and duo side by side:
 see "The duo measurement" below.
 
@@ -26,7 +26,7 @@ call, and 8 MiB is past the last-level cache on every machine this
 benchmark targets. 3 MiB is to the plateau what 3 KiB is to the SIMD
 ramp: a tree that is no power of two (a 2 MiB left subtree beside a
 1 MiB right one), so a splitter that cuts at subtree boundaries hands
-its lanes unequal work there.
+its threads unequal work there.
 
 It reports median, minimum, and maximum time per byte in integer
 picoseconds. Lower is better.
@@ -151,13 +151,12 @@ CC=clang-19 cargo run --release
 
 Apple's clang from Xcode 15 or later works out of the box.
 
-At run time the fork's `Platform::detect()` requires a CPU that reports
-SME2 with a 512-bit streaming vector length (Apple M4 and later, or a
-Linux 6.4+ kernel exposing `HWCAP2_SME2`) and panics otherwise, and the
-benchmark asserts that selection at startup. The BLAKE3 servil column
-therefore always measures the SME2 kernel; on other hardware the
-benchmark stops with a message instead of timing NEON under that
-heading.
+At run time the fork's `Platform::detect()` selects SME2 on a CPU that
+reports SME2 with a 512-bit streaming vector length (Apple M4 and later,
+or a Linux 6.4+ kernel exposing `HWCAP2_SME2`) and NEON elsewhere. The
+benchmark reads that selection back and names it in the report's kernel
+table ("platform SME2" or "platform NEON") and in the servil columns'
+provenance, so a NEON run reads as what it is.
 
 The build script also runs `git` on the repository to record the commit
 and clean status. If the tree is owned by a different user than the one
@@ -218,14 +217,15 @@ the crossover near 128–256 B is structural.
 
 BLAKE3 servil is the same crate from the `sme2-bench` branch of
 github.com/johnservil/BLAKE3, built from the local checkout at
-`../BLAKE3` under the crate name `blake3_sme2` so it links beside the
-crates.io crate. It selects
-its SME2 kernels at runtime and requires a CPU that reports SME2 with a
-512-bit streaming vector length; the build requires a toolchain that
-assembles SME2 (see Requirements above). Both requirements fail stop,
-so this column measures the SME2 kernel on every machine where the
-benchmark runs. Its provenance line gives the checkout's branch, commit,
-and clean or dirty state instead of a registry checksum.
+`..` under the crate name `blake3-servil` so it links beside the
+crates.io crate. The build requires a toolchain that assembles SME2
+(see Requirements above) and fails stop without one. At run time the
+fork reads the CPU: one that reports SME2 with a 512-bit streaming
+vector length gets the SME2 group kernel for sixteen chunks and up;
+every AArch64 core runs the scalar and integer + NEON hybrid kernels.
+The report's kernel table names the platform the run measured. Its
+provenance line gives the checkout's branch, commit, and clean or dirty
+state instead of a registry checksum.
 
 BLAKE3 mt is the crates.io crate's own multithreading:
 `Hasher::update_rayon` on a Rayon pool with one thread per logical
@@ -236,22 +236,20 @@ pool threads steal the halves. Each duo copy runs on its own thread and
 so on its own pool, as two independent programs would; both pools want
 every CPU, which is the behaviour the duo measurement is there to show.
 
-BLAKE3 servil mt is the fork's `lanes` module. A lane is a run of CPUs
-that share the execution resource the kernel saturates: on Apple
-silicon every core cluster has one SME unit, so a second SME2 thread on
-a cluster adds nothing, and lanes are clusters (from
-`hw.perflevelN.physicalcpu / cpusperl2`). On Linux the module measures
-once whether two threads keep their speed side by side and takes CPUs
-or CPU clusters accordingly; `BLAKE3_LANES=n` overrides. Inputs of 128
-KiB and up split at subtree boundaries into pieces dealt evenly to the
-lanes, each lane's pieces hashed by a resident worker thread with
-`set_input_offset` and `finalize_non_root`, and the caller merges the
-chaining values with `merge_subtrees_*`. A call takes a fair share of
-the lanes: with `c` callers active and `L` lanes, at most `ceil(L / c)`,
-and never more than are free (two process-wide counts), which is how
-two callers come to share the machine instead of each taking all of
-it; across processes the operating system's scheduler shares the
-workers' CPUs. Below 128 KiB the call is `blake3_sme2::hash`.
+BLAKE3 servil mt is the fork's `blake3_servil::hash_multithreaded`,
+which returns the same hash as `blake3_servil::hash`. Inputs below
+128 KiB stay on the calling thread. Larger inputs split at subtree
+boundaries across the calling thread and worker threads the fork starts
+once per process and keeps; the caller merges the chaining values. How
+many threads a call uses is the fork's decision from the input and the
+machine, and concurrent callers in one process share the workers
+fairly: two callers at once each get about half the machine. Across
+processes the operating system's scheduler shares the workers' CPUs.
+The fork also offers `hash_multithreaded_with_budget(input,
+max_threads)` to cap one call's threads; this benchmark measures the
+uncapped call. The benchmarker asks the fork for no machine capacity
+(thread or core counts); what it reports about the fork it reads from
+the fork's documentation and from `Platform::detect()`.
 
 SHA-256 CommonCrypto, on Apple platforms only, calls the system's
 libSystem through FFI using `CC_SHA256_Init`, `CC_SHA256_Update`, and
@@ -288,15 +286,16 @@ kernel (every block including the root compression, with the state in
 registers throughout), two to fifteen chunks on integer + NEON hybrid
 kernels, and groups of sixteen on the SME2 kernel (16 KiB and above).
 BLAKE3 mt leaves the caller's thread above one SIMD width of chunks;
-BLAKE3 servil mt splits over lanes from 128 KiB, its fourth path, drawn
+BLAKE3 servil mt splits over threads from 128 KiB, its fourth path, drawn
 as a triangle. SHA-256 and SHA-1DC run one path at every size.
 
-The text report lists the path at each size for both BLAKE3s and marks
-where a new one begins. In the graph, dot shape carries the same
-information: a circle for a contender's first path, a diamond for its
-second, a square for its third, a triangle for a fourth. The first dot of a new path wears a
-ring; hovering any dot names its path, and hovering a ringed dot adds a
-sentence on why the path changes there. A legend under the plot
+The text report lists the kernel at each size for every contender (one
+line for a contender with a single kernel) and marks where a new one
+begins. In the graph, dot shape carries the same information: a circle
+for a contender's first kernel, a diamond for its second, a square for
+its third, a triangle for a fourth. Hovering any dot names its kernel,
+and hovering the first dot of a new kernel adds a sentence on why the
+kernel changes there. A legend under the plot
 explains the shapes. Colour stays with the contender, so a line keeps
 one colour while its dots change shape.
 

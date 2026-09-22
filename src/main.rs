@@ -48,7 +48,7 @@ const BLAKE3_SOURCE_INFO: &str = env!("BLAKE3_SOURCE_INFO");
 const SHA2_SOURCE_INFO: &str = env!("SHA2_SOURCE_INFO");
 const RING_SOURCE_INFO: &str = env!("RING_SOURCE_INFO");
 const SHA1_CHECKED_SOURCE_INFO: &str = env!("SHA1_CHECKED_SOURCE_INFO");
-const BLAKE3_SME2_SOURCE_INFO: &str = env!("BLAKE3_SME2_SOURCE_INFO");
+const BLAKE3_SERVIL_SOURCE_INFO: &str = env!("BLAKE3_SERVIL_SOURCE_INFO");
 
 /*
  * Every power of two from 64 B to 8 MiB, plus 3 KiB and 3 MiB. Between 64 B and 1 KiB
@@ -68,7 +68,7 @@ const BLAKE3_SME2_SOURCE_INFO: &str = env!("BLAKE3_SME2_SOURCE_INFO");
  * memory-resident one. 3 MiB is to the plateau what 3 KiB is to the SIMD
  * ramp: a tree that is no power of two, whose left subtree is 2 MiB and
  * right 1 MiB, so a splitter that cuts at subtree boundaries hands its
- * lanes unequal work there. Twenty sizes also keep the round count small:
+ * threads unequal work there. Twenty sizes also keep the round count small:
  * rounds are a common multiple of the size count and the order count, and
  * twenty shares factors with every order count from two to eight.
  */
@@ -108,17 +108,23 @@ struct InputSize {
 }
 
 /*
- * A contender is one hash implementation under test. Adding one means a
- * variant here, an entry in ALL, a key, a name, a color, a provenance
- * string, an implementation description, and an arm in run_batch; the
- * harness handles selection, interleaving, and reporting for any count.
+ * A contender is one hash implementation under test: which crate (the
+ * crates.io blake3, the servil fork, sha2, ...) in which mode
+ * (single-threaded or multithreaded). Which kernel that implementation
+ * runs at each input size is chosen at run time and reported by
+ * detect_kernels. Adding a contender means a variant here, an entry in
+ * ALL, a key, a name, a color, a provenance string, a kernel description,
+ * and an arm in run_batch; the harness handles selection, interleaving,
+ * and reporting for any count.
  */
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Algorithm {
     Blake3,
     Sha256,
     Sha1Dc,
-    Blake3Sme2,
+    /// The servil fork's single-threaded hash; its kernels are chosen at
+    /// run time (SME2 where the CPU has it, integer + NEON hybrids elsewhere).
+    Blake3Servil,
     /// Apple's CommonCrypto SHA-256 through CC_SHA256_Init/Update/Final.
     Sha256CommonCrypto,
     /// ring's SHA-256: BoringSSL's assembly, with runtime CPU detection.
@@ -126,10 +132,10 @@ enum Algorithm {
     /// crates.io blake3 through Hasher::update_rayon on a Rayon pool sized
     /// to the machine: the crate's own multithreading.
     Blake3Rayon,
-    /// The fork's lanes module: one thread per execution lane (a core
-    /// cluster with its SME unit), taken only while free, so concurrent
-    /// callers share the machine.
-    Blake3Sme2Lanes,
+    /// The fork's hash_multithreaded: the caller's thread plus the fork's
+    /// own resident workers, shared fairly between concurrent callers in
+    /// one process.
+    Blake3ServilMt,
 }
 
 /// The hash function a contender implements; "best available" is chosen
@@ -156,11 +162,11 @@ impl Algorithm {
         Algorithm::Blake3,
         Algorithm::Sha256,
         Algorithm::Sha1Dc,
-        Algorithm::Blake3Sme2,
+        Algorithm::Blake3Servil,
         Algorithm::Sha256CommonCrypto,
         Algorithm::Sha256Ring,
         Algorithm::Blake3Rayon,
-        Algorithm::Blake3Sme2Lanes,
+        Algorithm::Blake3ServilMt,
     ];
 
     /// Command-line key, as in `--contenders blake3,sha256-cc`.
@@ -169,17 +175,17 @@ impl Algorithm {
             Self::Blake3 => "blake3",
             Self::Sha256 => "sha256",
             Self::Sha1Dc => "sha1dc",
-            Self::Blake3Sme2 => "blake3-servil",
+            Self::Blake3Servil => "blake3-servil",
             Self::Sha256CommonCrypto => "sha256-cc",
             Self::Sha256Ring => "sha256-ring",
             Self::Blake3Rayon => "blake3-mt",
-            Self::Blake3Sme2Lanes => "blake3-servil-mt",
+            Self::Blake3ServilMt => "blake3-servil-mt",
         }
     }
 
     fn family(self) -> Family {
         match self {
-            Self::Blake3 | Self::Blake3Sme2 | Self::Blake3Rayon | Self::Blake3Sme2Lanes => Family::Blake3,
+            Self::Blake3 | Self::Blake3Servil | Self::Blake3Rayon | Self::Blake3ServilMt => Family::Blake3,
             Self::Sha256 | Self::Sha256CommonCrypto | Self::Sha256Ring => Family::Sha256,
             Self::Sha1Dc => Family::Sha1Dc,
         }
@@ -187,7 +193,7 @@ impl Algorithm {
 
     /// Whether this contender may use more than the calling thread.
     fn multithreaded(self) -> bool {
-        matches!(self, Self::Blake3Rayon | Self::Blake3Sme2Lanes)
+        matches!(self, Self::Blake3Rayon | Self::Blake3ServilMt)
     }
 
     /*
@@ -209,19 +215,20 @@ impl Algorithm {
         self.multithreaded()
     }
 
-    /// Whether this contender can run on the current machine, or why not.
+    /// Whether this contender can run in this build, or why not. A
+    /// property of the target platform alone, so --list reads the same on
+    /// every machine of one platform; machine capacity (CPU count, which
+    /// kernel a CPU selects) shows up in the results and the kernel
+    /// report, never here.
     fn availability(self) -> Result<(), String> {
         match self {
-            Self::Blake3 | Self::Sha256 | Self::Sha1Dc | Self::Sha256Ring => Ok(()),
-            Self::Blake3Rayon => {
-                if std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) >= 2 {
-                    Ok(())
-                } else {
-                    Err("this machine has one CPU; a multithreaded contender has nothing to add".to_owned())
-                }
-            }
-            Self::Blake3Sme2Lanes => Ok(()),
-            Self::Blake3Sme2 => Ok(()),
+            Self::Blake3
+            | Self::Sha256
+            | Self::Sha1Dc
+            | Self::Sha256Ring
+            | Self::Blake3Servil
+            | Self::Blake3Rayon
+            | Self::Blake3ServilMt => Ok(()),
             Self::Sha256CommonCrypto => {
                 if cfg!(target_vendor = "apple") {
                     Ok(())
@@ -237,11 +244,11 @@ impl Algorithm {
             Self::Blake3 => "BLAKE3",
             Self::Sha256 => "SHA-256",
             Self::Sha1Dc => "SHA-1DC",
-            Self::Blake3Sme2 => "BLAKE3 servil",
+            Self::Blake3Servil => "BLAKE3 servil",
             Self::Sha256CommonCrypto => "SHA-256 CommonCrypto",
             Self::Sha256Ring => "SHA-256 ring",
             Self::Blake3Rayon => "BLAKE3 mt",
-            Self::Blake3Sme2Lanes => "BLAKE3 servil mt",
+            Self::Blake3ServilMt => "BLAKE3 servil mt",
         }
     }
 
@@ -255,11 +262,11 @@ impl Algorithm {
             Self::Blake3 => "#3b82f6",
             Self::Sha256 => "#e07a45",
             Self::Sha1Dc => "#8a7a1e",
-            Self::Blake3Sme2 => "#7c3aed",
+            Self::Blake3Servil => "#7c3aed",
             Self::Sha256CommonCrypto => "#0e9aa7",
             Self::Sha256Ring => "#c2410c",
             Self::Blake3Rayon => "#1e3a8a",
-            Self::Blake3Sme2Lanes => "#4c1d95",
+            Self::Blake3ServilMt => "#4c1d95",
         }
     }
 
@@ -269,37 +276,39 @@ impl Algorithm {
             Self::Blake3 => BLAKE3_SOURCE_INFO,
             Self::Sha256 => SHA2_SOURCE_INFO,
             Self::Sha1Dc => SHA1_CHECKED_SOURCE_INFO,
-            Self::Blake3Sme2 => BLAKE3_SME2_SOURCE_INFO,
+            Self::Blake3Servil => BLAKE3_SERVIL_SOURCE_INFO,
             Self::Sha256CommonCrypto => "CommonCrypto CC_SHA256_Init/Update/Final from the running macOS (libSystem); version follows the OS",
             Self::Sha256Ring => RING_SOURCE_INFO,
             Self::Blake3Rayon => BLAKE3_SOURCE_INFO,
-            Self::Blake3Sme2Lanes => BLAKE3_SME2_SOURCE_INFO,
+            Self::Blake3ServilMt => BLAKE3_SERVIL_SOURCE_INFO,
         }
     }
 
-    /// One line on how this contender runs, for the report header.
+    /// The contender's mode: how many threads it may use and how, for the
+    /// report header. The kernels it runs are a separate matter (see
+    /// detect_kernels), chosen at run time.
     fn mode(self) -> &'static str {
         match self {
-            Self::Blake3 => "single-threaded; Rayon not enabled",
-            Self::Sha256 => "RustCrypto sha2 with its built-in hardware backends (ARMv8 SHA-256 instructions on AArch64, SHA-NI on x86), selected at runtime",
-            Self::Sha1Dc => "SHA-1 with collision detection, pure Rust (the construction git uses)",
-            Self::Blake3Sme2 => "single-threaded; SME2 kernel for groups of sixteen chunks, integer + NEON hybrid kernels below that; needs a CPU with SME2",
-            Self::Sha256CommonCrypto => "Apple CommonCrypto CC_SHA256_Init/Update/Final via FFI, the fastest route into the system's own SHA-256 (corecrypto, ARMv8 SHA-256 instructions on Apple silicon)",
-            Self::Sha256Ring => "ring::digest::digest, BoringSSL's sha256_block_data_order_hw assembly (ARMv8 SHA-256 instructions; SHA-NI on x86), selected at runtime",
-            Self::Blake3Rayon => "multithreaded; Hasher::update_rayon on a Rayon pool with one thread per logical CPU (the crate's own multithreading, which splits the tree recursively over the pool; inputs under a few chunks stay on the caller's thread)",
-            Self::Blake3Sme2Lanes => "multithreaded; blake3_sme2::lanes::hash: inputs of 128 KiB and up split into subtrees over the machine's execution lanes (one per core cluster, which is one SME unit), each lane's share hashed by a resident worker thread with the SME2 kernel; a call takes a fair share of the lanes (ceil(lanes / active callers), and only free ones), so concurrent callers share the machine (cooperative admission); below 128 KiB the caller's thread alone",
+            Self::Blake3
+            | Self::Sha256
+            | Self::Sha1Dc
+            | Self::Blake3Servil
+            | Self::Sha256CommonCrypto
+            | Self::Sha256Ring => "single-threaded",
+            Self::Blake3Rayon => "multithreaded; Hasher::update_rayon on a Rayon pool with one thread per logical CPU, the crate's own multithreading: the tree splits recursively over the pool, and inputs under a few chunks stay on the caller's thread",
+            Self::Blake3ServilMt => "multithreaded; blake3_servil::hash_multithreaded: inputs of 128 KiB and up split across the caller's thread and the fork's resident worker threads, which concurrent callers in one process share fairly; below 128 KiB the caller's thread alone",
         }
     }
 
-    /// The description of the machine's lanes, for the reports; present
-    /// when a multithreaded contender is in the roster.
+    /// The threads a multithreaded contender is given, where the
+    /// benchmarker itself sizes them. The fork sizes its own workers and
+    /// reports no machine capacity, so its contender has no line.
     fn thread_resources(self) -> Option<String> {
         match self {
             Self::Blake3Rayon => Some(format!(
                 "Rayon pool: {} threads (one per logical CPU)",
                 std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)
             )),
-            Self::Blake3Sme2Lanes => Some(format!("Lanes: {}", blake3_sme2::lanes::describe_lanes())),
             _ => None,
         }
     }
@@ -906,7 +915,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
     for input in &inputs {
         assert_eq!(
             blake3::hash(input).as_bytes(),
-            blake3_sme2::hash(input).as_bytes(),
+            blake3_servil::hash(input).as_bytes(),
             "BLAKE3 servil must agree with crates.io blake3 on a {}-byte input",
             input.len(),
         );
@@ -918,10 +927,10 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                 input.len(),
             );
         }
-        if roster.algorithms.contains(&Algorithm::Blake3Sme2Lanes) {
+        if roster.algorithms.contains(&Algorithm::Blake3ServilMt) {
             assert_eq!(
                 blake3::hash(input).as_bytes(),
-                blake3_sme2::lanes::hash(input).as_bytes(),
+                blake3_servil::hash_multithreaded(input).as_bytes(),
                 "BLAKE3 servil mt must agree with blake3::hash on a {}-byte input",
                 input.len(),
             );
@@ -1363,9 +1372,9 @@ fn run_batch(
                 let _ = black_box(result.hash());
             }
         }
-        Algorithm::Blake3Sme2 => {
+        Algorithm::Blake3Servil => {
             for _ in 0..iterations {
-                let digest = blake3_sme2::hash(black_box(input));
+                let digest = blake3_servil::hash(black_box(input));
                 let _ = black_box(digest);
             }
         }
@@ -1387,9 +1396,9 @@ fn run_batch(
                 let _ = black_box(digest);
             }
         }
-        Algorithm::Blake3Sme2Lanes => {
+        Algorithm::Blake3ServilMt => {
             for _ in 0..iterations {
-                let digest = blake3_sme2::lanes::hash(black_box(input));
+                let digest = blake3_servil::hash_multithreaded(black_box(input));
                 let _ = black_box(digest);
             }
         }
@@ -1566,7 +1575,7 @@ impl Duo {
              * for a scheduler quantum, and on a machine with as many CPUs
              * as copies the other copy's worker threads (a multithreaded
              * contender's) would wait that quantum to start: measured, a
-             * 128 KiB lanes hash beside two hard spinners took 2 ms in
+             * 128 KiB multithreaded hash beside two hard spinners took 2 ms in
              * place of 29 µs. A yielding poll still has the copy in the
              * instruction stream when the release comes, within a
              * microsecond of it.
@@ -1840,7 +1849,7 @@ mod trace_clocks {
  * (CLOCK_THREAD_CPUTIME_ID) is scheduler accounting instead: an
  * interruption mid-sample can leave the slice under-counted, so the sample
  * reports a hash faster than the hardware allows. On an M4 Max three
- * unrelated SHA-256 implementations shared one minimum 12% under their
+ * unrelated SHA-256 kernels_by_contender shared one minimum 12% under their
  * own steady medians. The measure-clocks3 repository demonstrates this.
  */
 mod sample_clock {
@@ -2047,17 +2056,17 @@ fn find_modes(sorted: &[u64], median: u64) -> Option<Modes> {
 
 /*
  * One code path a contender uses for a range of input sizes. `first` is the
- * smallest input in bytes that takes this path; a contender's regimes are
+ * smallest input in bytes that takes this path; a contender's kernels are
  * listed in ascending order of `first`, the first starting at 0.
  */
 #[derive(Clone, Copy)]
-struct Regime {
+struct Kernel {
     first: usize,
     /// Short name for the report and the hover panel, e.g. "NEON hash_many".
     name: &'static str,
-    /// One sentence on why the path changes here, for the first dot of the regime.
+    /// One sentence on why the path changes here, for the first dot of the kernel.
     why: &'static str,
-    /// Mark drawn at every dot in this regime.
+    /// Mark drawn at every dot in this kernel.
     mark: Mark,
 }
 
@@ -2085,37 +2094,37 @@ impl Mark {
 
 /*
  * A contender's code paths by input size, with the platform name for the
- * report header. `regimes` is non-empty, ascending in `first`, and starts
+ * report header. `kernels` is non-empty, ascending in `first`, and starts
  * at 0.
  */
-struct Implementation {
+struct Kernels {
     platform: &'static str,
-    regimes: Vec<Regime>,
+    kernels: Vec<Kernel>,
 }
 
-impl Implementation {
-    fn new(platform: &'static str, regimes: Vec<Regime>) -> Self {
-        assert!(!regimes.is_empty(), "a contender has at least one regime");
-        assert_eq!(regimes[0].first, 0, "the first regime covers the smallest inputs");
+impl Kernels {
+    fn new(platform: &'static str, kernels: Vec<Kernel>) -> Self {
+        assert!(!kernels.is_empty(), "a contender has at least one kernel");
+        assert_eq!(kernels[0].first, 0, "the first kernel covers the smallest inputs");
         assert!(
-            regimes.windows(2).all(|pair| pair[0].first < pair[1].first),
-            "regimes ascend in their first input size"
+            kernels.windows(2).all(|pair| pair[0].first < pair[1].first),
+            "kernels ascend in their first input size"
         );
-        Self { platform, regimes }
+        Self { platform, kernels }
     }
 
-    /// Index of the regime for this input, and whether this is the smallest
-    /// tested input in that regime.
-    fn regime_index_for(&self, size_index: usize) -> (usize, bool) {
+    /// Index of the kernel for this input, and whether this is the smallest
+    /// tested input in that kernel.
+    fn kernel_index_for(&self, size_index: usize) -> (usize, bool) {
         let bytes = INPUT_SIZES[size_index].bytes;
         let index = self
-            .regimes
+            .kernels
             .iter()
-            .rposition(|regime| bytes >= regime.first)
-            .expect("the first regime starts at 0");
-        let first_in_regime = size_index == 0
-            || self.regime_index_for(size_index - 1).0 != index;
-        (index, first_in_regime)
+            .rposition(|kernel| bytes >= kernel.first)
+            .expect("the first kernel starts at 0");
+        let first_in_kernel = size_index == 0
+            || self.kernel_index_for(size_index - 1).0 != index;
+        (index, first_in_kernel)
     }
 }
 
@@ -2125,7 +2134,7 @@ impl Implementation {
  * 1024 bytes; hash_many batches whole chunks and hands leftovers below the
  * SIMD degree to the single-chunk path.
  */
-fn detect_blake3_implementation() -> Implementation {
+fn detect_blake3_kernels() -> Kernels {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         let (platform, one, wide, degree) = if std::arch::is_x86_feature_detected!("avx512f")
@@ -2141,14 +2150,14 @@ fn detect_blake3_implementation() -> Implementation {
         } else {
             ("portable", "portable compression", "portable hash_many", 1)
         };
-        let mut regimes = vec![Regime {
+        let mut kernels = vec![Kernel {
             first: 0,
             name: one,
             why: "Up to one chunk, so a single compression handles the whole input.",
             mark: Mark::Circle,
         }];
         if degree > 4 {
-            regimes.push(Regime {
+            kernels.push(Kernel {
                 first: 4 * 1024,
                 name: "SSE4.1 hash_many (4-way fallback)",
                 why: "Four whole chunks fill the narrowest SIMD batch; wider batches wait for more chunks.",
@@ -2156,28 +2165,28 @@ fn detect_blake3_implementation() -> Implementation {
             });
         }
         if degree > 1 {
-            regimes.push(Regime {
+            kernels.push(Kernel {
                 first: degree * 1024,
                 name: wide,
                 why: "Enough whole chunks to fill the widest SIMD batch on this CPU.",
                 mark: if degree > 4 { Mark::Square } else { Mark::Diamond },
             });
         }
-        return Implementation::new(platform, regimes);
+        return Kernels::new(platform, kernels);
     }
 
     #[cfg(target_arch = "aarch64")]
     {
-        return Implementation::new(
+        return Kernels::new(
             "NEON",
             vec![
-                Regime {
+                Kernel {
                     first: 0,
                     name: "portable compression",
                     why: "Fewer than four whole chunks: each runs through the portable single-chunk compressor, so 2 KiB and 3 KiB take this path too.",
                     mark: Mark::Circle,
                 },
-                Regime {
+                Kernel {
                     first: 4 * 1024,
                     name: "NEON hash_many (4-way)",
                     why: "Four whole chunks fill a NEON batch; from here the bulk of the input runs four chunks at a time.",
@@ -2188,9 +2197,9 @@ fn detect_blake3_implementation() -> Implementation {
     }
 
     #[allow(unreachable_code)]
-    Implementation::new(
+    Kernels::new(
         "portable",
-        vec![Regime {
+        vec![Kernel {
             first: 0,
             name: "portable compression",
             why: "This build has no SIMD path; every size runs the portable compressor.",
@@ -2200,40 +2209,50 @@ fn detect_blake3_implementation() -> Implementation {
 }
 
 /*
- * Code paths of the SME2 fork, from its src/ffi_sme2.rs and
- * src/ffi_neon_hybrid.rs. main() has asserted Platform::SME2.
+ * Kernels of the servil fork, read from its Platform::detect() at run
+ * time. Every AArch64 core runs the scalar and integer + NEON hybrid
+ * kernels (src/ffi_neon_hybrid.rs); a CPU that reports SME2 with 512-bit
+ * streaming vectors adds the SME2 group kernel (src/ffi_sme2.rs) for
+ * sixteen whole chunks and up. Which of the two the run measured is part
+ * of the result, and the report names it.
  */
-fn detect_blake3_sme2_implementation() -> Implementation {
-    Implementation::new(
-        "SME2",
-        vec![
-            Regime {
-                first: 0,
-                name: "scalar kernel c1, one call",
-                why: "One chunk runs on the integer ALUs alone: every block including the root compression in a single kernel call, with the state in registers throughout.",
-                mark: Mark::Circle,
-            },
-            Regime {
-                first: 2 * 1024,
-                name: "integer + NEON hybrid kernels",
-                why: "Two or more whole chunks: hybrid kernels keep the integer and NEON units busy together, up to fifteen chunks at a time.",
-                mark: Mark::Diamond,
-            },
-            Regime {
-                first: 16 * 1024,
-                name: "SME2 hash16_chunks kernel",
-                why: "Sixteen whole chunks fill an SME2 group on 512-bit streaming vectors; leftovers below sixteen stay on the hybrid kernels.",
-                mark: Mark::Square,
-            },
-        ],
-    )
+fn detect_blake3_servil_kernels() -> Kernels {
+    let platform = blake3_servil::platform::Platform::detect();
+    let platform: &'static str = match format!("{platform:?}").as_str() {
+        "SME2" => "SME2",
+        "NEON" => "NEON",
+        other => panic!("the servil fork selected platform {other}, which this AArch64 report does not describe"),
+    };
+    let mut kernels = vec![
+        Kernel {
+            first: 0,
+            name: "scalar kernel c1, one call",
+            why: "One chunk runs on the integer ALUs alone: every block including the root compression in a single kernel call, with the state in registers throughout.",
+            mark: Mark::Circle,
+        },
+        Kernel {
+            first: 2 * 1024,
+            name: "integer + NEON hybrid kernels",
+            why: "Two or more whole chunks: hybrid kernels keep the integer and NEON units busy together.",
+            mark: Mark::Diamond,
+        },
+    ];
+    if platform == "SME2" {
+        kernels.push(Kernel {
+            first: 16 * 1024,
+            name: "SME2 hash16_chunks kernel",
+            why: "Sixteen whole chunks fill an SME2 group on 512-bit streaming vectors; leftovers below sixteen stay on the hybrid kernels.",
+            mark: Mark::Square,
+        });
+    }
+    Kernels::new(platform, kernels)
 }
 
 /*
- * SHA-256 and SHA-1DC each run one code path at every size. Their regimes
+ * SHA-256 and SHA-1DC each run one code path at every size. Their kernels
  * still carry a name so the hover panel can say what produced the point.
  */
-fn detect_sha256_implementation() -> Implementation {
+fn detect_sha256_kernels() -> Kernels {
     let name = if cfg!(target_arch = "aarch64") {
         "sha2 aarch64_sha2 backend (ARMv8 SHA-256 instructions)"
     } else if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
@@ -2241,42 +2260,42 @@ fn detect_sha256_implementation() -> Implementation {
     } else {
         "sha2 portable"
     };
-    Implementation::new(
+    Kernels::new(
         "sha2",
-        vec![Regime {
+        vec![Kernel {
             first: 0,
             name,
-            why: "One implementation at every size.",
+            why: "One kernel at every size.",
             mark: Mark::Circle,
         }],
     )
 }
 
-fn detect_sha1dc_implementation() -> Implementation {
-    Implementation::new(
+fn detect_sha1dc_kernels() -> Kernels {
+    Kernels::new(
         "sha1-checked",
-        vec![Regime {
+        vec![Kernel {
             first: 0,
             name: "SHA-1 with collision detection, pure Rust",
-            why: "One implementation at every size.",
+            why: "One kernel at every size.",
             mark: Mark::Circle,
         }],
     )
 }
 
-fn detect_common_crypto_implementation() -> Implementation {
-    Implementation::new(
+fn detect_common_crypto_kernels() -> Kernels {
+    Kernels::new(
         "CommonCrypto",
-        vec![Regime {
+        vec![Kernel {
             first: 0,
             name: "CC_SHA256_Init/Update/Final (corecrypto, ARMv8 SHA-256 instructions)",
-            why: "One implementation at every size.",
+            why: "One kernel at every size.",
             mark: Mark::Circle,
         }],
     )
 }
 
-fn detect_ring_implementation() -> Implementation {
+fn detect_ring_kernels() -> Kernels {
     let name = if cfg!(target_arch = "aarch64") {
         "sha256_block_data_order_hw (ARMv8 SHA-256 instructions, pipelined schedule)"
     } else if cfg!(any(target_arch = "x86", target_arch = "x86_64")) {
@@ -2284,48 +2303,48 @@ fn detect_ring_implementation() -> Implementation {
     } else {
         "sha256_block_data_order_nohw"
     };
-    Implementation::new(
+    Kernels::new(
         "ring",
-        vec![Regime {
+        vec![Kernel {
             first: 0,
             name,
-            why: "One implementation at every size.",
+            why: "One kernel at every size.",
             mark: Mark::Circle,
         }],
     )
 }
 
-fn detect_implementation(algorithm: Algorithm) -> Implementation {
+fn detect_kernels(algorithm: Algorithm) -> Kernels {
     match algorithm {
-        Algorithm::Blake3 => detect_blake3_implementation(),
-        Algorithm::Sha256 => detect_sha256_implementation(),
-        Algorithm::Sha1Dc => detect_sha1dc_implementation(),
-        Algorithm::Blake3Sme2 => detect_blake3_sme2_implementation(),
-        Algorithm::Sha256CommonCrypto => detect_common_crypto_implementation(),
-        Algorithm::Sha256Ring => detect_ring_implementation(),
-        Algorithm::Blake3Rayon => detect_blake3_rayon_implementation(),
-        Algorithm::Blake3Sme2Lanes => detect_blake3_sme2_lanes_implementation(),
+        Algorithm::Blake3 => detect_blake3_kernels(),
+        Algorithm::Sha256 => detect_sha256_kernels(),
+        Algorithm::Sha1Dc => detect_sha1dc_kernels(),
+        Algorithm::Blake3Servil => detect_blake3_servil_kernels(),
+        Algorithm::Sha256CommonCrypto => detect_common_crypto_kernels(),
+        Algorithm::Sha256Ring => detect_ring_kernels(),
+        Algorithm::Blake3Rayon => detect_blake3_rayon_kernels(),
+        Algorithm::Blake3ServilMt => detect_blake3_servil_mt_kernels(),
     }
 }
 
 /*
  * update_rayon splits the tree with rayon::join down to the SIMD degree,
  * so any input above one SIMD width of chunks may cross threads; the
- * regime boundary is where the crate's serial path ends.
+ * kernel boundary is where the crate's serial path ends.
  */
-fn detect_blake3_rayon_implementation() -> Implementation {
-    let single = detect_blake3_implementation();
-    let degree_bytes = single.regimes.last().map(|r| r.first).unwrap_or(0).max(2 * 1024);
-    Implementation::new(
+fn detect_blake3_rayon_kernels() -> Kernels {
+    let single = detect_blake3_kernels();
+    let degree_bytes = single.kernels.last().map(|r| r.first).unwrap_or(0).max(2 * 1024);
+    Kernels::new(
         single.platform,
         vec![
-            Regime {
+            Kernel {
                 first: 0,
                 name: "caller's thread (below one SIMD width of chunks)",
                 why: "One SIMD width of chunks or less is one hash_many call; update_rayon has nothing to split.",
                 mark: Mark::Circle,
             },
-            Regime {
+            Kernel {
                 first: 2 * degree_bytes,
                 name: "rayon::join over the pool",
                 why: "Above one SIMD width of chunks the tree splits recursively with rayon::join, and idle pool threads steal the halves.",
@@ -2335,49 +2354,57 @@ fn detect_blake3_rayon_implementation() -> Implementation {
     )
 }
 
-fn detect_blake3_sme2_lanes_implementation() -> Implementation {
-    let single = detect_blake3_sme2_implementation();
-    let mut regimes = single.regimes.clone();
-    regimes.push(Regime {
-        first: blake3_sme2::lanes::MIN_SPLIT_LEN,
-        name: "subtrees over free lanes",
-        why: "From 128 KiB the input splits into subtrees, one per free lane, each on its own SME2 thread; the caller merges the chaining values.",
+/*
+ * hash_multithreaded's documented contract: inputs below 128 KiB stay on
+ * the calling thread; from there the input splits across threads. The
+ * threshold is read from that documentation, as the crates.io kernels
+ * above are read from that crate's source; the fork exposes no constant
+ * for it and reports no machine capacity.
+ */
+const SERVIL_MULTITHREADED_FROM: usize = 128 * 1024;
+
+fn detect_blake3_servil_mt_kernels() -> Kernels {
+    let single = detect_blake3_servil_kernels();
+    let mut kernels = single.kernels.clone();
+    kernels.push(Kernel {
+        first: SERVIL_MULTITHREADED_FROM,
+        name: "subtrees over threads",
+        why: "From 128 KiB the input splits into subtrees, each hashed on its own thread (the caller's and the fork's workers) with the kernels above; the caller merges the chaining values.",
         mark: Mark::Triangle,
     });
-    Implementation::new(single.platform, regimes)
+    Kernels::new(single.platform, kernels)
 }
 
-fn append_implementation_report(output: &mut String, algorithm: Algorithm) {
-    let implementation = detect_implementation(algorithm);
+/// The kernels a contender ran, by input size: one line for a contender
+/// with a single kernel, a table for one that changes kernel with size.
+fn append_kernel_report(output: &mut String, algorithm: Algorithm) {
+    let kernels = detect_kernels(algorithm);
 
-    writeln!(output, "{} implementation selection:", algorithm.name()).unwrap();
-    if algorithm == Algorithm::Blake3Sme2 {
-        let platform = blake3_sme2::platform::Platform::detect();
+    if kernels.kernels.len() == 1 {
         writeln!(
             output,
-            "  selected platform: {platform:?} (512-bit streaming vectors, \
-             sixteen-lane groups, hash_many degree {})",
-            platform.simd_degree(),
+            "{} kernel: {} (platform {})",
+            algorithm.name(),
+            kernels.kernels[0].name,
+            kernels.platform,
         )
-            .unwrap();
-    } else {
-        writeln!(output, "  selected platform: {}", implementation.platform).unwrap();
+        .unwrap();
+        return;
     }
 
+    writeln!(output, "{} kernels by input size (platform {}):", algorithm.name(), kernels.platform).unwrap();
     for (size_index, input_size) in INPUT_SIZES.iter().enumerate() {
-        let (regime_index, first) = implementation.regime_index_for(size_index);
-        let regime = &implementation.regimes[regime_index];
+        let (kernel_index, first) = kernels.kernel_index_for(size_index);
+        let kernel = &kernels.kernels[kernel_index];
         writeln!(
             output,
             "  {:>7}: {}{}",
             input_size.label,
-            regime.name,
-            if first && regime_index > 0 { "  ← new path from here" } else { "" },
+            kernel.name,
+            if first && kernel_index > 0 { "  ← new kernel from here" } else { "" },
         )
-            .unwrap();
+        .unwrap();
     }
-
-    writeln!(output).unwrap();
 }
 
 fn generate_text(
@@ -2439,10 +2466,9 @@ fn generate_text(
     writeln!(output).unwrap();
 
     for algorithm in &roster.algorithms {
-        if detect_implementation(*algorithm).regimes.len() > 1 {
-            append_implementation_report(&mut output, *algorithm);
-        }
+        append_kernel_report(&mut output, *algorithm);
     }
+    writeln!(output).unwrap();
 
     writeln!(
         output,
@@ -2563,7 +2589,7 @@ fn column_heading(algorithm: Algorithm) -> &'static str {
     match algorithm {
         Algorithm::Sha256CommonCrypto => "SHA-256 CC",
         Algorithm::Sha256Ring => "SHA-256 ring",
-        Algorithm::Blake3Sme2Lanes => "B3 servil mt",
+        Algorithm::Blake3ServilMt => "B3 servil mt",
         other => other.name(),
     }
 }
@@ -2838,8 +2864,8 @@ fn generate_svg(
                 * (PLOT_RIGHT - PLOT_LEFT - 2.0 * X_INSET)
         });
 
-    let implementations: Vec<Implementation> =
-        roster.algorithms.iter().map(|&algorithm| detect_implementation(algorithm)).collect();
+    let kernels_by_contender: Vec<Kernels> =
+        roster.algorithms.iter().map(|&algorithm| detect_kernels(algorithm)).collect();
 
     let provenance_cats = shared_provenance_cats(machine, selection_note, basis);
     let provenance_total = provenance_cats.len()
@@ -2847,8 +2873,8 @@ fn generate_svg(
         + roster
             .algorithms
             .iter()
-            .zip(&implementations)
-            .map(|(&algorithm, implementation)| contender_provenance_lines(algorithm, implementation).len())
+            .zip(&kernels_by_contender)
+            .map(|(&algorithm, kernels)| contender_provenance_lines(algorithm, kernels).len())
             .sum::<usize>();
     let svg_height = svg_height(provenance_total);
 
@@ -3138,7 +3164,7 @@ fn generate_svg(
     for algorithm_index in 0..roster.len() {
         let algorithm = roster.algorithms[algorithm_index];
         let color = algorithm.color();
-        let implementation = &implementations[algorithm_index];
+        let kernels = &kernels_by_contender[algorithm_index];
 
         writeln!(
             svg,
@@ -3246,15 +3272,15 @@ fn generate_svg(
              * the shape alone marks a new path, so every dot draws the same
              * size with no ring. Hovering shows the path's explanation.
              */
-            let (regime_index, _) = implementation.regime_index_for(size_index);
-            let regime = &implementation.regimes[regime_index];
+            let (kernel_index, _) = kernels.kernel_index_for(size_index);
+            let kernel = &kernels.kernels[kernel_index];
             let dots = &mut dot_layers[algorithm_index];
             writeln!(
                 dots,
                 r##"    <g class="dot" data-size="{size_index}" transform="translate({x:.2} {median_y:.2})" onmouseenter="showHover({algorithm_index},{size_index})" onmouseleave="hideHover()">"##,
             )
                 .unwrap();
-            writeln!(dots, "      {}", mark_shape(regime.mark, color, 5.0)).unwrap();
+            writeln!(dots, "      {}", mark_shape(kernel.mark, color, 5.0)).unwrap();
             dots.push_str("    </g>\n");
 
             /*
@@ -3320,9 +3346,9 @@ fn generate_svg(
            across contenders; shapes fill fixed slots, so rows align. Each
            shape carries a tooltip naming its code path. */
         let mut swatch_marks: Vec<(Mark, &str, &str)> = Vec::new();
-        for regime in &implementation.regimes {
-            if !swatch_marks.iter().any(|slot| slot.0 == regime.mark) {
-                swatch_marks.push((regime.mark, regime.name, regime.why));
+        for kernel in &kernels.kernels {
+            if !swatch_marks.iter().any(|slot| slot.0 == kernel.mark) {
+                swatch_marks.push((kernel.mark, kernel.name, kernel.why));
             }
         }
         let name_x = label_x + 14.0 + (SWATCH_SLOTS as f64) * 13.0;
@@ -3364,7 +3390,7 @@ fn generate_svg(
         writeln!(svg, "    </g>").unwrap();
 
         /* This contender's provenance lines, hidden along with it. */
-        for line in contender_provenance_lines(algorithm, implementation) {
+        for line in contender_provenance_lines(algorithm, kernels) {
             writeln!(
                 svg,
                 r##"    <text class="prov series-prov" x="{PLOT_LEFT:.1}" y="{:.1}">{}</text>"##,
@@ -3390,10 +3416,10 @@ fn generate_svg(
      */
     {
         let mut marks: Vec<Mark> = Vec::new();
-        for implementation in &implementations {
-            for regime in &implementation.regimes {
-                if !marks.contains(&regime.mark) {
-                    marks.push(regime.mark);
+        for kernels in &kernels_by_contender {
+            for kernel in &kernels.kernels {
+                if !marks.contains(&kernel.mark) {
+                    marks.push(kernel.mark);
                 }
             }
         }
@@ -3484,7 +3510,7 @@ fn generate_svg(
         ("SHA-256 source", SHA2_SOURCE_INFO),
         ("SHA-1DC source", SHA1_CHECKED_SOURCE_INFO),
         ("SHA-256 ring source", RING_SOURCE_INFO),
-        ("BLAKE3 servil source", BLAKE3_SME2_SOURCE_INFO),
+        ("BLAKE3 servil source", BLAKE3_SERVIL_SOURCE_INFO),
     ] {
         writeln!(
             svg,
@@ -3558,7 +3584,7 @@ fn generate_svg(
     );
 
     /* Data and behaviour for the interactive toggles. */
-    write_interaction_script(&mut svg, roster, results, &implementations, &x_positions, &label_y_by_algorithm, shared_count);
+    write_interaction_script(&mut svg, roster, results, &kernels_by_contender, &x_positions, &label_y_by_algorithm, shared_count);
 
     svg.push_str("</svg>\n");
     svg
@@ -3732,50 +3758,52 @@ fn shared_provenance_cats(machine: &MachineMetadata, selection_note: &str, basis
     ]
 }
 
-/* Provenance that belongs to one contender and hides with it. */
+/* Provenance that belongs to one contender and hides with it: the
+   implementation, its mode, and the platform its kernels ran on. */
 fn contender_provenance_lines(
     algorithm: Algorithm,
-    implementation: &Implementation,
+    kernels: &Kernels,
 ) -> Vec<String> {
     let name = algorithm.name();
+    let platform = kernels.platform;
     match algorithm {
         Algorithm::Blake3 => vec![format!(
-            "{name}: {} · {} · platform {}",
+            "{name}: {} · {} · platform {platform}",
             package_name_and_version(BLAKE3_SOURCE_INFO),
             algorithm.mode(),
-            implementation.platform,
         )],
         Algorithm::Sha256 => vec![format!(
-            "{name}: {} · {}",
+            "{name}: {} · {} · {}",
             package_name_and_version(SHA2_SOURCE_INFO),
             algorithm.mode(),
+            kernels.kernels[0].name,
         )],
         Algorithm::Sha1Dc => vec![format!(
             "{name}: {} · {}",
             package_name_and_version(SHA1_CHECKED_SOURCE_INFO),
             algorithm.mode(),
         )],
-        Algorithm::Blake3Sme2 => vec![
-            format!("{name}: {}", short_git_source(BLAKE3_SME2_SOURCE_INFO)),
-            format!("{name}: {}", algorithm.mode()),
+        Algorithm::Blake3Servil => vec![
+            format!("{name}: {}", short_git_source(BLAKE3_SERVIL_SOURCE_INFO)),
+            format!("{name}: {} · platform {platform}", algorithm.mode()),
         ],
-        Algorithm::Sha256CommonCrypto => vec![format!("{name}: {}", algorithm.mode())],
+        Algorithm::Sha256CommonCrypto => vec![format!("{name}: {} · {}", algorithm.mode(), kernels.kernels[0].name)],
         Algorithm::Sha256Ring => vec![format!(
-            "{name}: {} · {}",
+            "{name}: {} · {} · {}",
             package_name_and_version(RING_SOURCE_INFO),
             algorithm.mode(),
+            kernels.kernels[0].name,
         )],
         Algorithm::Blake3Rayon => vec![
             format!(
-                "{name}: {} · Hasher::update_rayon · platform {}",
+                "{name}: {} · Hasher::update_rayon · platform {platform}",
                 package_name_and_version(BLAKE3_SOURCE_INFO),
-                implementation.platform,
             ),
-            format!("{name}: {}", algorithm.thread_resources().unwrap()),
+            format!("{name}: {}", algorithm.thread_resources().expect("BLAKE3 mt sizes its own pool")),
         ],
-        Algorithm::Blake3Sme2Lanes => vec![
-            format!("{name}: {} · lanes::hash", short_git_source(BLAKE3_SME2_SOURCE_INFO)),
-            format!("{name}: {}", algorithm.thread_resources().unwrap()),
+        Algorithm::Blake3ServilMt => vec![
+            format!("{name}: {} · hash_multithreaded", short_git_source(BLAKE3_SERVIL_SOURCE_INFO)),
+            format!("{name}: multithreaded on the fork's own threads · platform {platform}"),
         ],
     }
 }
@@ -3791,7 +3819,7 @@ fn write_interaction_script(
     svg: &mut String,
     roster: &Roster,
     results: &Results,
-    implementations: &[Implementation],
+    kernels_by_contender: &[Kernels],
     x_positions: &[f64; INPUT_COUNT],
     label_y_by_algorithm: &[f64],
     shared_count: usize,
@@ -3801,17 +3829,17 @@ fn write_interaction_script(
         if algorithm_index > 0 {
             data.push(',');
         }
-        write!(data, "{{\"name\":\"{}\",\"regimes\":[", roster.algorithms[algorithm_index].name()).unwrap();
-        for (regime_index, regime) in implementations[algorithm_index].regimes.iter().enumerate() {
-            if regime_index > 0 { data.push(','); }
-            let first_size = INPUT_SIZES.iter().position(|size| size.bytes >= regime.first)
-                .expect("every regime starts at or below the largest tested size");
+        write!(data, "{{\"name\":\"{}\",\"kernels\":[", roster.algorithms[algorithm_index].name()).unwrap();
+        for (kernel_index, kernel) in kernels_by_contender[algorithm_index].kernels.iter().enumerate() {
+            if kernel_index > 0 { data.push(','); }
+            let first_size = INPUT_SIZES.iter().position(|size| size.bytes >= kernel.first)
+                .expect("every kernel starts at or below the largest tested size");
             write!(
                 data,
                 "{{\"from\":{first_size},\"name\":{},\"why\":{},\"mark\":\"{}\"}}",
-                json_string(regime.name),
-                json_string(regime.why),
-                regime.mark.name(),
+                json_string(kernel.name),
+                json_string(kernel.why),
+                kernel.mark.name(),
             )
                 .unwrap();
         }
@@ -4277,20 +4305,20 @@ function showHover(focus, k) {
 
   /* Code path at this size; the first size of a new path explains why. */
   let ri = 0;
-  f.regimes.forEach((r, j) => { if (k >= r.from) ri = j; });
-  const regime = f.regimes[ri];
-  const isTransition = ri > 0 && regime.from === k;
+  f.kernels.forEach((r, j) => { if (k >= r.from) ri = j; });
+  const kernel = f.kernels[ri];
+  const isTransition = ri > 0 && kernel.from === k;
   y += 14;
   const pathRow = textEl(PAD, y, "hover-sub", "");
-  const shape = markGlyph(regime.mark, DATA.colors[focus]);
+  const shape = markGlyph(kernel.mark, DATA.colors[focus]);
   shape.setAttribute("transform", `translate(${PAD + 5} ${y - 3.5}) scale(0.8)`);
   body.appendChild(shape);
   pathRow.setAttribute("x", PAD + 14);
-  pathRow.textContent = (isTransition ? "new path from here: " : "code path: ") + regime.name;
+  pathRow.textContent = (isTransition ? "new path from here: " : "code path: ") + kernel.name;
   if (isTransition) pathRow.setAttribute("class", "hover-sub hover-path");
   body.appendChild(pathRow);
   if (isTransition) {
-    for (const line of wrapText(regime.why, 62)) {
+    for (const line of wrapText(kernel.why, 62)) {
       y += 13;
       body.appendChild(textEl(PAD + 14, y, "hover-why", line));
     }
@@ -4309,8 +4337,8 @@ function showHover(focus, k) {
       const s = DATA.series[i];
       /* Swatch: this contender's mark at this size, in its own colour. */
       let rj = 0;
-      s.regimes.forEach((r, j) => { if (k >= r.from) rj = j; });
-      const sw = markGlyph(s.regimes[rj].mark, DATA.colors[i]);
+      s.kernels.forEach((r, j) => { if (k >= r.from) rj = j; });
+      const sw = markGlyph(s.kernels[rj].mark, DATA.colors[i]);
       sw.setAttribute("class", "hover-swatch");
       sw.setAttribute("style", `fill: ${DATA.colors[i]}`);
       sw.setAttribute("transform", `translate(${PAD + 5} ${y - 4}) scale(0.85)`);

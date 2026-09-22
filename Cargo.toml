@@ -39,7 +39,7 @@ default-features = false
 # checkout of the fork's sme2-bench branch. In this workspace copy the fork
 # is the parent directory (..); upstream bench-hashes expects a sibling
 # (../BLAKE3). Edits there take effect on the next build.
-[dependencies.blake3_sme2]
+[dependencies.blake3-servil]
 path = ".."
 default-features = false
 features = ["std"]

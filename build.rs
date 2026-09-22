@@ -56,9 +56,9 @@ fn main() {
         "ring",
     );
     emit_path_package(
-        "BLAKE3_SME2_SOURCE_INFO",
+        "BLAKE3_SERVIL_SOURCE_INFO",
         &manifest_dir,
-        "blake3_sme2",
+        "blake3-servil",
         BLAKE3_SME2_PATH,
     );
 
@@ -141,7 +141,7 @@ fn git_text_allow_failure(
     )
 }
 
-/// Where Cargo.toml points the `blake3_sme2` path dependency, relative to
+/// Where Cargo.toml points the `blake3-servil` path dependency, relative to
 /// this crate's manifest directory. Cargo.toml and this constant agree.
 /// (".." here: this workspace copy nests inside the fork checkout.)
 const BLAKE3_SME2_PATH: &str = "..";

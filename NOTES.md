@@ -123,10 +123,10 @@ automatically.
   side. Consider a `--gap MS` option that sleeps between batches so
   workers must actually wake.
 
-- **Reading the environment.** Both fork contenders honour environment
-  variables (e.g. lane count overrides). The harness inherits the user's
-  environment. A report should record any `BLAKE3_*` variables present;
-  it doesn't yet.
+- **Reading the environment.** The fork once honoured a `BLAKE3_LANES`
+  override; that is gone, and `hash_multithreaded_with_budget` is the
+  way to cap threads. The fork reads no `BLAKE3_*` variables now, so the
+  report has nothing to record there.
 
 - **Solo-tuned defaults.** A contender may be tuned for the solo
   columns. The duo columns exist to catch exactly this. Both are shown
