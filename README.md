@@ -103,14 +103,18 @@ A program with a queue of small messages to hash (a Merkle tree's
 leaves, a table of records) has two ways to spend a call: one message
 per call of the plain entry point, or a batch per call where the
 implementation offers that. The second use case measures both as they
-are. Every contender loops its plain entry point over the batch, one
-message per call: `for m in batch { hash(m) }`. ab-blake3 alone has a
-batch entry point, `single_block_hash_many_exact::<N>`, which takes N
+are. A contender without a batch entry point loops its plain entry
+point over the batch, one message per call: `for m in batch { hash(m) }`.
+Three have one. ab-blake3's `single_block_hash_many_exact::<N>` takes N
 messages of exactly one block (64 bytes) as one array and returns N
 digests; the bencher calls it with N the batch size (N is a const
-generic, so each batch size on the axis is its own call). Messages are
-64 bytes for every contender because that is the one size the batch
-entry point accepts.
+generic, so each batch size on the axis is its own call). BLAKE3
+servil's `hash_many(&[&[u8]], &mut [Hash])` takes messages of any
+lengths and fills one digest each; BLAKE3 servil mt's
+`hash_many_multithreaded` does the same over the fork's worker threads
+(`blake3-servil-mt1` calls it with a budget of one). Messages are 64
+bytes for every contender because that is the one size ab-blake3's
+batch entry point accepts.
 
 The axis counts messages per batch: 1, 2, 3, 4, 6, 8, 12, 16, 24, 32,
 48, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384 (1 MiB of input at
@@ -121,10 +125,11 @@ remainder past the sixteen-message groups ab-blake3 forms; from 64 up
 the per-batch overhead amortises and the rate settles. Results read in
 nanoseconds per message and million messages per second.
 
-The multithreaded contenders take no part in this use case: a 64-byte
-message is a call to `hash_multithreaded` that no program would make.
-The bencher writes no wrapper of its own around any contender; the
-contenders' own entry points are the whole of what it calls.
+BLAKE3 mt takes no part in this use case: a 64-byte message is a call
+to `update_rayon` that no program would make, and the crate has no
+batch entry point. The bencher writes no wrapper of its own around any
+contender; the contenders' own entry points are the whole of what it
+calls.
 
 The duo measurement below applies unchanged: each sample runs two copies
 of the contender, each over its own batch, and times the later finish.
@@ -280,7 +285,11 @@ vector length gets the SME2 group kernel for sixteen chunks and up;
 every AArch64 core runs the scalar and integer + NEON hybrid kernels.
 The report's kernel table names the platform the run measured. Its
 provenance line gives the checkout's branch, commit, and clean or dirty
-state instead of a registry checksum.
+state instead of a registry checksum. For a batch the fork's `hash_many`
+compresses runs of one-block messages many lanes at a time on the same
+kernels its tree uses for parent nodes (sixteen per group on SME2, the
+NEON hybrids below a group), and `kernel_report_many()` describes that
+by batch size.
 
 BLAKE3 mt is the crates.io crate's own multithreading, called as a
 program calls it by default: `Hasher::new().update_rayon(input)` on
@@ -310,9 +319,10 @@ the one-thread cap with the ordinary single-threaded entry point.
 The benchmark touches each implementation in three ways only: it lists
 it, it calls its single-threaded (`hash`, `const_hash`), multithreaded
 (`hash_multithreaded`, `Hasher::update_rayon`), or batch
-(`single_block_hash_many_exact`) entry point with no cap or pool of its
-own, and it asks the servil fork to describe its kernels
-(`kernel_report()`). It asks for no machine capacity, sets no
+(`single_block_hash_many_exact`, `hash_many`, `hash_many_multithreaded`)
+entry point with no cap or pool of its own, and it asks the servil fork
+to describe its kernels (`kernel_report()` and its `_many` and
+`_multithreaded` forms). It asks for no machine capacity, sets no
 environment, and checks returned digests through those same entry points
 before timing. Implementation-specific tests remain in each crate.
 
@@ -355,7 +365,10 @@ as a triangle. SHA-256 and SHA-1DC run one path at every size.
 
 In the many-messages use case a contender looping one message per call
 runs its 64 B kernel at every batch size; ab-blake3's batch entry point
-changes path at sixteen messages, where the first full SIMD group forms.
+changes path at sixteen messages, where the first full SIMD group forms;
+BLAKE3 servil's changes at two (the NEON hybrid parent kernels) and
+sixteen (the SME2 group kernel), and servil mt's again at 1024, where a
+64 KiB batch may leave the calling thread.
 
 The text report lists the kernel at each point for every contender in
 each use case (one line for a contender with a single kernel) and marks

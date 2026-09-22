@@ -354,14 +354,15 @@ impl Algorithm {
         matches!(self, Self::Blake3Rayon | Self::Blake3ServilMt)
     }
 
-    /// Whether this contender is measured in a use case. The multithreaded
-    /// entry points (the one-thread cap included) stay out of the
-    /// many-messages use case: they exist for large inputs, and a 64-byte
-    /// message is a call to them that no program would make.
+    /// Whether this contender is measured in a use case. BLAKE3 mt stays
+    /// out of the many-messages use case: `update_rayon` exists for large
+    /// inputs, and a 64-byte message is a call to it that no program would
+    /// make. The fork's multithreaded contenders take part through its
+    /// batch entry point, `hash_many_multithreaded`.
     fn takes_part(self, use_case: UseCase) -> bool {
         match use_case {
             UseCase::OneMessage => true,
-            UseCase::ManyMessages => !matches!(self, Self::Blake3Rayon | Self::Blake3ServilMt | Self::Blake3ServilMt1),
+            UseCase::ManyMessages => !matches!(self, Self::Blake3Rayon),
         }
     }
 
@@ -459,13 +460,13 @@ impl Algorithm {
             Self::Blake3
             | Self::Sha256
             | Self::Sha1Dc
-            | Self::Blake3Servil
             | Self::Sha256CommonCrypto
             | Self::Sha256Ring => "single-threaded",
+            Self::Blake3Servil => "single-threaded; blake3_servil::hash for one message, blake3_servil::hash_many for a batch",
             Self::AbBlake3 => "single-threaded; ab_blake3::const_hash for one message, ab_blake3::single_block_hash_many_exact::<N> for a batch of N 64-byte messages",
             Self::Blake3Rayon => "multithreaded; Hasher::update_rayon on Rayon's global pool, the crate's own multithreading as a program gets it by default: the tree splits recursively over the pool, and inputs under a few chunks stay on the caller's thread",
-            Self::Blake3ServilMt => "multithreaded; blake3_servil::hash_multithreaded: the fork chooses whether to use its shared resident workers; the kernel table below shows the input-size threshold",
-            Self::Blake3ServilMt1 => "capped at one thread; blake3_servil::hash_multithreaded_with_budget(input, 1): the single-threaded path through the multithreaded entry point, a check that it costs what hash() costs",
+            Self::Blake3ServilMt => "multithreaded; blake3_servil::hash_multithreaded for one message and hash_many_multithreaded for a batch: the fork chooses whether to use its shared resident workers; the kernel tables below show the thresholds",
+            Self::Blake3ServilMt1 => "capped at one thread; blake3_servil::hash_multithreaded_with_budget(input, 1) and hash_many_multithreaded_with_budget(batch, digests, 1): the single-threaded path through the multithreaded entry points, a check that it costs what hash() and hash_many() cost",
         }
     }
 
@@ -1558,7 +1559,13 @@ fn hash_batch(
             digest.copy_from_slice(result.hash());
             digest
         }, consume),
-        Algorithm::Blake3Servil => each_message(input, messages, iterations, |m| *blake3_servil::hash(m).as_bytes(), consume),
+        Algorithm::Blake3Servil => {
+            if messages == 1 {
+                each_message(input, messages, iterations, |m| *blake3_servil::hash(m).as_bytes(), consume)
+            } else {
+                servil_batch(input, messages, iterations, blake3_servil::hash_many, consume)
+            }
+        }
         Algorithm::Sha256CommonCrypto => each_message(input, messages, iterations, |m| common_crypto::sha256(m), consume),
         Algorithm::Sha256Ring => each_message(input, messages, iterations, |m| ring::digest::digest(&ring::digest::SHA256, m), consume),
         Algorithm::Blake3Rayon => {
@@ -1566,12 +1573,18 @@ fn hash_batch(
             each_message(input, messages, iterations, |m| *blake3::Hasher::new().update_rayon(m).finalize().as_bytes(), consume)
         }
         Algorithm::Blake3ServilMt => {
-            assert_eq!(messages, 1, "BLAKE3 servil mt takes no part in the many-messages use case");
-            each_message(input, messages, iterations, |m| *blake3_servil::hash_multithreaded(m).as_bytes(), consume)
+            if messages == 1 {
+                each_message(input, messages, iterations, |m| *blake3_servil::hash_multithreaded(m).as_bytes(), consume)
+            } else {
+                servil_batch(input, messages, iterations, blake3_servil::hash_many_multithreaded, consume)
+            }
         }
         Algorithm::Blake3ServilMt1 => {
-            assert_eq!(messages, 1, "BLAKE3 servil mt·1 takes no part in the many-messages use case");
-            each_message(input, messages, iterations, |m| *blake3_servil::hash_multithreaded_with_budget(m, 1).as_bytes(), consume)
+            if messages == 1 {
+                each_message(input, messages, iterations, |m| *blake3_servil::hash_multithreaded_with_budget(m, 1).as_bytes(), consume)
+            } else {
+                servil_batch(input, messages, iterations, |b, d| blake3_servil::hash_many_multithreaded_with_budget(b, d, 1), consume)
+            }
         }
         Algorithm::AbBlake3 => {
             if messages == 1 {
@@ -1584,6 +1597,28 @@ fn hash_batch(
                     consume(outputs.as_flattened());
                 }
             }
+        }
+    }
+}
+
+/// `iterations` passes over the batch through one of the fork's batch entry
+/// points, which take the messages as a slice of slices and fill a slice
+/// of digests; the whole batch's digests go to `consume` per pass.
+#[inline(always)]
+fn servil_batch(
+    input: &[u8],
+    messages: usize,
+    iterations: usize,
+    hash_many: impl Fn(&[&[u8]], &mut [blake3_servil::Hash]),
+    mut consume: impl FnMut(&[u8]),
+) {
+    let batch: Vec<&[u8]> = input.chunks_exact(MESSAGE_LEN).collect();
+    assert_eq!(batch.len(), messages);
+    let mut digests = vec![blake3_servil::Hash::from_bytes([0; 32]); messages];
+    for _ in 0..iterations {
+        hash_many(black_box(&batch), &mut digests);
+        for digest in &digests {
+            consume(digest.as_bytes());
         }
     }
 }
@@ -2504,6 +2539,12 @@ fn detect_kernels(algorithm: Algorithm, use_case: UseCase) -> Kernels {
     match use_case {
         UseCase::OneMessage => one_message,
         UseCase::ManyMessages if algorithm == Algorithm::AbBlake3 => detect_ab_blake3_many_kernels(),
+        UseCase::ManyMessages if matches!(algorithm, Algorithm::Blake3Servil | Algorithm::Blake3ServilMt1) => {
+            servil_kernels(blake3_servil::kernel_report_many())
+        }
+        UseCase::ManyMessages if algorithm == Algorithm::Blake3ServilMt => {
+            servil_kernels(blake3_servil::kernel_report_many_multithreaded())
+        }
         UseCase::ManyMessages => {
             /* One call per 64-byte message: the 64 B kernel, whatever the batch size. */
             let kernel = &one_message.kernels[one_message.kernel_index_for(MESSAGE_LEN)];
@@ -2686,7 +2727,7 @@ fn generate_text(
     }
     writeln!(
         output,
-        "Use cases: one message per call, at twenty input sizes from 64 B to 8 MiB; and many messages per call, a batch of {MESSAGE_LEN}-byte messages at twenty batch sizes from 1 to 16384. In the second, every contender hashes the batch one message per call of its plain entry point, and ab-blake3 hands the batch to single_block_hash_many_exact::<N>; the multithreaded contenders take no part in it."
+        "Use cases: one message per call, at twenty input sizes from 64 B to 8 MiB; and many messages per call, a batch of {MESSAGE_LEN}-byte messages at twenty batch sizes from 1 to 16384. In the second, a contender with a batch entry point takes the batch as one call (ab-blake3's single_block_hash_many_exact::<N>, BLAKE3 servil's hash_many, BLAKE3 servil mt's hash_many_multithreaded); every other contender hashes the batch one message per call of its plain entry point; BLAKE3 mt takes no part in it."
     )
     .unwrap();
     writeln!(output).unwrap();
@@ -3509,7 +3550,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
     let heading_note = match plot.use_case {
         UseCase::OneMessage => "each call hashes one input of the size".to_owned(),
         UseCase::ManyMessages => format!(
-            "each call hashes a batch of {MESSAGE_LEN}-byte messages: one message per call of the plain entry point, or the batch at once for ab-blake3 · time per message, messages per second · multithreaded contenders take no part",
+            "each call hashes a batch of {MESSAGE_LEN}-byte messages: one message per call of the plain entry point, or the batch in one call where the crate has a batch entry point (ab-blake3, BLAKE3 servil, servil mt) · BLAKE3 mt takes no part",
         ),
     };
     writeln!(
@@ -4144,8 +4185,8 @@ fn contender_provenance_lines(
             algorithm.mode(),
         )],
         Algorithm::Blake3Servil => vec![
-            format!("{name}: {}", short_git_source(BLAKE3_SERVIL_SOURCE_INFO)),
-            format!("{name}: {} · platform {platform}", algorithm.mode()),
+            format!("{name}: {} · hash, hash_many for a batch", short_git_source(BLAKE3_SERVIL_SOURCE_INFO)),
+            format!("{name}: single-threaded · platform {platform}"),
         ],
         Algorithm::Sha256CommonCrypto => vec![format!("{name}: {} · {}", algorithm.mode(), kernels.kernels[0].name)],
         Algorithm::Sha256Ring => vec![format!(
@@ -4162,7 +4203,7 @@ fn contender_provenance_lines(
             format!("{name}: {}", algorithm.thread_resources().expect("BLAKE3 mt runs on Rayon's pool")),
         ],
         Algorithm::Blake3ServilMt => vec![
-            format!("{name}: {} · hash_multithreaded", short_git_source(BLAKE3_SERVIL_SOURCE_INFO)),
+            format!("{name}: {} · hash_multithreaded, hash_many_multithreaded for a batch", short_git_source(BLAKE3_SERVIL_SOURCE_INFO)),
             format!("{name}: multithreaded on the fork's own threads · platform {platform}"),
         ],
         Algorithm::Blake3ServilMt1 => vec![
