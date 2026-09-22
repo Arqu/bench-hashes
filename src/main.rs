@@ -136,6 +136,10 @@ enum Algorithm {
     /// own resident workers, shared fairly between concurrent callers in
     /// one process.
     Blake3ServilMt,
+    /// The fork's hash_multithreaded_with_budget with a cap of one thread:
+    /// a sanity check that the capped call is the single-threaded call, so
+    /// its column should lie on BLAKE3 servil's. Runs only when named.
+    Blake3ServilMt1,
 }
 
 /// The hash function a contender implements; "best available" is chosen
@@ -158,7 +162,7 @@ impl Family {
 }
 
 impl Algorithm {
-    const ALL: [Algorithm; 8] = [
+    const ALL: [Algorithm; 9] = [
         Algorithm::Blake3,
         Algorithm::Sha256,
         Algorithm::Sha1Dc,
@@ -167,6 +171,7 @@ impl Algorithm {
         Algorithm::Sha256Ring,
         Algorithm::Blake3Rayon,
         Algorithm::Blake3ServilMt,
+        Algorithm::Blake3ServilMt1,
     ];
 
     /// Command-line key, as in `--contenders blake3,sha256-cc`.
@@ -180,12 +185,13 @@ impl Algorithm {
             Self::Sha256Ring => "sha256-ring",
             Self::Blake3Rayon => "blake3-mt",
             Self::Blake3ServilMt => "blake3-servil-mt",
+            Self::Blake3ServilMt1 => "blake3-servil-mt1",
         }
     }
 
     fn family(self) -> Family {
         match self {
-            Self::Blake3 | Self::Blake3Servil | Self::Blake3Rayon | Self::Blake3ServilMt => Family::Blake3,
+            Self::Blake3 | Self::Blake3Servil | Self::Blake3Rayon | Self::Blake3ServilMt | Self::Blake3ServilMt1 => Family::Blake3,
             Self::Sha256 | Self::Sha256CommonCrypto | Self::Sha256Ring => Family::Sha256,
             Self::Sha1Dc => Family::Sha1Dc,
         }
@@ -203,7 +209,7 @@ impl Algorithm {
      * so a default or --all run gains nothing from them.
      */
     fn on_request_only(self) -> bool {
-        matches!(self, Self::Sha256CommonCrypto)
+        matches!(self, Self::Sha256CommonCrypto | Self::Blake3ServilMt1)
     }
 
     /// Contenders that run in --all and default runs only with --duo: a
@@ -228,7 +234,8 @@ impl Algorithm {
             | Self::Sha256Ring
             | Self::Blake3Servil
             | Self::Blake3Rayon
-            | Self::Blake3ServilMt => Ok(()),
+            | Self::Blake3ServilMt
+            | Self::Blake3ServilMt1 => Ok(()),
             Self::Sha256CommonCrypto => {
                 if cfg!(target_vendor = "apple") {
                     Ok(())
@@ -249,6 +256,7 @@ impl Algorithm {
             Self::Sha256Ring => "SHA-256 ring",
             Self::Blake3Rayon => "BLAKE3 mt",
             Self::Blake3ServilMt => "BLAKE3 servil mt",
+            Self::Blake3ServilMt1 => "BLAKE3 servil mt·1",
         }
     }
 
@@ -267,6 +275,7 @@ impl Algorithm {
             Self::Sha256Ring => "#c2410c",
             Self::Blake3Rayon => "#1e3a8a",
             Self::Blake3ServilMt => "#4c1d95",
+            Self::Blake3ServilMt1 => "#a78bfa",
         }
     }
 
@@ -280,7 +289,7 @@ impl Algorithm {
             Self::Sha256CommonCrypto => "CommonCrypto CC_SHA256_Init/Update/Final from the running macOS (libSystem); version follows the OS",
             Self::Sha256Ring => RING_SOURCE_INFO,
             Self::Blake3Rayon => BLAKE3_SOURCE_INFO,
-            Self::Blake3ServilMt => BLAKE3_SERVIL_SOURCE_INFO,
+            Self::Blake3ServilMt | Self::Blake3ServilMt1 => BLAKE3_SERVIL_SOURCE_INFO,
         }
     }
 
@@ -297,6 +306,7 @@ impl Algorithm {
             | Self::Sha256Ring => "single-threaded",
             Self::Blake3Rayon => "multithreaded; Hasher::update_rayon on Rayon's global pool, the crate's own multithreading as a program gets it by default: the tree splits recursively over the pool, and inputs under a few chunks stay on the caller's thread",
             Self::Blake3ServilMt => "multithreaded; blake3_servil::hash_multithreaded: inputs of 128 KiB and up split across the caller's thread and the fork's resident worker threads, which concurrent callers in one process share fairly; below 128 KiB the caller's thread alone",
+            Self::Blake3ServilMt1 => "capped at one thread; blake3_servil::hash_multithreaded_with_budget(input, 1): the single-threaded path through the multithreaded entry point, a check that it costs what hash() costs",
         }
     }
 
@@ -584,7 +594,8 @@ bench-hashes: hash throughput by input size
 
 Keys: blake3, blake3-servil, sha256, sha256-ring, sha1dc; sha256-cc on request;
       blake3-mt and blake3-servil-mt (multithreaded) in --all and default runs,
-      or when named
+      or when named; blake3-servil-mt1 (the multithreaded call capped at one
+      thread, a check that it matches blake3-servil) on request
 
   --solo                           also take a solo sample (one copy, one
                                    thread) beside each duo sample and report
@@ -653,7 +664,7 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
                     Ok(()) => "available".to_owned(),
                     Err(reason) => format!("unavailable: {reason}"),
                 };
-                println!("  {:<17} {:<22} {status}", algorithm.key(), algorithm.name());
+                println!("  {:<18} {:<22} {status}", algorithm.key(), algorithm.name());
             }
             std::process::exit(0);
         }
@@ -1352,6 +1363,12 @@ fn run_batch(
         Algorithm::Blake3ServilMt => {
             for _ in 0..iterations {
                 let digest = blake3_servil::hash_multithreaded(black_box(input));
+                let _ = black_box(digest);
+            }
+        }
+        Algorithm::Blake3ServilMt1 => {
+            for _ in 0..iterations {
+                let digest = blake3_servil::hash_multithreaded_with_budget(black_box(input), 1);
                 let _ = black_box(digest);
             }
         }
@@ -2230,6 +2247,7 @@ fn detect_kernels(algorithm: Algorithm) -> Kernels {
         Algorithm::Sha256Ring => detect_ring_kernels(),
         Algorithm::Blake3Rayon => detect_blake3_rayon_kernels(),
         Algorithm::Blake3ServilMt => servil_kernels(blake3_servil::kernel_report_multithreaded()),
+        Algorithm::Blake3ServilMt1 => servil_kernels(blake3_servil::kernel_report()),
     }
 }
 
@@ -2475,6 +2493,7 @@ fn column_heading(algorithm: Algorithm) -> &'static str {
         Algorithm::Sha256CommonCrypto => "SHA-256 CC",
         Algorithm::Sha256Ring => "SHA-256 ring",
         Algorithm::Blake3ServilMt => "B3 servil mt",
+        Algorithm::Blake3ServilMt1 => "B3 servil mt·1",
         other => other.name(),
     }
 }
@@ -3689,6 +3708,10 @@ fn contender_provenance_lines(
         Algorithm::Blake3ServilMt => vec![
             format!("{name}: {} · hash_multithreaded", short_git_source(BLAKE3_SERVIL_SOURCE_INFO)),
             format!("{name}: multithreaded on the fork's own threads · platform {platform}"),
+        ],
+        Algorithm::Blake3ServilMt1 => vec![
+            format!("{name}: {} · hash_multithreaded_with_budget(_, 1)", short_git_source(BLAKE3_SERVIL_SOURCE_INFO)),
+            format!("{name}: capped at one thread · platform {platform}"),
         ],
     }
 }

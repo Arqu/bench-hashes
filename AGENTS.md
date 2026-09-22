@@ -36,7 +36,7 @@ We never write "defensive code" — code that complicates a contract to ease the
 
 # This repository
 
-Read `NOTES.md` first: it holds the measurement design, the known threats to validity and how each was closed, and the open questions. This file is style and environment.
+Read `NEXT-STEPS.md` first: it says what the work is now and where the last session left things. `NOTES.md` holds the measurement design, the known threats to validity and how each was closed. This file is style and environment.
 
 `bench-hashes` is a single-crate Rust benchmark (`src/main.rs`, `build.rs`) comparing BLAKE3, SHA-256, SHA-1DC, BLAKE3 servil (the fork with SME2 kernels), and under `--duo` the two multithreaded contenders BLAKE3 mt (crates.io `Hasher::update_rayon`) and BLAKE3 servil mt (the fork's `hash_multithreaded`: subtrees over the caller's thread and the fork's own workers, shared fairly between concurrent callers). `--duo` runs two copies of every contender at once and scores the later finish; its results land in `bench-hashes.duo.*` beside the solo files. The `BLAKE3` column measures the crates.io `blake3` crate maintained by the BLAKE3 authors. The `BLAKE3 servil` column measures the `sme2-bench` branch of github.com/johnservil/BLAKE3, built as a path dependency named `blake3-servil` from the enclosing checkout at `..` (`/workspace` in the VM; see Environment).
 
