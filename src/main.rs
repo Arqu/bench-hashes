@@ -2761,7 +2761,7 @@ fn output_directory(machine: &MachineMetadata) -> std::path::PathBuf {
  * relayout (JavaScript inside the SVG). The script receives them through a
  * JSON block, so a single source of truth drives both.
  */
-const SVG_WIDTH: f64 = 1200.0;
+const SVG_WIDTH: f64 = 1300.0;
 /// Canvas height: the provenance block ends where the lines end, with the
 /// bottom margin that follows.
 fn svg_height(provenance_lines: usize) -> f64 {
@@ -2773,6 +2773,9 @@ const PLOT_TOP: f64 = 115.0;
 const PLOT_BOTTOM: f64 = 455.0;
 const X_INSET: f64 = 40.0;
 const SERIES_LABEL_GAP: f64 = 44.0;
+/// Fixed shape slots before each right-hand name, so names align across
+/// contenders with different shape counts. Four covers every contender.
+const SWATCH_SLOTS: usize = 4;
 const PROVENANCE_TOP: f64 = PLOT_BOTTOM + 85.0;
 const PROVENANCE_LINE_HEIGHT: f64 = 14.0;
 
@@ -2857,8 +2860,9 @@ fn generate_svg(
     let implementations: Vec<Implementation> =
         roster.algorithms.iter().map(|&algorithm| detect_implementation(algorithm)).collect();
 
-    let provenance_shared = shared_provenance_lines(machine, selection_note, basis);
-    let provenance_total = provenance_shared.len()
+    let provenance_cats = shared_provenance_cats(machine, selection_note, basis);
+    let provenance_total = provenance_cats.len()
+        + provenance_cats.iter().map(|cat| cat.lines.len()).sum::<usize>()
         + roster
             .algorithms
             .iter()
@@ -2899,6 +2903,8 @@ fn generate_svg(
     .series-hint { font-size: 9px; fill: #b0b0b0; }
     .annotation { font-size: 10px; font-style: italic; fill: #8a8a8a; }
     .prov-head { font-size: 10px; font-weight: 700; fill: #aaaaaa; letter-spacing: 0.1em; }
+    .prov-head-row { cursor: pointer; }
+    .prov-head-row:hover .prov-head { text-decoration: underline; }
     .prov { font-size: 9px; fill: #9a9a9a; }
     .grid { stroke: #e8e8e6; stroke-width: 1; }
     .grid-x { stroke: #f0f0ee; stroke-width: 1; }
@@ -2914,7 +2920,11 @@ fn generate_svg(
     .series[data-on="false"] .series-detail { display: none; }
     .series[data-on="false"] .series-hint { display: inline; }
     .series[data-on="false"] .series-prov { display: none; }
-    .series[data-on="false"] .series-swatch { fill: #fdfdfc; }
+    .series[data-on="false"] .series-swatch * { fill: #fdfdfc; }
+    .series { transition: opacity 0.15s ease; }
+    .series[data-dim="true"], .dots[data-dim="true"] { opacity: 0.25; }
+    .series[data-dim="true"] .series-name { fill: #b5b5b5; }
+    .series[data-hl="true"] .series-name { text-decoration: underline; }
     .series-swatch { stroke-width: 2; transition: fill 0.3s ease; }
     #unit-switch { cursor: pointer; }
     .unit-track { fill: #e8e8e6; stroke: #c8c8c4; stroke-width: 1; }
@@ -2923,8 +2933,6 @@ fn generate_svg(
     .unit-label { font-size: 10px; font-weight: 600; fill: #b0b0b0; transition: fill 0.35s ease; }
     .unit-label.unit-on { fill: #333333; }
     .dot { cursor: crosshair; }
-    .dot-ring { stroke-width: 1.5; stroke-opacity: 0.55; }
-    .dot:hover .dot-ring { stroke-opacity: 1; }
     .legend { font-size: 10px; fill: #8a8a8a; }
     #hover { pointer-events: none; }
     #hover-guide { stroke: #9a9a9a; stroke-width: 1; stroke-dasharray: 3,3; }
@@ -2950,21 +2958,21 @@ fn generate_svg(
     if roster.duo {
         writeln!(
             svg,
-            r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Solid line and dot: solo median of {} interleaved samples · dashed line: duo median (two copies at once, later finish) · shaded band: 95% confidence interval of that median; a deeper tint or dashed outline marks a median that is less certain</text>"##,
+            r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Solid line and dot: solo median of {} interleaved samples · dashed line: duo median (two copies at once, later finish) · shaded band: 95% confidence interval of that median; a deeper tint marks a median that is less certain</text>"##,
             roster.rounds,
         )
         .unwrap();
     } else {
         writeln!(
             svg,
-            r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Line and dot: median of {} interleaved duo samples (two copies at once, later finish) · shaded band: 95% confidence interval of that median; a deeper tint or dashed outline marks a median that is less certain</text>"##,
+            r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Line and dot: median of {} interleaved duo samples (two copies at once, later finish) · shaded band: 95% confidence interval of that median; a deeper tint marks a median that is less certain</text>"##,
             roster.rounds,
         )
         .unwrap();
     }
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="88" class="method">Dot shape marks the code path a contender used at that size; a ringed dot is where a new path begins · hover any dot to compare contenders and see the path · click a name at right to hide or show that contender</text>"##
+        r##"  <text x="{PLOT_LEFT:.0}" y="88" class="method">Dot shape marks the code path a contender used at that size · hover any dot or name to highlight its contender and compare · click a name at right to hide or show that contender</text>"##
     )
         .unwrap();
 
@@ -3125,8 +3133,12 @@ fn generate_svg(
      * line, dots, value labels, the clickable label at right, and its
      * provenance line. Toggling flips one attribute on the group.
      */
-    let shared_count = provenance_shared.len();
-    let mut provenance_slot = shared_count;
+    /* Headers occupy the first slots, then every category's detail lines;
+       the per-contender lines emitted above start after them. The script
+       flows detail lines from the header count when categories collapse. */
+    let shared_count = provenance_cats.len();
+    let mut provenance_slot = shared_count
+        + provenance_cats.iter().map(|cat| cat.lines.len()).sum::<usize>();
 
     let value_label_y = place_value_labels(roster, results, &map_y);
 
@@ -3173,22 +3185,21 @@ fn generate_svg(
         band.push_str(" Z");
 
         /*
-         * The band's look reports the run's precision for this contender.
+         * The band's tint reports the run's precision for this contender.
          * Spread is (max − min) / median at a size; the band takes the
-         * worst spread across sizes. Tight runs stay a faint tint. As the
-         * spread grows the tint deepens, and past the wide threshold a
-         * dashed outline appears, so a broad band cannot pass as decor.
+         * worst spread across sizes. Tight runs stay a faint tint; wider
+         * runs deepen it. No outline: the tint alone carries the precision,
+         * and the plot stays quiet.
          */
         let worst_spread = (0..INPUT_COUNT)
             .map(|size_index| spread_permille(results[algorithm_index][size_index].time))
             .max()
             .expect("there is at least one size");
-        let (opacity_hundredths, outline) = band_style(worst_spread);
+        let (opacity_hundredths, _) = band_style(worst_spread);
 
         writeln!(
             svg,
-            r##"      <path class="band" d="{band}" fill="{color}" fill-opacity="0.{opacity_hundredths:02}" stroke="{color}" stroke-opacity="{}" stroke-width="1" stroke-dasharray="4,3"/>"##,
-            if outline { "0.6" } else { "0" },
+            r##"      <path class="band" d="{band}" fill="{color}" fill-opacity="0.{opacity_hundredths:02}" stroke="none"/>"##,
         )
             .unwrap();
 
@@ -3251,27 +3262,18 @@ fn generate_svg(
 
             /*
              * The dot's shape names the code path that produced this point;
-             * the first dot of a new path is drawn larger, with a ring, as
-             * the place to hover for the explanation.
+             * the shape alone marks a new path, so every dot draws the same
+             * size with no ring. Hovering shows the path's explanation.
              */
-            let (regime_index, first_in_regime) = implementation.regime_index_for(size_index);
+            let (regime_index, _) = implementation.regime_index_for(size_index);
             let regime = &implementation.regimes[regime_index];
-            let transition = first_in_regime && regime_index > 0;
             let dots = &mut dot_layers[algorithm_index];
             writeln!(
                 dots,
-                r##"    <g class="dot{}" data-size="{size_index}" transform="translate({x:.2} {median_y:.2})" onmouseenter="showHover({algorithm_index},{size_index})" onmouseleave="hideHover()">"##,
-                if transition { " dot-transition" } else { "" },
+                r##"    <g class="dot" data-size="{size_index}" transform="translate({x:.2} {median_y:.2})" onmouseenter="showHover({algorithm_index},{size_index})" onmouseleave="hideHover()">"##,
             )
                 .unwrap();
-            if transition {
-                writeln!(
-                    dots,
-                    r##"      <circle class="dot-ring" r="9.5" fill="none" stroke="{color}"/>"##
-                )
-                    .unwrap();
-            }
-            writeln!(dots, "      {}", mark_shape(regime.mark, color, if transition { 6.0 } else { 5.0 })).unwrap();
+            writeln!(dots, "      {}", mark_shape(regime.mark, color, 5.0)).unwrap();
             dots.push_str("    </g>\n");
 
             /*
@@ -3315,7 +3317,7 @@ fn generate_svg(
 
         writeln!(
             svg,
-            r##"    <g class="series-label" transform="translate(0 {label_y:.2})" onclick="toggleSeries({algorithm_index})">"##
+            r##"    <g class="series-label" transform="translate(0 {label_y:.2})" onclick="toggleSeries({algorithm_index})" onmouseenter="highlightSeries({algorithm_index},true)" onmouseleave="highlightSeries({algorithm_index},false)">"##
         )
             .unwrap();
         writeln!(
@@ -3332,23 +3334,41 @@ fn generate_svg(
             SERIES_LABEL_GAP - 4.0,
         )
             .unwrap();
-        writeln!(
-            svg,
-            r##"      <circle class="series-swatch" cx="{:.1}" cy="0" r="4.5" fill="{color}" stroke="{color}"/>"##,
-            label_x + 4.5,
-        )
+        /* Swatch: every dot shape this contender uses, in its colour, so the
+           right-hand names match the marks in the plot. Names share one x
+           across contenders; shapes fill fixed slots, so rows align. Each
+           shape carries a tooltip naming its code path. */
+        let mut swatch_marks: Vec<(Mark, &str, &str)> = Vec::new();
+        for regime in &implementation.regimes {
+            if !swatch_marks.iter().any(|slot| slot.0 == regime.mark) {
+                swatch_marks.push((regime.mark, regime.name, regime.why));
+            }
+        }
+        let name_x = label_x + 14.0 + (SWATCH_SLOTS as f64) * 13.0;
+        writeln!(svg, r##"      <g class="series-swatch" transform="translate(0 0)">"##).unwrap();
+        for (mark_index, (mark, name, why)) in swatch_marks.iter().enumerate() {
+            writeln!(
+                svg,
+                r##"        <g transform="translate({:.1} 0)"><title>{}: {}</title>{}</g>"##,
+                label_x + 4.5 + mark_index as f64 * 13.0,
+                xml_escape(name),
+                xml_escape(why),
+                mark_shape(*mark, color, 4.5),
+            )
             .unwrap();
+        }
+        writeln!(svg, r##"      </g>"##).unwrap();
         writeln!(
             svg,
             r##"      <text class="series-name" x="{:.1}" y="4" fill="{color}">{}</text>"##,
-            label_x + 14.0,
+            name_x,
             xml_escape(algorithm.name()),
         )
             .unwrap();
         writeln!(
             svg,
             r##"      <text class="series-detail" x="{:.1}" y="18">{} ns/B · {} at {}</text>"##,
-            label_x + 14.0,
+            name_x,
             format_result_value(statistics.median),
             gigabytes_per_second(statistics.median),
             xml_escape(INPUT_SIZES[INPUT_COUNT - 1].label),
@@ -3357,7 +3377,7 @@ fn generate_svg(
         writeln!(
             svg,
             r##"      <text class="series-hint" x="{:.1}" y="18">hidden · click to show</text>"##,
-            label_x + 14.0,
+            name_x,
         )
             .unwrap();
         writeln!(svg, "    </g>").unwrap();
@@ -3425,20 +3445,7 @@ fn generate_svg(
                 .unwrap();
             x -= 18.0;
         }
-        writeln!(
-            svg,
-            r##"  <g transform="translate({:.1} {:.1}) scale(0.75)"><circle r="9.5" fill="none" stroke="#8a8a8a" stroke-width="1.5"/><circle r="5" fill="#8a8a8a"/></g>"##,
-            x - 6.0,
-            legend_y - 3.5,
-        )
-            .unwrap();
-        writeln!(
-            svg,
-            r##"  <text x="{:.1}" y="{:.1}" class="legend" text-anchor="end">a new path begins</text>"##,
-            x - 18.0,
-            legend_y,
-        )
-            .unwrap();
+        /* The shapes alone mark new paths, so no ring entry follows. */
         /* In a duo run: the dashed line and hollow dot, on the left of the row. */
         if roster.duo {
             let x = PLOT_LEFT;
@@ -3528,14 +3535,40 @@ fn generate_svg(
     )
         .unwrap();
 
-    for (index, line) in provenance_shared.iter().enumerate() {
+    /* Collapsible categories: a header row per category, then its detail
+       lines. Without script everything shows, fully laid out. */
+    let mut header_slot = 0;
+    for cat in &provenance_cats {
         writeln!(
             svg,
-            r##"  <text class="prov" x="{PLOT_LEFT:.1}" y="{:.1}">{}</text>"##,
-            provenance_line_y(index),
-            xml_escape(line),
+            r##"  <g class="prov-head-row" data-cat="{}" data-name="{}" data-summary="{}" onclick="toggleProv('{}')">"##,
+            cat.key,
+            xml_escape(cat.name),
+            xml_escape(&cat.summary),
+            cat.key,
         )
+        .unwrap();
+        writeln!(
+            svg,
+            r##"    <text class="prov-head" x="{PLOT_LEFT:.1}" y="{:.1}">▾ {} — {}</text>"##,
+            provenance_line_y(header_slot),
+            xml_escape(cat.name),
+            xml_escape(&cat.summary),
+        )
+        .unwrap();
+        writeln!(svg, r##"  </g>"##).unwrap();
+        header_slot += 1;
+        for line in &cat.lines {
+            writeln!(
+                svg,
+                r##"  <text class="prov prov-shared" data-cat="{}" x="{PLOT_LEFT:.1}" y="{:.1}">{}</text>"##,
+                cat.key,
+                provenance_line_y(header_slot),
+                xml_escape(line),
+            )
             .unwrap();
+            header_slot += 1;
+        }
     }
 
     assert_eq!(
@@ -3669,23 +3702,52 @@ fn provenance_line_y(slot: usize) -> f64 {
 }
 
 /* Provenance that describes the run as a whole. */
-fn shared_provenance_lines(machine: &MachineMetadata, selection_note: &str, basis: TimeBasis) -> Vec<String> {
+/// One collapsible provenance category: a header row plus its detail lines.
+struct ProvCat {
+    key: &'static str,
+    name: &'static str,
+    summary: String,
+    lines: Vec<String>,
+}
+
+fn shared_provenance_cats(machine: &MachineMetadata, selection_note: &str, basis: TimeBasis) -> Vec<ProvCat> {
     vec![
-        format!(
-            "Run: {} · bench-hashes {BENCH_VERSION}",
-            machine.timestamp,
-        ),
-        format!("Contenders: {selection_note}"),
-        format!(
-            "Machine: {} · {} logical CPUs · {}",
-            machine.cpu_type, machine.cpu_count, machine.os_type,
-        ),
-        format!("Toolchain: {RUSTC_VERSION} · {BUILD_TARGET}"),
-        format!("Sample clock: {}", sample_clock::NAME),
-        format!("Reported time: {}", basis.describe()),
-        format!("Source: {GIT_SOURCE} @ {GIT_COMMIT}"),
-        format!("Tag: {GIT_TAG} · Working tree: {GIT_CLEAN_STATUS}"),
-        "Full crate checksums are in this file's metadata element".to_owned(),
+        ProvCat {
+            key: "run",
+            name: "Run",
+            summary: format!("{} · bench-hashes {BENCH_VERSION}", machine.timestamp),
+            lines: vec![
+                format!(
+                    "Run: {} · bench-hashes {BENCH_VERSION}",
+                    machine.timestamp,
+                ),
+                format!("Contenders: {selection_note}"),
+                format!("Tag: {GIT_TAG} · Working tree: {GIT_CLEAN_STATUS}"),
+            ],
+        },
+        ProvCat {
+            key: "machine",
+            name: "Machine",
+            summary: format!("{} · {} CPUs · {}", machine.cpu_type, machine.cpu_count, machine.os_type),
+            lines: vec![
+                format!(
+                    "Machine: {} · {} logical CPUs · {}",
+                    machine.cpu_type, machine.cpu_count, machine.os_type,
+                ),
+                format!("Toolchain: {RUSTC_VERSION} · {BUILD_TARGET}"),
+                format!("Sample clock: {}", sample_clock::NAME),
+                format!("Reported time: {}", basis.describe()),
+            ],
+        },
+        ProvCat {
+            key: "sources",
+            name: "Sources",
+            summary: format!("bench-hashes @ {}", &GIT_COMMIT[..12.min(GIT_COMMIT.len())]),
+            lines: vec![
+                format!("Source: {GIT_SOURCE} @ {GIT_COMMIT}"),
+                "Full crate checksums are in this file's metadata element".to_owned(),
+            ],
+        },
     ]
 }
 
@@ -3835,7 +3897,7 @@ fn write_interaction_script(
     }
     write!(
         data,
-        "],\"sharedProv\":{shared_count},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"plotTop\":{PLOT_TOP},\"plotBottom\":{PLOT_BOTTOM},\"labelGap\":{SERIES_LABEL_GAP},\"rounds\":{},\"labelAbove\":{VALUE_LABEL_ABOVE},\"labelBelow\":{VALUE_LABEL_BELOW},\"labelHeight\":{VALUE_LABEL_HEIGHT},\"spreadNoticeable\":0.{SPREAD_NOTICEABLE_PERMILLE:03},\"spreadWide\":0.{SPREAD_WIDE_PERMILLE:03},\"provTop\":{PROVENANCE_TOP},\"provLine\":{PROVENANCE_LINE_HEIGHT}}}",
+        "],\"sharedProv\":{shared_count},\"svgWidth\":{SVG_WIDTH:.0},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"plotTop\":{PLOT_TOP},\"plotBottom\":{PLOT_BOTTOM},\"labelGap\":{SERIES_LABEL_GAP},\"rounds\":{},\"labelAbove\":{VALUE_LABEL_ABOVE},\"labelBelow\":{VALUE_LABEL_BELOW},\"labelHeight\":{VALUE_LABEL_HEIGHT},\"spreadNoticeable\":0.{SPREAD_NOTICEABLE_PERMILLE:03},\"spreadWide\":0.{SPREAD_WIDE_PERMILLE:03},\"provTop\":{PROVENANCE_TOP},\"provLine\":{PROVENANCE_LINE_HEIGHT}}}",
         roster.rounds,
     )
         .unwrap();
@@ -4079,14 +4141,57 @@ function relayout() {
     detail.textContent = `${fmt(m, 2)} ${unitLabel()} · ${fmtOther(m)} at ${DATA.sizes[last]}`;
   }
 
-  /* Provenance: visible contenders' lines close ranks after the shared lines. */
-  let slot = DATA.sharedProv;
+  /* Provenance: collapsed categories hide their lines; everything visible
+     closes ranks from the header slots, then the visible contenders' lines. */
+  layoutProv();
+
+}
+
+const provOpen = {run: false, machine: false, sources: false};
+
+function toggleProv(cat) {
+  provOpen[cat] = !provOpen[cat];
+  layoutProv();
+}
+
+function layoutProv() {
+  /* Headers and details flow in document order: each header stays
+     visible at its slot, details show only when their category is open. */
+  let slot = 0;
+  const y = s => (DATA.provTop + 40 + s * DATA.provLine).toFixed(1);
+  document.querySelectorAll(".prov-head-row, .prov-shared").forEach(el => {
+    if (el.classList.contains("prov-head-row")) {
+      const cat = el.getAttribute("data-cat");
+      el.querySelector("text").textContent =
+        (provOpen[cat] ? "▾ " : "▸ ") + el.getAttribute("data-name") + " — " + el.getAttribute("data-summary");
+      el.querySelector("text").setAttribute("y", y(slot++));
+    } else if (provOpen[el.getAttribute("data-cat")]) {
+      el.style.display = "";
+      el.setAttribute("y", y(slot++));
+    } else {
+      el.style.display = "none";
+    }
+  });
   DATA.series.forEach((s, i) => {
     document.getElementById("series-" + i).querySelectorAll(".series-prov").forEach(t => {
       if (on[i]) t.setAttribute("y", (DATA.provTop + 40 + slot++ * DATA.provLine).toFixed(1));
     });
   });
+  const h = DATA.provTop + 40 + slot * DATA.provLine + 8;
+  const svgEl = document.querySelector("svg");
+  svgEl.setAttribute("height", h.toFixed(0));
+  svgEl.setAttribute("viewBox", `0 0 ${DATA.svgWidth} ${h.toFixed(0)}`);
+}
 
+function highlightSeries(i, active) {
+  for (let j = 0; j < DATA.series.length; j++) {
+    const series = document.getElementById("series-" + j);
+    const dots = document.getElementById("dots-" + j);
+    const dim = active && j !== i && on[j];
+    series.setAttribute("data-dim", dim ? "true" : "false");
+    series.setAttribute("data-hl", active && j === i ? "true" : "false");
+    if (dots) dots.setAttribute("data-dim", dim ? "true" : "false");
+  }
 }
 
 function toggleSeries(i) {
@@ -4142,6 +4247,7 @@ function textEl(x, y, cls, content, extra) {
  */
 function showHover(focus, k) {
   hovered = [focus, k];
+  highlightSeries(focus, true);
   if (!on[focus] || !currentMapY) { document.getElementById("hover").style.display = "none"; return; }
   const body = document.getElementById("hover-body");
   while (body.firstChild) body.removeChild(body.firstChild);
@@ -4266,15 +4372,19 @@ function showHover(focus, k) {
 
 function hideHover() {
   hovered = null;
+  highlightSeries(0, false);
   document.getElementById("hover").style.display = "none";
 }
 
 window.toggleSeries = toggleSeries;
+window.toggleProv = toggleProv;
+window.highlightSeries = highlightSeries;
 window.showHover = showHover;
 window.hideHover = hideHover;
 window.setUnit = setUnit;
 window.flipUnit = flipUnit;
 relayout();
+layoutProv();
 "##;
 
 /// "source URL · branch B · commit C" for a git-dependency provenance line.
