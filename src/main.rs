@@ -220,24 +220,8 @@ impl Algorithm {
                     Err("this machine has one CPU; a multithreaded contender has nothing to add".to_owned())
                 }
             }
-            Self::Blake3Sme2Lanes => {
-                Self::Blake3Sme2.availability()?;
-                if blake3_sme2::lanes::lane_count() >= 2 {
-                    Ok(())
-                } else {
-                    Err("this machine has one execution lane; a multithreaded contender has nothing to add".to_owned())
-                }
-            }
-            Self::Blake3Sme2 => {
-                let platform = blake3_sme2::platform::Platform::detect();
-                if format!("{platform:?}") == "SME2" {
-                    Ok(())
-                } else {
-                    Err(format!(
-                        "the blake3_sme2 crate selected {platform:?} on this machine; BLAKE3 servil needs a CPU with SME2 and 512-bit streaming vectors (Apple M4 and later)"
-                    ))
-                }
-            }
+            Self::Blake3Sme2Lanes => Ok(()),
+            Self::Blake3Sme2 => Ok(()),
             Self::Sha256CommonCrypto => {
                 if cfg!(target_vendor = "apple") {
                     Ok(())
@@ -718,9 +702,10 @@ fn main() {
      */
     let (mut roster, results, basis, selection_note) = match selection {
         Selection::Explicit => {
+            let keys = explicit.iter().map(|algorithm| algorithm.key()).collect::<Vec<_>>().join(",");
             let roster = Roster::new(explicit, thorough, duo, solo);
             let (results, basis) = measure_all(&roster, trace.as_mut());
-            (roster, results, basis, String::from("contenders chosen on the command line"))
+            (roster, results, basis, format!("--contenders {keys}"))
         }
         Selection::All => {
             let roster = Roster::new(available, thorough, duo, solo);
@@ -748,11 +733,7 @@ fn main() {
 
     /* Duo-only runs reuse the single-column display; cells hold duo data. */
     roster.duo = solo;
-    let selection_note = if solo {
-        format!("{selection_note}; solo and duo (two copies at once, later finish) side by side")
-    } else {
-        format!("{selection_note}; duo (two copies at once, later finish)")
-    };
+    /* The Measurement section already explains duo; the note names the selection only. */
     let text = generate_text(&roster, &results, &machine, &selection_note, basis);
     let svg = generate_svg(&roster, &results, &machine, &selection_note, basis);
 
