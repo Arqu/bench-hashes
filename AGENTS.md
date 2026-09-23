@@ -78,6 +78,10 @@ Vocabulary: an *implementation* is a crate (crates.io `blake3`, the servil fork,
 
 The benchmarker touches an implementation in three ways only: listing it, calling its plain entry point (single-threaded, multithreaded, or a batch call: ab-blake3's `single_block_hash_many_exact::<N>`, the fork's `hash_many` and `hash_many_multithreaded`; with no cap, pool, or wrapper of its own: many messages means `for m in batch { hash(m) }` for every contender without a batch entry point), and asking the servil fork for `kernel_report()` and its `_many` / `_multithreaded` forms. Contender code is never edited from here; the fork is edited in its own checkout at `..`. Before calibration it checks every selected implementation against the checked-in golden digests on identical inputs, using the same entry-point dispatch as timed batches; the fork's `initialize()` (up to tens of milliseconds, once per process) lands in that phase, outside every timed sample. It asks for no implementation capacity; the crates.io `blake3` and ab-blake3 kernel tables are hand-written from those crates' sources because they offer no report. Batch checks compare the SHA-256 of the concatenated per-message digests against `MANY_VECTORS`; `tools/gen-test-vectors.py` writes both tables.
 
+# Targets
+
+**Virtual machines are first-class optimization targets,** alongside native hosts: people run BLAKE3 inside VMs, and the VM records in `benchmark-results/` count as much as the Mac's. Keep both current when a change could move either, and read a difference between them as information about the change, never as noise to be ignored. The fork's `examples/host_lab.rs` measures the platform effects behind such differences (idle-waiter interference, `WFE`, the SME2 → NEON penalty, core scaling).
+
 # Environment
 
 ## Where things are
