@@ -9,12 +9,14 @@ are in both repositories' `AGENTS.md` files; the fork's
 
 ## Where this session stopped
 
-- Fork: `/workspace`, branch `servil`, commit **737929b**, clean,
-  pushed. Branch `sme-only-workers` is superseded (the pool no longer
-  runs SME2 at all); keep it only for its SME2-only subtree code.
-- Benchmark: `/workspace/bench-hashes`, branch `main`, commit **792d406**
-  (the VM record) plus this NEXT-STEPS, pushed. No release tag since
-  0.6.0; the fork has none of its own.
+- Fork: `/workspace`, main branch `servil` (renamed from `sme2-bench`),
+  clean, pushed; work goes on `candidate/<topic>` branches (AGENTS). Tag
+  `experiment/sme-only-workers` (commit 100afbc) keeps `sme2::subtree_cv`,
+  a subtree on SME2 and scalar code alone, free of the first-NEON wait.
+- Benchmark: `/workspace/bench-hashes`, branch `main`, pushed. Records:
+  the VM's thorough one (fork 90172ae) and the Mac's quick one (fork
+  90172ae); thorough Mac runs waiting on open problems are in `tmp/`. No
+  release tag since 0.6.0; the fork has none of its own.
 - VM record: fork 737929b, bench 40247da, both clean.
 - Mac record (`benchmark-results/AppleM4Max.darwin25/`): fork c1ec71f,
   bench 04dc84f; predates this session's pool change.
