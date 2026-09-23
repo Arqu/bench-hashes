@@ -13,11 +13,15 @@ and the list of ways it can still lie.
 
 ## What is settled
 
-**Sizes.** Twenty-four: 64 B to 128 MiB by powers of two, plus 3 KiB
-and 3 MiB. Sixteen through 1 MiB came first; 2, 4, and 8 MiB were added
+**Sizes.** Twenty-three: 64 B to 128 MiB by powers of two but 16 MiB,
+plus 3 KiB and 3 MiB. Sixteen through 1 MiB came first; 2, 4, and 8 MiB were added
 to show the plateau, then 16 to 128 MiB when the fork's multithreaded
 rate was still climbing at 8 MiB (it levels from 4 MiB with the ranked
-pool; Rayon's still falls at 128 MiB on the VM). 3 KiB and 3 MiB are
+pool; Rayon's still falls at 128 MiB on the VM). 16 MiB was dropped
+after both machines' records showed every contender's median there
+within run-to-run noise of the value 8 and 32 MiB predict (log-log);
+32, 64, and 128 MiB each carry something the others do not (Rayon's bend
+on the VM, serial servil's rise at 128 MiB on the Mac). 3 KiB and 3 MiB are
 non-power-of-two trees, one at the SIMD ramp and one at the plateau; a
 contender whose work splitting assumes powers of two shows it there (and
 one did).
@@ -30,9 +34,12 @@ scale (1 GB/s per ns/B; 1000 Mmsg/s per ns/msg) differ per plot. Its
 golden anchors are the SHA-256 of a batch's digests concatenated, one
 line per (batch size, seed).
 
-**Round counts** are `lcm(points, orders)` over both axes' 48 points:
-96 for two, three, four, six, or eight contenders. Add points in
-multiples that keep that property.
+**Round counts** are a plain 96 (288 with `--thorough`). They used to
+be the least multiple of the point count and the order count at or above
+a target, so every order and starting point recurred equally often; that
+made removing one point cost several times the run (47 points and 8
+orders: 376 rounds). The imbalance a plain count leaves is a fraction of
+a sample per cell.
 
 **Inputs** are little-endian 64-bit counter words `seed << 48 | index`:
 every block differs (a kernel mixing up lanes fails the golden digests),

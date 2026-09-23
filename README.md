@@ -14,7 +14,7 @@ contention, two copies at once; `--solo` adds a single-copy column
 beside it: see "The duo measurement" below.
 
 Every run measures two use cases. **One message per call**: a call
-hashes one input, at twenty-four sizes from 64 B to 128 MiB, reported
+hashes one input, at twenty-three sizes from 64 B to 128 MiB, reported
 per byte. **Many messages per call**: a call hashes a batch of 64-byte
 messages, at twenty-four batch sizes from 1 to 262144 messages, reported
 per message; see "The many-messages use case" below. The graph shows the
@@ -23,7 +23,8 @@ two as two plots, one below the other.
 The one-message axis tests every power-of-two input size from 64 B to
 128 MiB, plus 3 KiB and 3 MiB: 64 B, 128 B, 256 B, 512 B, 1 KiB, 2 KiB,
 3 KiB, 4 KiB, 8 KiB, 16 KiB, 32 KiB, 64 KiB, 128 KiB, 256 KiB, 512 KiB,
-1 MiB, 2 MiB, 3 MiB, 4 MiB, 8 MiB, 16 MiB, 32 MiB, 64 MiB, and 128 MiB.
+1 MiB, 2 MiB, 3 MiB, 4 MiB, 8 MiB, 32 MiB, 64 MiB, and 128 MiB (16 MiB
+was dropped: its neighbours predict it to within run-to-run noise).
 Below 1 KiB a BLAKE3 input is one chunk; from 2 KiB to 16 KiB
 its SIMD paths fill (4-way NEON at 4 KiB, a sixteen-lane SME2 group at
 16 KiB); above that the bulk rate settles. 3 KiB is where the SME2 fork's
@@ -431,10 +432,12 @@ order (the forty input sizes and batch sizes of the two use cases
 together) rotates independently. Each contender/point combination is
 calibrated separately so its timed samples last about 1 ms each.
 
-Each combination collects about 80 samples: the exact count is the
-smallest multiple of both the point count and the order count at or
-above 80, so every order and every point position recurs equally often
-(80 for two, four, five, or eight contenders; 120 for three or six). The
+Each combination collects 96 samples (288 with `--thorough`; fewer for
+long cells, below). The rounds cycle through the orders and rotate the
+point that starts a round; when 96 is no multiple of the order or point
+count, some orders or starting points recur once more than others, an
+imbalance of a fraction of a sample per cell, far below the difference
+between two runs. The
 runtime budget favours sample count over sample length: the median's
 interval narrows with the square root of the count, and a 1 ms sample
 is long enough that the clock's resolution is far below noise. A whole

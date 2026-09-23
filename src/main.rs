@@ -12,10 +12,9 @@ use sysinfo::System;
 compile_error!("bench-hashes currently supports native targets only");
 
 /*
- * Every (contender, size) cell collects about SAMPLE_ROUNDS_TARGET samples
- * of about TARGET_SAMPLE_NS each; Roster::rounds() settles the exact count
- * as the smallest multiple of both the size count and the order count at
- * or above the target. The two knobs trade off differently:
+ * Every (contender, size) cell collects SAMPLE_ROUNDS samples of about
+ * TARGET_SAMPLE_NS each (fewer for long cells: see LONG_HASH_NS). The two
+ * knobs trade off differently:
  *
  * - Fewer rounds thin the evidence behind the min–max band, so the band can
  *   look tight while the true spread is wider: false precision.
@@ -26,9 +25,14 @@ compile_error!("bench-hashes currently supports native targets only");
  *
  * So the runtime budget goes to rounds first. 1 ms is long enough that the
  * clock's own resolution (tens of nanoseconds) is under 0.01% of a sample.
- * Rounds are a multiple of the size count and of the order count.
+ *
+ * Rounds cycle through the contender orders and rotate the point that
+ * starts a round. A round count that is no multiple of the order count
+ * or the point count leaves some orders or starting points used once more
+ * than others; that imbalance is a fraction of a sample per cell, far
+ * below the difference between two runs, so any count serves.
  */
-const SAMPLE_ROUNDS_TARGET: usize = 80;
+const SAMPLE_ROUNDS: usize = 96;
 /// --thorough multiplies the rounds; the median's interval narrows as 1/√n.
 const THOROUGH_MULTIPLIER: usize = 3;
 const CALIBRATION_PROBE_NS: u128 = 250_000;
@@ -57,7 +61,7 @@ const LONG_EVERY_UNSURE: usize = 2;
 const LONG_MIN_SAMPLES: usize = 8;
 
 /// Points on the one-message axis, and on the many-messages axis.
-const INPUT_COUNT: usize = 24;
+const INPUT_COUNT: usize = 23;
 const BATCH_COUNT: usize = 24;
 /// Every measured (contender, x) cell lies on one of the two axes.
 const POINT_COUNT: usize = INPUT_COUNT + BATCH_COUNT;
@@ -101,10 +105,9 @@ const AB_BLAKE3_SOURCE_INFO: &str = env!("AB_BLAKE3_SOURCE_INFO");
  * so the plateau is the memory-resident one. 3 MiB is to the plateau what
  * 3 KiB is to the SIMD ramp: a tree that is no power of two, whose left
  * subtree is 2 MiB and right 1 MiB, so a splitter that cuts at subtree
- * boundaries hands its threads unequal work there. Twenty-four points on
- * each axis keep the round count small: rounds are a common multiple of
- * the point count and the order count, and forty-eight shares factors
- * with every even order count from two to eight.
+ * boundaries hands its threads unequal work there. 16 MiB was measured
+ * and dropped: interpolated from 8 and 32 MiB, every contender's median
+ * fell within the difference between two runs, on both machines.
  *
  * The many-messages axis counts 64-byte messages per batch, from one to
  * 262144 (16 MiB of input). Powers of two from 1 to 16 show a SIMD batch
@@ -135,7 +138,6 @@ const POINTS: [Point; POINT_COUNT] = [
     Point::one("3 MiB", 3 * 1024 * 1024),
     Point::one("4 MiB", 4 * 1024 * 1024),
     Point::one("8 MiB", 8 * 1024 * 1024),
-    Point::one("16 MiB", 16 * 1024 * 1024),
     Point::one("32 MiB", 32 * 1024 * 1024),
     Point::one("64 MiB", 64 * 1024 * 1024),
     Point::one("128 MiB", 128 * 1024 * 1024),
@@ -683,7 +685,7 @@ struct Roster {
     /// The points measured, as ascending indices into POINTS: every point,
     /// or the subset --points names.
     points: Vec<usize>,
-    /// Sample rounds: a multiple of points.len() and of orders.len().
+    /// Sample rounds.
     rounds: usize,
     /// Every sample runs two independent copies of the contender at once
     /// and times the later finish (see Duo). With `solo`, a solo sample
@@ -695,9 +697,8 @@ struct Roster {
 impl Roster {
     /*
      * `points` restricts the run to those POINTS indices (every point when
-     * None); `rounds` fixes the round count, which must then be a positive
-     * multiple of lcm(point count, order count), so every order and every
-     * point position recurs equally often.
+     * None); `rounds` fixes the round count (positive), else SAMPLE_ROUNDS,
+     * three times over with `thorough`.
      */
     fn new(algorithms: Vec<Algorithm>, thorough: bool, solo: bool, points: Option<Vec<usize>>, rounds: Option<usize>) -> Self {
         assert!(
@@ -718,20 +719,8 @@ impl Roster {
         let orders = williams_orders(algorithms.len());
         let points = points.unwrap_or_else(|| (0..POINT_COUNT).collect());
         assert!(!points.is_empty() && points.windows(2).all(|w| w[0] < w[1]), "points ascend, without repeats");
-        let step = lcm(points.len(), orders.len());
-        let rounds = match rounds {
-            Some(rounds) => {
-                assert!(
-                    rounds > 0 && rounds % step == 0,
-                    "--rounds must be a positive multiple of {step} for these contenders and points"
-                );
-                rounds
-            }
-            None => {
-                let target = SAMPLE_ROUNDS_TARGET * if thorough { THOROUGH_MULTIPLIER } else { 1 };
-                target.div_ceil(step) * step
-            }
-        };
+        let rounds = rounds.unwrap_or(SAMPLE_ROUNDS * if thorough { THOROUGH_MULTIPLIER } else { 1 });
+        assert!(rounds > 0, "--rounds must be positive");
         Self { algorithms, orders, points, rounds, solo }
     }
 
@@ -754,14 +743,6 @@ impl Roster {
     fn len(&self) -> usize {
         self.algorithms.len()
     }
-}
-
-fn gcd(a: usize, b: usize) -> usize {
-    if b == 0 { a } else { gcd(b, a % b) }
-}
-
-fn lcm(a: usize, b: usize) -> usize {
-    a / gcd(a, b) * b
 }
 
 /*
@@ -817,15 +798,14 @@ Keys: blake3, ab-blake3, blake3-servil, sha256, sha256-ring, sha1dc; sha256-cc o
       default runs, or when named; blake3-servil-mt1 (the multithreaded call
       capped at one thread, a check that it matches blake3-servil) on request
 
-Every run measures two use cases: one message per call at twenty-four input
+Every run measures two use cases: one message per call at twenty-three input
 sizes from 64 B to 128 MiB, and a batch of 64-byte messages per call at
 twenty-four batch sizes from 1 to 262144 messages (BLAKE3 mt sits that one out).
 
   --points LABEL,...               measure only these points (labels as in the
                                    report: \"64 B\", \"8 MiB\", \"1024\" messages);
                                    with --contenders only; no graph
-  --rounds N                       exactly N sample rounds (a multiple of the
-                                   point count and the order count)
+  --rounds N                       exactly N sample rounds (default 96)
   --solo                           also take a solo sample (one copy, one
                                    thread) beside each duo sample and report
                                    solo and duo side by side
@@ -2936,7 +2916,7 @@ fn generate_text(
     }
     writeln!(
         output,
-        "Use cases: one message per call, at twenty-four input sizes from 64 B to 128 MiB; and many messages per call, a batch of {MESSAGE_LEN}-byte messages at twenty-four batch sizes from 1 to 262144. In the second, a contender with a batch entry point takes the batch as one call (ab-blake3's single_block_hash_many_exact::<N>, BLAKE3 servil's hash_many, BLAKE3 servil mt's hash_many_multithreaded); every other contender hashes the batch one message per call of its plain entry point; BLAKE3 mt takes no part in it."
+        "Use cases: one message per call, at twenty-three input sizes from 64 B to 128 MiB; and many messages per call, a batch of {MESSAGE_LEN}-byte messages at twenty-four batch sizes from 1 to 262144. In the second, a contender with a batch entry point takes the batch as one call (ab-blake3's single_block_hash_many_exact::<N>, BLAKE3 servil's hash_many, BLAKE3 servil mt's hash_many_multithreaded); every other contender hashes the batch one message per call of its plain entry point; BLAKE3 mt takes no part in it."
     )
     .unwrap();
     writeln!(
@@ -4077,7 +4057,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
             dots.push_str("    </g>\n");
 
             /*
-             * With twenty-four columns, a value at every dot would overprint.
+             * With two dozen columns, a value at every dot would overprint.
              * Label the ends and every fourth point counted from the last,
              * so the axis's far end and the points four apart below it
              * carry values; hovering a dot shows the rest. Edge columns
