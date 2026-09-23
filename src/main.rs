@@ -656,7 +656,10 @@ struct MachineMetadata {
 struct Roster {
     algorithms: Vec<Algorithm>,
     orders: Vec<Vec<usize>>,
-    /// Sample rounds: a multiple of POINT_COUNT and of orders.len().
+    /// The points measured, as ascending indices into POINTS: every point,
+    /// or the subset --points names.
+    points: Vec<usize>,
+    /// Sample rounds: a multiple of points.len() and of orders.len().
     rounds: usize,
     /// Every sample runs two independent copies of the contender at once
     /// and times the later finish (see Duo). With `solo`, a solo sample
@@ -666,7 +669,13 @@ struct Roster {
 }
 
 impl Roster {
-    fn new(algorithms: Vec<Algorithm>, thorough: bool, solo: bool) -> Self {
+    /*
+     * `points` restricts the run to those POINTS indices (every point when
+     * None); `rounds` fixes the round count, which must then be a positive
+     * multiple of lcm(point count, order count), so every order and every
+     * point position recurs equally often.
+     */
+    fn new(algorithms: Vec<Algorithm>, thorough: bool, solo: bool, points: Option<Vec<usize>>, rounds: Option<usize>) -> Self {
         assert!(
             (2..=8).contains(&algorithms.len()),
             "a run compares two to eight contenders; {} were selected",
@@ -683,10 +692,39 @@ impl Roster {
             }
         }
         let orders = williams_orders(algorithms.len());
-        let step = lcm(POINT_COUNT, orders.len());
-        let target = SAMPLE_ROUNDS_TARGET * if thorough { THOROUGH_MULTIPLIER } else { 1 };
-        let rounds = target.div_ceil(step) * step;
-        Self { algorithms, orders, rounds, solo }
+        let points = points.unwrap_or_else(|| (0..POINT_COUNT).collect());
+        assert!(!points.is_empty() && points.windows(2).all(|w| w[0] < w[1]), "points ascend, without repeats");
+        let step = lcm(points.len(), orders.len());
+        let rounds = match rounds {
+            Some(rounds) => {
+                assert!(
+                    rounds > 0 && rounds % step == 0,
+                    "--rounds must be a positive multiple of {step} for these contenders and points"
+                );
+                rounds
+            }
+            None => {
+                let target = SAMPLE_ROUNDS_TARGET * if thorough { THOROUGH_MULTIPLIER } else { 1 };
+                target.div_ceil(step) * step
+            }
+        };
+        Self { algorithms, orders, points, rounds, solo }
+    }
+
+    /// Whether this run measures POINTS[point_index].
+    fn measures(&self, point_index: usize) -> bool {
+        self.points.binary_search(&point_index).is_ok()
+    }
+
+    /// The point the progress line follows: the largest one-message
+    /// point measured, else the largest point.
+    fn progress_point(&self) -> usize {
+        *self
+            .points
+            .iter()
+            .rev()
+            .find(|&&index| POINTS[index].use_case == UseCase::OneMessage)
+            .unwrap_or_else(|| self.points.last().unwrap())
     }
 
     fn len(&self) -> usize {
@@ -759,6 +797,11 @@ Every run measures two use cases: one message per call at twenty-four input
 sizes from 64 B to 128 MiB, and a batch of 64-byte messages per call at
 twenty-four batch sizes from 1 to 262144 messages (BLAKE3 mt sits that one out).
 
+  --points LABEL,...               measure only these points (labels as in the
+                                   report: \"64 B\", \"8 MiB\", \"1024\" messages);
+                                   with --contenders only; no graph
+  --rounds N                       exactly N sample rounds (a multiple of the
+                                   point count and the order count)
   --solo                           also take a solo sample (one copy, one
                                    thread) beside each duo sample and report
                                    solo and duo side by side
@@ -774,6 +817,8 @@ twenty-four batch sizes from 1 to 262144 messages (BLAKE3 mt sits that one out).
 struct Options {
     selection: Selection,
     explicit: Vec<Algorithm>,
+    points: Option<Vec<usize>>,
+    rounds: Option<usize>,
     trace_path: Option<std::path::PathBuf>,
     thorough: bool,
     /// Also take a solo sample beside each duo sample.
@@ -807,8 +852,37 @@ fn parse_arguments() -> Options {
             path
         });
 
+    /* --points LIST and --rounds N narrow a --contenders run. */
+    let mut take_value = |flag: &str| {
+        arguments.iter().position(|argument| argument == flag).map(|index| {
+            assert!(index + 1 < arguments.len(), "{flag} needs a value\n\n{USAGE}");
+            let value = arguments[index + 1].clone();
+            arguments.drain(index..=index + 1);
+            value
+        })
+    };
+    let points = take_value("--points").map(|list| {
+        let mut indices: Vec<usize> = list
+            .split(',')
+            .map(|label| {
+                POINTS.iter().position(|point| point.label == label.trim()).unwrap_or_else(|| {
+                    let labels: Vec<&str> = POINTS.iter().map(|point| point.label).collect();
+                    panic!("--points: no point labelled {label:?}; the labels are {}", labels.join(", "))
+                })
+            })
+            .collect();
+        indices.sort_unstable();
+        indices.dedup();
+        indices
+    });
+    let rounds = take_value("--rounds").map(|n| n.parse::<usize>().expect("--rounds takes a whole number"));
+
     let (selection, explicit) = parse_selection(&arguments);
-    Options { selection, explicit, trace_path, thorough, solo }
+    assert!(
+        (points.is_none() && rounds.is_none()) || selection == Selection::Explicit,
+        "--points and --rounds narrow a --contenders run\n\n{USAGE}"
+    );
+    Options { selection, explicit, points, rounds, trace_path, thorough, solo }
 }
 
 fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
@@ -853,7 +927,7 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
 }
 
 fn main() {
-    let Options { selection, explicit, trace_path, thorough, solo } = parse_arguments();
+    let Options { selection, explicit, points, rounds, trace_path, thorough, solo } = parse_arguments();
     let mut trace = trace_path.map(ClockTrace::new);
     assert!(
         trace.is_none() || solo,
@@ -875,20 +949,20 @@ fn main() {
     let (roster, results, basis, duo_samples, selection_note) = match selection {
         Selection::Explicit => {
             let keys = explicit.iter().map(|algorithm| algorithm.key()).collect::<Vec<_>>().join(",");
-            let roster = Roster::new(explicit, thorough, solo);
+            let roster = Roster::new(explicit, thorough, solo, points, rounds);
             let (results, basis, duo_samples) = measure_all(&roster, trace.as_mut());
             (roster, results, basis, duo_samples, format!("--contenders {keys}"))
         }
         Selection::All => {
-            let roster = Roster::new(available, thorough, solo);
+            let roster = Roster::new(available, thorough, solo, None, None);
             let (results, basis, duo_samples) = measure_all(&roster, trace.as_mut());
             (roster, results, basis, duo_samples, String::from("every contender available on this machine"))
         }
         Selection::Best => {
-            let full = Roster::new(available, thorough, solo);
+            let full = Roster::new(available, thorough, solo, None, None);
             let (full_results, basis, full_samples) = measure_all(&full, trace.as_mut());
             let (keep, note) = choose_best_per_family(&full, &full_results);
-            let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect(), thorough, solo);
+            let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect(), thorough, solo, None, None);
             let results: Results = full_results
                 .iter()
                 .enumerate()
@@ -911,7 +985,8 @@ fn main() {
 
     /* The Measurement section explains duo; the note names the selection only. */
     let text = generate_text(&roster, &results, &machine, &selection_note, basis);
-    let svg = generate_svg(&roster, &results, &machine, &selection_note, basis);
+    /* The graph draws whole axes, so a run of a subset of points has none. */
+    let svg = (roster.points.len() == POINT_COUNT).then(|| generate_svg(&roster, &results, &machine, &selection_note, basis));
 
     print!("{text}");
 
@@ -938,18 +1013,21 @@ fn main() {
         panic!("failed to write {}: {error}", text_path.display())
     });
 
-    fs::write(&svg_path, &svg).unwrap_or_else(|error| {
-        panic!("failed to write {}: {error}", svg_path.display())
-    });
+    if let Some(svg) = &svg {
+        fs::write(&svg_path, svg).unwrap_or_else(|error| {
+            panic!("failed to write {}: {error}", svg_path.display())
+        });
+    }
 
     println!(
         "# Data results (text) are in \"{}\" .",
         text_path.display(),
     );
-    println!(
-        "# Graph results (SVG) are in \"{}\" .",
-        svg_path.display(),
-    );
+    match svg {
+        Some(_) => println!("# Graph results (SVG) are in \"{}\" .", svg_path.display()),
+        None => println!("# No graph: --points measured a subset of the points."),
+    }
+    println!("# Samples (TSV) are in \"{}\" .", samples_path.display());
 }
 
 /*
@@ -1080,20 +1158,27 @@ fn cell(results: &Results, algorithm_index: usize, point_index: usize) -> &Cell 
 }
 
 fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results, TimeBasis, DuoSamples) {
-    let inputs: Vec<Vec<u8>> = POINTS.iter().map(|point| make_input(point.bytes)).collect();
+    /* Inputs for the points measured; an empty buffer stands in for the rest. */
+    let inputs: Vec<Vec<u8>> = (0..POINT_COUNT)
+        .map(|index| if roster.measures(index) { make_input(POINTS[index].bytes) } else { Vec::new() })
+        .collect();
     /*
      * The second copy in a duo sample hashes its own buffer of the same
      * size and different contents, as two independent programs would;
      * sharing one buffer would let the copies share cache lines.
      */
-    let duo_inputs: Vec<Vec<u8>> = POINTS.iter().map(|point| make_input_seeded(point.bytes, 1)).collect();
+    let duo_inputs: Vec<Vec<u8>> = (0..POINT_COUNT)
+        .map(|index| if roster.measures(index) { make_input_seeded(POINTS[index].bytes, 1) } else { Vec::new() })
+        .collect();
     let mut progress = Progress::new(roster);
     progress.phase("checking digests");
     // Both timed input sets visit every implementation's selected kernels.
     // Empty and short tails cover boundaries absent from the timing grid.
     for (seed, buffers) in [(0, &inputs), (1, &duo_inputs)] {
-        for (point, input) in POINTS.iter().zip(buffers) {
-            check_input(&roster.algorithms, input, point.messages, seed);
+        for (index, (point, input)) in POINTS.iter().zip(buffers).enumerate() {
+            if roster.measures(index) {
+                check_input(&roster.algorithms, input, point.messages, seed);
+            }
         }
     }
     for &(len, seed, _) in test_vectors::VECTORS {
@@ -1116,7 +1201,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
     for (point_index, point) in POINTS.iter().enumerate() {
         for algorithm_index in 0..roster.len() {
             let algorithm = roster.algorithms[algorithm_index];
-            if algorithm.takes_part(point.use_case) {
+            if algorithm.takes_part(point.use_case) && roster.measures(point_index) {
                 batch_iterations[algorithm_index][point_index] =
                     calibrate_batch(algorithm, &inputs[point_index], point.messages);
             }
@@ -1153,9 +1238,8 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
 
         let algorithm_order = &roster.orders[round % roster.orders.len()];
 
-        for point_offset in 0..POINT_COUNT {
-            let size_index =
-                (point_offset + round) % POINT_COUNT;
+        for point_offset in 0..roster.points.len() {
+            let size_index = roster.points[(point_offset + round) % roster.points.len()];
             let point = POINTS[size_index];
 
             let input = &inputs[size_index];
@@ -1263,7 +1347,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
 
     for algorithm_index in 0..roster.len() {
         for (size_index, point) in POINTS.iter().enumerate() {
-            if !roster.algorithms[algorithm_index].takes_part(point.use_case) {
+            if !roster.algorithms[algorithm_index].takes_part(point.use_case) || !roster.measures(size_index) {
                 continue;
             }
             let duo = &mut duo_samples[algorithm_index][size_index];
@@ -1358,12 +1442,12 @@ impl<'a> Progress<'a> {
 
     /* Called at the start of each round; `samples` holds every round so far. */
     fn round(&mut self, round: usize, samples: &Samples) {
-        self.round_inner(round, &running_medians(self.roster, samples, INPUT_COUNT - 1));
+        self.round_inner(round, &running_medians(self.roster, samples, self.roster.progress_point()));
     }
 
     /* Duo-only runs track the duo samples instead. */
     fn round_duo(&mut self, round: usize, samples: &DuoSamples) {
-        self.round_inner(round, &running_duo_medians(self.roster, samples, INPUT_COUNT - 1));
+        self.round_inner(round, &running_duo_medians(self.roster, samples, self.roster.progress_point()));
     }
 
     fn round_inner(&mut self, round: usize, medians: &str) {
@@ -1391,11 +1475,11 @@ impl<'a> Progress<'a> {
     }
 
     fn finish(&mut self, samples: &Samples) {
-        self.finish_inner(&running_medians(self.roster, samples, INPUT_COUNT - 1));
+        self.finish_inner(&running_medians(self.roster, samples, self.roster.progress_point()));
     }
 
     fn finish_duo(&mut self, samples: &DuoSamples) {
-        self.finish_inner(&running_duo_medians(self.roster, samples, INPUT_COUNT - 1));
+        self.finish_inner(&running_duo_medians(self.roster, samples, self.roster.progress_point()));
     }
 
     fn finish_inner(&mut self, medians: &str) {
@@ -2706,6 +2790,7 @@ fn generate_samples_tsv(roster: &Roster, duo_samples: &DuoSamples, machine: &Mac
         ("git clean status", GIT_CLEAN_STATUS),
         ("blake3-servil source", BLAKE3_SERVIL_SOURCE_INFO),
         ("blake3 source", BLAKE3_SOURCE_INFO),
+        ("sha256 source", SHA2_SOURCE_INFO),
         ("cpu type", machine.cpu_type.as_str()),
         ("cpu count", machine.cpu_count.to_string().as_str()),
         ("os type", machine.os_type.as_str()),
@@ -2716,6 +2801,7 @@ fn generate_samples_tsv(roster: &Roster, duo_samples: &DuoSamples, machine: &Mac
         ("sample clock", sample_clock::NAME),
         ("contenders", selection_note),
         ("rounds", roster.rounds.to_string().as_str()),
+        ("points", roster.points.iter().map(|&index| POINTS[index].label).collect::<Vec<_>>().join(",").as_str()),
     ] {
         writeln!(out, "# {key}: {value}").unwrap();
     }
@@ -2885,7 +2971,7 @@ fn generate_text(
             writeln!(output).unwrap();
         }
 
-        for point_index in use_case.points() {
+        for point_index in use_case.points().filter(|&index| roster.measures(index)) {
             write!(output, "  {:<8}", POINTS[point_index].label).unwrap();
             for &algorithm_index in &contenders {
                 for statistics in columns(cell(results, algorithm_index, point_index)) {

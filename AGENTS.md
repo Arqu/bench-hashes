@@ -82,9 +82,9 @@ The benchmarker touches an implementation in three ways only: listing it, callin
 
 **Virtual machines are first-class optimization targets,** alongside native hosts: people run BLAKE3 inside VMs, and the VM records in `benchmark-results/` count as much as the Mac's. Keep both current when a change could move either, and read a difference between them as information about the change, never as noise to be ignored. The fork's `examples/host_lab.rs` measures the platform effects behind such differences (idle-waiter interference, `WFE`, the SME2 → NEON penalty, core scaling).
 
-# The fork's performance-regression baselines depend on this benchmark
+# The fork's performance-regression check runs this benchmark
 
-The fork's `tools/perf_regress.py` runs this benchmark (`--contenders blake3,blake3-servil,blake3-servil-mt`) and compares its `bench-hashes.duo.samples.tsv` with baselines committed in the fork's `perf-baselines/`. **A change here that alters what a cell measures (the points, the inputs, the duo protocol, calibration, the samples file's format) invalidates every baseline:** say so in the commit message, and re-record the baselines on each machine (`python3 tools/perf_regress.py record` in the fork, then commit them in the fork) before the next fork code commit is checked. Changes to reporting alone (text, graph, docs) leave the baselines valid. The fork's `AGENTS.md` ("Performance regressions") has the procedure every fork commit follows.
+The fork's `tools/perf_regress.py` builds this benchmark twice, against the fork's `HEAD` and against its working tree, and runs the builds alternately with `--contenders sha256,blake3-servil,blake3-servil-mt --points ... --rounds 48`, reading `bench-hashes.duo.samples.tsv`. Both sides use this checkout's source, so a change here never skews that comparison; keep `--points`, `--rounds`, and the samples file's format working, since the check depends on them. The fork's `AGENTS.md` ("Performance regressions") has the procedure every fork commit follows.
 
 # Environment
 
