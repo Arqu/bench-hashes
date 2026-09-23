@@ -61,24 +61,60 @@ are in both repositories' `AGENTS.md` files; the fork's
 
 ## Next priorities
 
-1. **Decide serial SME2 under case 3** (the user's call). The options and
-   their per-thread worst cases are in NOTES ("Serial SME2, by case"):
-   keep SME2 (best at 1-2 threads, 3-5x worse than NEON at 4+ threads
-   of one program), NEON only (flat 0.25-0.33, 47% slower alone), or a
-   better detector than pacing (it must never lock into a slow state;
-   judge on several full `--all` runs, not the three-contender check).
-2. **Mac, first thing:** `sh tools/install-git-hooks.sh`, then
-   `pypy3 tools/perf_regress.py compare 8f3bde3 737929b` (the pool on
-   NEON, natively, solo and duo), `cargo run --release --example scaling`
-   and `cargo run --release --features no_sme2 --example scaling` (case 3
-   natively), then a fresh Mac record: from `bench-hashes`,
-   `git checkout -- benchmark-results && cargo run --release -- --all`.
-3. **The Mac's serial 128 MiB rise** (0.176 -> 0.210): flat on the VM.
-4. **A/B the pool's poll pause against yield-only polling on the Mac**
-   (idle `sched_yield` pollers cost hashers 2% there, spinners 18%).
-5. **Batches over the pool with two callers**; `many::TABLE` natively.
-6. Release 0.7.0 of bench-hashes and a first fork tag.
-7. Future work (NOTES): a GPU kernel.
+Open problems stay open until they reach one of the outcomes in AGENTS
+("we own every slowdown a user could meet"): controlled, explained to
+users with how to control it, or at least predicted.
+
+1. **Native benchmark runner on the Mac** (in design): a hidden standard
+   account `benchrunner`, code from GitHub only, an exchange folder
+   `/Users/Shared/bench-exchange/` (`jobs/` the user's, `results/` the
+   runner's, `jobs/ENABLED` the user's switch), an allow-list of jobs, a
+   root-installed runner under launchd (`ProcessType` Interactive).
+   Waiting on: can the VM mount the exchange folder?
+2. **Benchmarks that stay useful on hardware they can neither see nor
+   steer.** In the VM (and anywhere else without per-core counters or
+   affinity) the host runs vCPUs on P- or E-cores at will, so timings come
+   out bimodal and the split varies run to run. VMs are a first-class
+   target, so the benchmark must still give readers comparisons,
+   regression signals, and planning figures there. How is open. Ideas to
+   weigh: round-by-round pairing (CHECKS do it already); reporting both
+   speeds and their shares (done); inferring each sample's core kind from
+   a reference kernel timed beside it (a fixed scalar loop whose P and E
+   speeds are known), then classifying samples as on native Apple;
+   repeating or extending a run until each cell's share of each speed is
+   known; and stating in the report which figures are placement-dependent.
+3. **P/E classification of every sample on Apple**: read the per-thread
+   counters around every solo sample and shared copy; tables and graph
+   from P-core samples, each cell's E-core share (and E speed) in the
+   maintainer report; `perf_regress` P against P, warning when E shares
+   differ. A thorough-only pass at background QoS (E-cores by rule) to
+   measure the E-core case reproducibly; a test of user-interactive QoS
+   for the benchmark's own threads.
+4. **Why the solo thread lands on E-cores** at one-message 256 B-8 KiB
+   (up to 18% of samples, every contender, none for batches of the same
+   bytes). Suspect: Rayon's idle pool threads (BLAKE3 mt splits from 8
+   KiB). Test: the thorough run without `blake3-mt`, with
+   `--trace-clocks` (data of the run with it: `tmp/mac-trace-1683ebb/`).
+5. **servil is weak on E-cores**: 3.3x slower there at 4 KiB against
+   SHA-256's 1.65x, so on an E-core it trails SHA-256. Kernel work.
+6. **Two SME2 threads of one process share an SME unit** (macOS keeps a
+   thread group on one P-cluster): shared SME2 cells run at full or half
+   speed, 28-70% of rounds at full, varying by run. Leads: an
+   `os_workgroup` per SME2 thread; the sharing-techniques batch below.
+7. **Sharing techniques** (stacked): pool work at the caller's QoS/nice,
+   cache footprint (non-temporal loads), placement hints, cross-process
+   SME locks, and racing SME2 against NEON on the same block and keeping
+   whichever finishes first.
+8. **`perf_regress` sees only the faster speed** (5th percentile): make
+   it judge each speed of a two-speed cell.
+9. **Decide serial SME2 under case 3** (the user's call): keep, NEON only,
+   or a detector that can never lock into a slow state (pacing did).
+10. **Thorough Mac record**: committed only once the regressions it shows
+    (shared two-speed cells) reach an outcome; the quick record stands.
+11. Older: the Mac's serial 128 MiB rise; the pool's poll pause against
+    yield-only polling on the Mac; batches over the pool with two
+    callers and `many::TABLE` natively; release 0.7.0 of bench-hashes and
+    a first fork tag; a GPU kernel (NOTES, future work).
 
 ## Commands
 
