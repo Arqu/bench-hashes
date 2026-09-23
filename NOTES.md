@@ -49,7 +49,13 @@ fourth round, and every round while the median's 95% interval is wider
 than 1%. Simulated on the recorded samples: every such median within
 0.6% of the full one. Measured: 150 s -> 101 s a run; budgeted cells
 agree with a full run to a median 0.68%, against 1.37% run-to-run for
-cells sampled every round.
+cells sampled every round. Then a 2% target and at most every second
+round for unsure long cells, and a 250 us calibration probe: 80 s a run,
+medians at x0.9955 and x1.0072 of two full-sample runs, which differ from
+each other by x0.9886. Rejected: all cells in every second round (a
+bimodal cell's median moved 35%), adaptive sampling for short cells
+(1 ms samples rarely reach a 1% interval, so little is saved), and 0.5 ms
+samples (62 s, every median 1.6% slow).
 
 **Interleaving.** Williams orders over the contenders, size order
 rotated per round. Every contender takes every position and follows

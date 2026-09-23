@@ -31,7 +31,10 @@ compile_error!("bench-hashes currently supports native targets only");
 const SAMPLE_ROUNDS_TARGET: usize = 80;
 /// --thorough multiplies the rounds; the median's interval narrows as 1/√n.
 const THOROUGH_MULTIPLIER: usize = 3;
-const CALIBRATION_PROBE_NS: u128 = 500_000;
+const CALIBRATION_PROBE_NS: u128 = 250_000;
+/// Measured: 0.5 ms samples ran a full --all in 62 s instead of 80 s but
+/// read 1.6% slower across the board (each sample's fixed cost, the duo
+/// release and the clock reads, weighs twice as much), so 1 ms stays.
 const TARGET_SAMPLE_NS: u128 = 1_000_000;
 
 /*
@@ -39,16 +42,18 @@ const TARGET_SAMPLE_NS: u128 = 1_000_000;
  * takes LONG_HASH_NS or more (every sample is then one hash, tens of
  * milliseconds for the plateau sizes) is sampled in every LONG_EVERY-th
  * round, at an offset of its own so its samples still span the run, and
- * in every round while the 95% interval of its median is wider than
- * LONG_PRECISION_PERMILLE of the median (or it has fewer than
- * LONG_MIN_SAMPLES): steady cells take fewer samples, noisy ones keep
- * theirs. Measured on the VM's --all record: sampling time 136 s -> 79 s,
- * every such cell's median within 0.6% of the one all 96 samples gave
- * (0.04% for the typical cell), none with fewer than 30 samples.
+ * in every LONG_EVERY_UNSURE-th round while the 95% interval of its median
+ * is wider than LONG_PRECISION_PERMILLE of the median (or it has fewer
+ * than LONG_MIN_SAMPLES). Steady cells take a quarter of the samples,
+ * noisy ones half: past that, two runs of the same code differ by more
+ * than further samples would narrow. Measured on the VM: a full --all
+ * run from 150 s to 80 s; its medians against two full-sample runs at
+ * x0.9955 and x1.0072, inside the x0.9886 those two runs differ by.
  */
 const LONG_HASH_NS: u128 = 4_000_000;
 const LONG_EVERY: usize = 4;
-const LONG_PRECISION_PERMILLE: u64 = 10;
+const LONG_PRECISION_PERMILLE: u64 = 20;
+const LONG_EVERY_UNSURE: usize = 2;
 const LONG_MIN_SAMPLES: usize = 8;
 
 /// Points on the one-message axis, and on the many-messages axis.
@@ -2240,6 +2245,9 @@ fn long_cell_wants_sample(taken: &[u64], slot: usize) -> bool {
     if slot % LONG_EVERY == 0 || taken.len() < LONG_MIN_SAMPLES {
         return true;
     }
+    if slot % LONG_EVERY_UNSURE != 0 {
+        return false;
+    }
     let mut sorted = taken.to_vec();
     sorted.sort_unstable();
     let median = median_of_sorted(&sorted);
@@ -2933,10 +2941,11 @@ fn generate_text(
     .unwrap();
     writeln!(
         output,
-        "Samples: {} rounds. A cell whose single hash takes {} ms or more is sampled in every {}th round, and in every round while the 95% interval of its median is wider than {}% of it; a third row gives the sample counts, in brackets, wherever a cell took fewer.",
+        "Samples: {} rounds. A cell whose single hash takes {} ms or more is sampled in every {}th round, and in every {}nd while the 95% interval of its median is wider than {}% of it; a third row gives the sample counts, in brackets, wherever a cell took fewer.",
         roster.rounds,
         LONG_HASH_NS / 1_000_000,
         LONG_EVERY,
+        LONG_EVERY_UNSURE,
         LONG_PRECISION_PERMILLE / 10,
     )
     .unwrap();

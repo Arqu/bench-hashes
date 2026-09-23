@@ -444,12 +444,13 @@ Cells whose single hash takes 4 ms or more (the plateau sizes, where a
 sample is one hash of tens of milliseconds) get a time budget: such a
 cell is sampled in every fourth round, at an offset of its own so its
 samples span the run, and in every round while the 95% interval of its
-median is wider than 1% of it. Steady cells take about 30 samples, noisy
-ones keep nearly all of theirs, and the report gives the count wherever a
-cell took fewer than the rounds. On the VM this took a full run from
-about 150 s to 100 s; measured against a full-sample run, those cells'
-medians differ by a median 0.68%, less than cells sampled in every round
-differ between two runs (1.37%).
+median is wider than 2% of it, in every second round. Steady cells take
+a quarter of the samples, noisy ones half, and the report gives the
+count wherever a cell took fewer than the rounds. On the VM this took a
+full run from about 150 s to 80 s, with medians inside the variation
+between two full-sample runs of the same code. Shorter samples (0.5 ms)
+were tried and rejected: 62 s a run, but every median 1.6% slower,
+since a sample's fixed cost weighs twice as much.
 
 The band around each median line is the **95% bootstrap confidence
 interval of the median**: the cell's samples are resampled with
