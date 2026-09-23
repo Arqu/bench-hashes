@@ -3665,7 +3665,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
     let heading_note = match plot.use_case {
         UseCase::OneMessage => "each call hashes one input of the size".to_owned(),
         UseCase::ManyMessages => format!(
-            "each call hashes a batch of {MESSAGE_LEN}-byte messages: one message per call of the plain entry point, or the batch in one call where the crate has a batch entry point (ab-blake3, BLAKE3 servil, servil mt) · BLAKE3 mt takes no part",
+            "each call hashes a batch of {MESSAGE_LEN}-byte messages: a call per message, or one call per batch where a crate offers it (ab-blake3, BLAKE3 servil, servil mt) · BLAKE3 mt sits out",
         ),
     };
     writeln!(
@@ -3720,11 +3720,12 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
      * log axis), it drops to a second row with a short tick joining it to
      * its column.
      */
-    const SIZE_LABEL_WIDTH: f64 = 34.0;
+    /* About 6.5 px per character at the label font, plus a small gutter. */
+    let label_width = |k: usize| POINTS[plot.points.start + k].label.chars().count() as f64 * 6.5 + 6.0;
     let mut label_rows = vec![0u8; plot.len()];
     for k in 1..plot.len() {
         let gap = plot.x_positions[k] - plot.x_positions[k - 1];
-        if gap < SIZE_LABEL_WIDTH && label_rows[k - 1] == 0 {
+        if gap < (label_width(k - 1) + label_width(k)) / 2.0 && label_rows[k - 1] == 0 {
             label_rows[k] = 1;
         }
     }
