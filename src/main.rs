@@ -4072,9 +4072,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
              * With two dozen columns, a value at every dot would overprint.
              * Label the ends and every fourth point counted from the last,
              * so the axis's far end and the points four apart below it
-             * carry values; hovering a dot shows the rest. Edge columns
-             * anchor inward so labels stay clear of the y-axis gutter and
-             * the series labels at right.
+             * carry values; hovering a dot shows the rest.
              */
             let labeled = k == 0 || (plot.len() - 1 - k) % 4 == 0;
 
@@ -4082,13 +4080,14 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
                 continue;
             }
 
-            let (label_x, anchor) = if k == 0 {
-                (x + 9.0, "start")
-            } else if k == plot.len() - 1 {
-                (x - 9.0, "end")
-            } else {
-                (x, "middle")
-            };
+            /*
+             * Centred over its dot, so a label names one column only (a
+             * right-aligned last label, `45 | 36` wide, read as the
+             * column before); the last column sits X_INSET from the plot's
+             * edge, room for the widest pair. The first column's label
+             * starts beside its dot, clear of the y axis.
+             */
+            let (label_x, anchor) = if k == 0 { (x + 9.0, "start") } else { (x, "middle") };
 
             writeln!(
                 svg,
