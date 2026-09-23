@@ -3720,8 +3720,8 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
      * log axis), it drops to a second row with a short tick joining it to
      * its column.
      */
-    /* About 6.5 px per character at the label font, plus a small gutter. */
-    let label_width = |k: usize| POINTS[plot.points.start + k].label.chars().count() as f64 * 6.5 + 6.0;
+    /* About 7.2 px per character at the bold label font, plus a gutter. */
+    let label_width = |k: usize| POINTS[plot.points.start + k].label.chars().count() as f64 * 7.2 + 6.0;
     let mut label_rows = vec![0u8; plot.len()];
     for k in 1..plot.len() {
         let gap = plot.x_positions[k] - plot.x_positions[k - 1];
