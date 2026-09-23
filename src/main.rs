@@ -814,8 +814,8 @@ twenty-four batch sizes from 1 to 262144 messages (BLAKE3 mt sits that one out).
   --trace-clocks PATH              also write one CSV line per sample with
                                    wall, thread-CPU, mach_absolute_time, and
                                    (on Apple) per-core-kind cycles and
-                                   instructions, for clock and frequency
-                                   diagnosis
+                                   instructions, for the solo sample and
+                                   each duo copy; needs --solo
 ";
 
 struct Options {
@@ -935,7 +935,7 @@ fn main() {
     let mut trace = trace_path.map(ClockTrace::new);
     assert!(
         trace.is_none() || solo,
-        "--trace-clocks reads one thread's clocks around the solo sample, so it needs --solo"
+        "--trace-clocks reads the clocks around the solo sample and each duo copy, so it needs --solo"
     );
     let available: Vec<Algorithm> = Algorithm::ALL
         .into_iter()
@@ -1297,7 +1297,8 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                  * so the two columns compare. The copies' cycle counts
                  * describe two threads, so duo times are measured time.
                  */
-                let later_ns = duo.run(algorithm, input, &duo_inputs[size_index], point.messages, iterations);
+                let copies = duo.run(algorithm, input, &duo_inputs[size_index], point.messages, iterations);
+                let later_ns = copies.iter().map(|copy| copy.elapsed_ns).max().unwrap();
                 let total_units = point.use_case.units(point, iterations);
                 let later_ps = later_ns.checked_mul(PS_PER_NS).expect("a sample of under a second fits in picoseconds");
                 duo_samples[algorithm_index][size_index].push((later_ps + total_units / 2) / total_units);
@@ -1309,19 +1310,19 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                     let cpu1 = trace_clocks::thread_cpu_ns();
                     let perf = perf1.since(trace_perf0);
                     trace.lines.push(format!(
-                        "{round},{},{},{},{iterations},{elapsed_ns},{},{},{},{},{},{},{},{},{}",
+                        "{round},{},{},{},{iterations},{elapsed_ns},{},{},{},{},{:?},{later_ns},{},{},{},{}",
                         point_offset * algorithm_order.len() + position,
                         algorithm.key(),
                         input.len(),
                         cpu1 - trace_cpu0,
                         mach1 - trace_mach0,
                         proc1 - trace_proc0,
-                        perf.p_cycles,
-                        perf.p_instructions,
-                        perf.p_time_ns,
-                        perf.e_cycles,
-                        perf.e_instructions,
-                        perf.e_time_ns,
+                        perf.csv(),
+                        point.use_case,
+                        copies[0].elapsed_ns,
+                        copies[0].perf.csv(),
+                        copies[1].elapsed_ns,
+                        copies[1].perf.csv(),
                     ));
                 }
 
@@ -1817,10 +1818,18 @@ struct Duo {
     ready: std::sync::atomic::AtomicUsize,
     /// Advances once both copies are ready: the release.
     generation: std::sync::atomic::AtomicU64,
-    /// Each copy's elapsed nanoseconds from its own start to its finish;
-    /// None while a copy is still running.
-    finished: std::sync::Mutex<[Option<u64>; 2]>,
+    /// Each copy's elapsed time and counts; None while a copy is still running.
+    finished: std::sync::Mutex<[Option<DuoCopy>; 2]>,
     done: std::sync::Condvar,
+}
+
+/// One copy's part of a duo sample: nanoseconds from its own start to its
+/// finish, and its thread's cycle counts across the sample (read outside
+/// the timed interval; zero off Apple).
+#[derive(Clone, Copy)]
+struct DuoCopy {
+    elapsed_ns: u64,
+    perf: PerfCounters,
 }
 
 #[derive(Clone, Copy)]
@@ -1858,9 +1867,9 @@ impl Duo {
     }
 
     /// Run `iterations` of `algorithm` on both threads at once, copy 0 over
-    /// `input` and copy 1 over `other`; returns the later finish in
-    /// nanoseconds, each copy timed from its own start.
-    fn run(&self, algorithm: Algorithm, input: &[u8], other: &[u8], messages: usize, iterations: usize) -> u64 {
+    /// `input` and copy 1 over `other`; returns each copy's time from its
+    /// own start and its counts. The sample is the later finish.
+    fn run(&self, algorithm: Algorithm, input: &[u8], other: &[u8], messages: usize, iterations: usize) -> [DuoCopy; 2] {
         use std::sync::atomic::Ordering;
         assert_eq!(input.len(), other.len(), "the two copies hash inputs of one size");
         {
@@ -1884,9 +1893,9 @@ impl Duo {
         while finished.iter().any(Option::is_none) {
             finished = self.done.wait(finished).unwrap();
         }
-        let later = finished.iter().map(|f| f.unwrap()).max().unwrap();
+        let copies = finished.map(|copy| copy.unwrap());
         *finished = [None, None];
-        later
+        copies
     }
 
     fn worker(&self, copy: usize) {
@@ -1925,12 +1934,15 @@ impl Duo {
                 std::thread::yield_now();
             }
             seen = self.generation.load(Ordering::Acquire);
+            // Outside the timed interval, which starts at this copy's own clock read.
+            let perf0 = trace_clocks::perf_counters();
             let started = sample_clock::now();
             // Sound: run() holds the borrows until both finishes are read.
             run_batch(job.algorithm, unsafe { &*job.inputs[copy] }, job.messages, job.iterations);
             let elapsed_ns = sample_clock::since_ns(started);
+            let perf = trace_clocks::perf_counters().since(perf0);
             let mut finished = self.finished.lock().unwrap();
-            finished[copy] = Some(elapsed_ns);
+            finished[copy] = Some(DuoCopy { elapsed_ns, perf });
             self.done.notify_all();
         }
     }
@@ -1990,11 +2002,13 @@ mod common_crypto {
 }
 
 /*
- * Optional per-sample trace for clock diagnosis: every sample's wall
+ * Optional per-sample trace for clock diagnosis: every solo sample's wall
  * nanoseconds, thread CPU nanoseconds, and (on Apple) mach_absolute_time
- * ticks, with the round, its position in the round, and the contender and
- * size. One CSV line per sample. Off unless --trace-clocks PATH is given;
- * the extra clock reads add about 100 ns to each 1 ms sample.
+ * ticks and P/E counts, with the round, its position in the round, the
+ * contender, size, and use case; then the duo sample's later finish and
+ * each copy's own time and P/E counts. One CSV line per sample interval.
+ * Off unless --trace-clocks PATH is given; every clock read sits outside
+ * the timed intervals.
  */
 struct ClockTrace {
     lines: Vec<String>,
@@ -2004,7 +2018,13 @@ struct ClockTrace {
 impl ClockTrace {
     fn new(path: std::path::PathBuf) -> Self {
         let mut lines = Vec::with_capacity(8192);
-        lines.push("round,position,contender,size_bytes,iterations,wall_ns,thread_cpu_ns,mach_ticks,process_cpu_ns,p_cycles,p_instructions,p_time_ns,e_cycles,e_instructions,e_time_ns".to_owned());
+        let mut header = "round,position,contender,size_bytes,iterations,wall_ns,thread_cpu_ns,mach_ticks,process_cpu_ns,p_cycles,p_instructions,p_time_ns,e_cycles,e_instructions,e_time_ns,use_case,duo_ns".to_owned();
+        for copy in 0..2 {
+            for field in ["ns", "p_cycles", "p_instructions", "p_time_ns", "e_cycles", "e_instructions", "e_time_ns"] {
+                header += &format!(",copy{copy}_{field}");
+            }
+        }
+        lines.push(header);
         Self { lines, path }
     }
 
@@ -2035,6 +2055,14 @@ struct PerfCounters {
 }
 
 impl PerfCounters {
+    /// The six counts as CSV fields, in the trace header's order.
+    fn csv(&self) -> String {
+        format!(
+            "{},{},{},{},{},{}",
+            self.p_cycles, self.p_instructions, self.p_time_ns, self.e_cycles, self.e_instructions, self.e_time_ns
+        )
+    }
+
     fn since(self, earlier: PerfCounters) -> PerfCounters {
         PerfCounters {
             p_cycles: self.p_cycles - earlier.p_cycles,

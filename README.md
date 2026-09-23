@@ -165,9 +165,12 @@ Duo samples report measured time: the copies' cycle counters describe
 two threads, and no one rate normalises the later finish. Solo samples
 follow the reported-time rule described at the top.
 
-`--trace-clocks PATH` writes one CSV line per sample with the wall
-(`Instant`), thread-CPU, process-CPU, and `mach_absolute_time` readings
-taken around the same work, for clock diagnosis;
+`--trace-clocks PATH` (with `--solo`) writes one CSV line per sample
+interval with the wall (`Instant`), thread-CPU, process-CPU, and
+`mach_absolute_time` readings taken around the solo sample, its use case,
+and the duo sample's two copies: each copy's own time and, on Apple, its
+thread's P- and E-core cycles, instructions, and time, which say where
+each copy ran and at what clock. For clock diagnosis;
 `tools/analyze-clock-trace.py PATH` finds windows where the clocks
 disagree and says what shape the disagreement has.
 

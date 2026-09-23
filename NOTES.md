@@ -202,8 +202,9 @@ automatically.
 - **Best-per-family with `--solo`.** Consider Pareto over both columns
   or reporting two bests. The default duo-only selection already uses duo.
 
-- **Per-copy clock traces.** `--trace-clocks` requires `--solo` and records
-  the solo sample. A trace for each duo copy would extend the diagnosis.
+- **Per-copy clock traces.** `--trace-clocks` (with `--solo`) records the
+  solo sample and, for each duo copy, its time and its thread's P/E
+  counts, read outside the copy's timed interval.
 
 - **Noise floor.** `!` marks cells whose 95% median interval is at least
   5% of its median. Keep VM and native results separate: both are target
