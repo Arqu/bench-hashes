@@ -13,31 +13,33 @@ and the list of ways it can still lie.
 
 ## What is settled
 
-**Sizes.** Twenty: 64 B to 8 MiB by powers of two, plus 3 KiB and 3 MiB.
-Sixteen through 1 MiB came first; 2, 4, and 8 MiB were added to show
-the plateau (every single-threaded contender is flat from 1 MiB; the
-multithreaded ones take longer to level out and 8 MiB is past the
-last-level cache on every target). 3 KiB and 3 MiB are non-power-of-two
-trees, one at the SIMD ramp and one at the plateau; a contender whose
-work splitting assumes powers of two shows it there (and one did). Round
-counts are `lcm(sizes, orders)`, and twenty shares a factor with every
-order count from two to eight; nineteen would have been prime and
-multiplied run time by up to seven. Add sizes in multiples that keep
-that property.
+**Sizes.** Twenty-four: 64 B to 128 MiB by powers of two, plus 3 KiB
+and 3 MiB. Sixteen through 1 MiB came first; 2, 4, and 8 MiB were added
+to show the plateau, then 16 to 128 MiB when the fork's multithreaded
+rate was still climbing at 8 MiB (it levels from 4 MiB with the ranked
+pool; Rayon's still falls at 128 MiB on the VM). 3 KiB and 3 MiB are
+non-power-of-two trees, one at the SIMD ramp and one at the plateau; a
+contender whose work splitting assumes powers of two shows it there (and
+one did).
 
-**Batch sizes.** The many-messages use case adds twenty points on a
-second axis (1 to 16384 messages of 64 B; 3, 6, 12, 24, 48 beside the
-powers of two to leave SIMD groups partly filled), so the round count
-is `lcm(40, orders)`: 80 for eight contenders, which is what `--all`
-selects on Linux and macOS. Both axes rotate as one list of forty
-points. Samples on that axis divide by messages, so the statistics
-pipeline is unchanged and only the unit names and the rate scale
-(1 GB/s per ns/B; 1000 Mmsg/s per ns/msg) differ per plot. Its golden
-anchors are the SHA-256 of a batch's digests concatenated, one line per
-(batch size, seed), so 16384 reference digests cost one hex string.
-The first run on the VM showed every contender losing a third of its
-rate at 16384 messages (1 MiB in, 512 KiB out per copy, two copies):
-the cache, since the SHA-256 crate loses it too.
+**Batch sizes.** Twenty-four on a second axis: 1 to 262144 messages of
+64 B, with 3, 6, 12, 24, 48 beside the powers of two to leave SIMD
+groups partly filled. Samples on that axis divide by messages, so the
+statistics pipeline is unchanged and only the unit names and the rate
+scale (1 GB/s per ns/B; 1000 Mmsg/s per ns/msg) differ per plot. Its
+golden anchors are the SHA-256 of a batch's digests concatenated, one
+line per (batch size, seed).
+
+**Round counts** are `lcm(points, orders)` over both axes' 48 points:
+96 for two, three, four, six, or eight contenders. Add points in
+multiples that keep that property.
+
+**Inputs** are little-endian 64-bit counter words `seed << 48 | index`:
+every block differs (a kernel mixing up lanes fails the golden digests),
+Python's `array('Q')` builds them at C speed (the generator writes every
+vector, 128 MiB included, in five seconds; the earlier byte-per-step
+xorshift could not), and hash speed does not depend on the bytes. The
+bootstrap resampler uses SplitMix64 with multiply-shift ranges.
 
 **Interleaving.** Williams orders over the contenders, size order
 rotated per round. Every contender takes every position and follows

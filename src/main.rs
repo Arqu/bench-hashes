@@ -35,8 +35,8 @@ const CALIBRATION_PROBE_NS: u128 = 500_000;
 const TARGET_SAMPLE_NS: u128 = 1_000_000;
 
 /// Points on the one-message axis, and on the many-messages axis.
-const INPUT_COUNT: usize = 20;
-const BATCH_COUNT: usize = 20;
+const INPUT_COUNT: usize = 24;
+const BATCH_COUNT: usize = 24;
 /// Every measured (contender, x) cell lies on one of the two axes.
 const POINT_COUNT: usize = INPUT_COUNT + BATCH_COUNT;
 /// Every message in the many-messages use case is one BLAKE3 block, the
@@ -61,35 +61,36 @@ const BLAKE3_SERVIL_SOURCE_INFO: &str = env!("BLAKE3_SERVIL_SOURCE_INFO");
 const AB_BLAKE3_SOURCE_INFO: &str = env!("AB_BLAKE3_SOURCE_INFO");
 
 /*
- * Every power of two from 64 B to 8 MiB, plus 3 KiB and 3 MiB. Between 64 B and 1 KiB
- * BLAKE3 is inside one chunk; from 2 KiB to 16 KiB its SIMD paths fill up
- * (4-way NEON at 4 KiB, a sixteen-lane SME2 group at 16 KiB); above that
- * the bulk rate settles. 3 KiB is where the fork's integer + NEON hybrid
- * kernels first overtake hardware SHA-256: one chunk on the integer ALUs
- * beside a NEON pair costs the same as the pair alone. SHA-1DC and SHA-256
- * are block-serial and have only the per-message overhead to show.
+ * Every power of two from 64 B to 128 MiB, plus 3 KiB and 3 MiB. Between
+ * 64 B and 1 KiB BLAKE3 is inside one chunk; from 2 KiB to 16 KiB its SIMD
+ * paths fill up (4-way NEON at 4 KiB, a sixteen-lane SME2 group at 16
+ * KiB); above that the bulk rate settles. 3 KiB is where the fork's integer
+ * + NEON hybrid kernels first overtake hardware SHA-256: one chunk on the
+ * integer ALUs beside a NEON pair costs the same as the pair alone. SHA-1DC
+ * and SHA-256 are block-serial and have only the per-message overhead to
+ * show.
  *
  * The sizes past 1 MiB are there to show the plateau: a contender whose
- * 2, 4, and 8 MiB medians agree has levelled out, and a larger input would
- * tell nothing new. They matter most for the multithreaded contenders,
- * whose per-call overhead (a pool hand-off, a subtree merge) takes longer
- * to amortise than one kernel's; 8 MiB is also past the last-level cache
- * on every machine this benchmark targets, so the plateau it shows is the
- * memory-resident one. 3 MiB is to the plateau what 3 KiB is to the SIMD
- * ramp: a tree that is no power of two, whose left subtree is 2 MiB and
- * right 1 MiB, so a splitter that cuts at subtree boundaries hands its
- * threads unequal work there. Twenty sizes also keep the round count small:
- * rounds are a common multiple of the point count and the order count, and
- * forty (both axes together) shares factors with every order count from
- * two to eight.
+ * 32, 64, and 128 MiB medians agree has levelled out. They matter most
+ * for the multithreaded contenders, whose per-call overhead (a pool
+ * hand-off, a subtree merge) takes longest to amortise: at 8 MiB the
+ * fork's multithreaded rate was still climbing. Everything from 8 MiB up
+ * is past the last-level cache on every machine this benchmark targets,
+ * so the plateau is the memory-resident one. 3 MiB is to the plateau what
+ * 3 KiB is to the SIMD ramp: a tree that is no power of two, whose left
+ * subtree is 2 MiB and right 1 MiB, so a splitter that cuts at subtree
+ * boundaries hands its threads unequal work there. Twenty-four points on
+ * each axis keep the round count small: rounds are a common multiple of
+ * the point count and the order count, and forty-eight shares factors
+ * with every even order count from two to eight.
  *
  * The many-messages axis counts 64-byte messages per batch, from one to
- * 16384 (1 MiB of input). Powers of two from 1 to 16 show a SIMD batch
+ * 262144 (16 MiB of input). Powers of two from 1 to 16 show a SIMD batch
  * filling up (the blake3 crate's hash_many takes four blocks at a time on
  * NEON, sixteen with AVX-512); 3, 6, 12, 24, and 48 leave a group
  * partly filled or leave a remainder past the sixteen-message groups
- * ab-blake3 forms; from 64 up the per-batch overhead amortises and the
- * rate settles.
+ * ab-blake3 forms; from 64 up the per-batch overhead amortises, and the
+ * batches past 16384 show the multithreaded batch calls levelling out.
  */
 const POINTS: [Point; POINT_COUNT] = [
     Point::one("64 B", 64),
@@ -112,6 +113,10 @@ const POINTS: [Point; POINT_COUNT] = [
     Point::one("3 MiB", 3 * 1024 * 1024),
     Point::one("4 MiB", 4 * 1024 * 1024),
     Point::one("8 MiB", 8 * 1024 * 1024),
+    Point::one("16 MiB", 16 * 1024 * 1024),
+    Point::one("32 MiB", 32 * 1024 * 1024),
+    Point::one("64 MiB", 64 * 1024 * 1024),
+    Point::one("128 MiB", 128 * 1024 * 1024),
     Point::many("1", 1),
     Point::many("2", 2),
     Point::many("3", 3),
@@ -132,6 +137,10 @@ const POINTS: [Point; POINT_COUNT] = [
     Point::many("4096", 4096),
     Point::many("8192", 8192),
     Point::many("16384", 16384),
+    Point::many("32768", 32768),
+    Point::many("65536", 65536),
+    Point::many("131072", 131072),
+    Point::many("262144", 262144),
 ];
 
 /// results[contender_index][point_index], contenders in the roster's
@@ -631,6 +640,10 @@ struct MachineMetadata {
     cpu_type: String,
     cpu_count: usize,
     os_type: String,
+    /// What the OS says about the CPU beyond its brand, so two machines
+    /// that report the same brand (every Linux VM on Apple silicon says
+    /// "aarch64") can be told apart: see cpu_identity.
+    cpu_identity: String,
 }
 
 /*
@@ -742,9 +755,9 @@ Keys: blake3, ab-blake3, blake3-servil, sha256, sha256-ring, sha1dc; sha256-cc o
       default runs, or when named; blake3-servil-mt1 (the multithreaded call
       capped at one thread, a check that it matches blake3-servil) on request
 
-Every run measures two use cases: one message per call at twenty input sizes
-from 64 B to 8 MiB, and a batch of 64-byte messages per call at twenty batch
-sizes from 1 to 16384 messages (the multithreaded contenders sit that one out).
+Every run measures two use cases: one message per call at twenty-four input
+sizes from 64 B to 128 MiB, and a batch of 64-byte messages per call at
+twenty-four batch sizes from 1 to 262144 messages (BLAKE3 mt sits that one out).
 
   --solo                           also take a solo sample (one copy, one
                                    thread) beside each duo sample and report
@@ -859,21 +872,21 @@ fn main() {
      * keeps the Pareto-best per family and reports on those alone. Timing
      * cost is the same as --all; only the report narrows.
      */
-    let (roster, results, basis, selection_note) = match selection {
+    let (roster, results, basis, duo_samples, selection_note) = match selection {
         Selection::Explicit => {
             let keys = explicit.iter().map(|algorithm| algorithm.key()).collect::<Vec<_>>().join(",");
             let roster = Roster::new(explicit, thorough, solo);
-            let (results, basis) = measure_all(&roster, trace.as_mut());
-            (roster, results, basis, format!("--contenders {keys}"))
+            let (results, basis, duo_samples) = measure_all(&roster, trace.as_mut());
+            (roster, results, basis, duo_samples, format!("--contenders {keys}"))
         }
         Selection::All => {
             let roster = Roster::new(available, thorough, solo);
-            let (results, basis) = measure_all(&roster, trace.as_mut());
-            (roster, results, basis, String::from("every contender available on this machine"))
+            let (results, basis, duo_samples) = measure_all(&roster, trace.as_mut());
+            (roster, results, basis, duo_samples, String::from("every contender available on this machine"))
         }
         Selection::Best => {
             let full = Roster::new(available, thorough, solo);
-            let (full_results, basis) = measure_all(&full, trace.as_mut());
+            let (full_results, basis, full_samples) = measure_all(&full, trace.as_mut());
             let (keep, note) = choose_best_per_family(&full, &full_results);
             let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect(), thorough, solo);
             let results: Results = full_results
@@ -882,7 +895,13 @@ fn main() {
                 .filter(|(index, _)| keep.contains(index))
                 .map(|(_, row)| row.clone())
                 .collect();
-            (roster, results, basis, note)
+            let duo_samples: DuoSamples = full_samples
+                .into_iter()
+                .enumerate()
+                .filter(|(index, _)| keep.contains(index))
+                .map(|(_, row)| row)
+                .collect();
+            (roster, results, basis, duo_samples, note)
         }
     };
 
@@ -909,6 +928,11 @@ fn main() {
     let stem = "bench-hashes.duo";
     let text_path = directory.join(format!("{stem}.result.txt"));
     let svg_path = directory.join(format!("{stem}.graph.svg"));
+    let samples_path = directory.join(format!("{stem}.samples.tsv"));
+    let samples = generate_samples_tsv(&roster, &duo_samples, &machine, &selection_note);
+    fs::write(&samples_path, &samples).unwrap_or_else(|error| {
+        panic!("failed to write {}: {error}", samples_path.display())
+    });
 
     fs::write(&text_path, &text).unwrap_or_else(|error| {
         panic!("failed to write {}: {error}", text_path.display())
@@ -1055,7 +1079,7 @@ fn cell(results: &Results, algorithm_index: usize, point_index: usize) -> &Cell 
         .expect("the contender takes part in this point's use case")
 }
 
-fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results, TimeBasis) {
+fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results, TimeBasis, DuoSamples) {
     let inputs: Vec<Vec<u8>> = POINTS.iter().map(|point| make_input(point.bytes)).collect();
     /*
      * The second copy in a duo sample hashes its own buffer of the same
@@ -1246,17 +1270,17 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
             assert_eq!(duo.len(), roster.rounds, "one duo sample per round");
             let cell = if roster.solo {
                 let mut cell = summarize_cell(&samples[algorithm_index][size_index], roster.rounds, basis);
-                cell.duo = Some(summarize(duo));
+                cell.duo = Some(summarize(&mut duo.clone()));
                 cell
             } else {
                 /* Duo-only: the reported column is the duo measurement. */
-                Cell { time: summarize(duo), duo: None }
+                Cell { time: summarize(&mut duo.clone()), duo: None }
             };
             results[algorithm_index][size_index] = Some(cell);
         }
     }
 
-    (results, basis)
+    (results, basis, duo_samples)
 }
 
 /*
@@ -1437,26 +1461,18 @@ fn make_input(size: usize) -> Vec<u8> {
     make_input_seeded(size, 0)
 }
 
-/// A second buffer of the same size with different contents: `seed` 0 is
-/// make_input's buffer. Positive-length buffers vary by seed; size zero
-/// produces the empty input. This stream is frozen by test_vectors.rs.
+/// The input of `size` bytes for `seed`: `seed` 0 is make_input's buffer,
+/// seed 1 the duo copy's. This stream is frozen by test_vectors.rs.
 fn make_input_seeded(size: usize, seed: u64) -> Vec<u8> {
-    let mut input = vec![0_u8; size];
-
     /*
-     * Deterministic input generation happens outside timed intervals.
-     * Cryptographic hash performance should not depend on these byte values.
+     * Little-endian 64-bit words `seed << 48 | index`: every block of every
+     * input differs, so a kernel that mixed up its lanes would fail the
+     * golden digests, and the two seeds give the duo copies different
+     * contents. Hash speed does not depend on the bytes. Generated
+     * outside timed intervals.
      */
-    let mut state =
-        0x6a09_e667_f3bc_c909_u64 ^ (size as u64).rotate_left(17) ^ seed.wrapping_mul(0x9e37_79b9_7f4a_7c15);
-
-    for byte in &mut input {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        *byte = (state >> 24) as u8;
-    }
-
+    let mut input: Vec<u8> = (0..size.div_ceil(8) as u64).flat_map(|index| (seed << 48 | index).to_le_bytes()).collect();
+    input.truncate(size);
     input
 }
 
@@ -1659,7 +1675,7 @@ fn ab_blake3_hash_many(blocks: &[[u8; MESSAGE_LEN]], outputs: &mut [[u8; 32]]) {
             }
         };
     }
-    exact!(1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384)
+    exact!(1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144)
 }
 
 /*
@@ -1848,7 +1864,7 @@ mod common_crypto {
     unsafe extern "C" {
         fn CC_SHA256_Init(ctx: *mut Context) -> i32;
         /// CC_LONG is uint32_t, so one Update takes at most 4 GiB; every
-        /// input here is at most 8 MiB.
+        /// input here is at most 128 MiB.
         fn CC_SHA256_Update(ctx: *mut Context, data: *const u8, len: u32) -> i32;
         fn CC_SHA256_Final(md: *mut u8, ctx: *mut Context) -> i32;
     }
@@ -2231,23 +2247,27 @@ fn summarize(samples: &mut [u64]) -> Statistics {
  * 95% percentile-bootstrap interval of the median: resample with
  * replacement BOOTSTRAP_RESAMPLES times, take each resample's median, and
  * report the 2.5th and 97.5th percentiles of those. A fixed-seed
- * xorshift makes the result reproducible run to run for the same samples.
+ * SplitMix64 makes the result reproducible run to run for the same samples.
  * Requires a sorted, non-empty slice.
  */
 fn bootstrap_median_interval(sorted: &[u64]) -> (u64, u64) {
     let n = sorted.len();
-    let mut state: u64 = 0x9E37_79B9_7F4A_7C15 ^ (n as u64);
+    /* SplitMix64 (Steele, Lea & Flood 2014), seeded by the sample count. */
+    let mut state: u64 = n as u64;
     let mut next = || {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        state
+        state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^ (z >> 31)
     };
     let mut medians = Vec::with_capacity(BOOTSTRAP_RESAMPLES);
     let mut resample = vec![0u64; n];
     for _ in 0..BOOTSTRAP_RESAMPLES {
         for slot in resample.iter_mut() {
-            *slot = sorted[(next() % n as u64) as usize];
+            /* The high half of a 64 × 64-bit product: an index in 0..n with
+               a bias below n / 2⁶⁴ (Lemire's multiply-shift). */
+            *slot = sorted[((u128::from(next()) * n as u128) >> 64) as usize];
         }
         resample.sort_unstable();
         medians.push(median_of_sorted(&resample));
@@ -2668,6 +2688,60 @@ fn append_kernel_report(output: &mut String, algorithm: Algorithm, use_case: Use
     }
 }
 
+/*
+ * Every duo sample, for tools that do their own statistics (the fork's
+ * performance-regression check reads this file). Lines starting with '#'
+ * carry the provenance and machine identity as `key: value`; then one row
+ * per measured cell: contender key, use case, point label, the unit a
+ * sample is per (`B` or `msg`), and the samples in picoseconds per unit,
+ * comma-separated, in the order taken.
+ */
+fn generate_samples_tsv(roster: &Roster, duo_samples: &DuoSamples, machine: &MachineMetadata, selection_note: &str) -> String {
+    let mut out = String::new();
+    writeln!(out, "# bench-hashes samples v1").unwrap();
+    for (key, value) in [
+        ("timestamp", machine.timestamp.as_str()),
+        ("bench-hashes version", BENCH_VERSION),
+        ("git commit", GIT_COMMIT),
+        ("git clean status", GIT_CLEAN_STATUS),
+        ("blake3-servil source", BLAKE3_SERVIL_SOURCE_INFO),
+        ("blake3 source", BLAKE3_SOURCE_INFO),
+        ("cpu type", machine.cpu_type.as_str()),
+        ("cpu count", machine.cpu_count.to_string().as_str()),
+        ("os type", machine.os_type.as_str()),
+        ("cpu identity", machine.cpu_identity.as_str()),
+        ("rust compiler", RUSTC_VERSION),
+        ("build target", BUILD_TARGET),
+        ("target features", TARGET_FEATURES),
+        ("sample clock", sample_clock::NAME),
+        ("contenders", selection_note),
+        ("rounds", roster.rounds.to_string().as_str()),
+    ] {
+        writeln!(out, "# {key}: {value}").unwrap();
+    }
+    for &algorithm in &roster.algorithms {
+        for use_case in UseCase::ALL.iter().filter(|&&use_case| algorithm.takes_part(use_case)) {
+            writeln!(out, "# kernel platform {} {:?}: {}", algorithm.key(), use_case, detect_kernels(algorithm, *use_case).platform).unwrap();
+        }
+    }
+    writeln!(out, "contender\tuse_case\tpoint\tunit\tps_per_unit").unwrap();
+    for (algorithm_index, &algorithm) in roster.algorithms.iter().enumerate() {
+        for (point_index, point) in POINTS.iter().enumerate() {
+            let samples = &duo_samples[algorithm_index][point_index];
+            if samples.is_empty() {
+                continue;
+            }
+            let unit = match point.use_case {
+                UseCase::OneMessage => "B",
+                UseCase::ManyMessages => "msg",
+            };
+            let values: Vec<String> = samples.iter().map(u64::to_string).collect();
+            writeln!(out, "{}\t{:?}\t{}\t{unit}\t{}", algorithm.key(), point.use_case, point.label, values.join(",")).unwrap();
+        }
+    }
+    out
+}
+
 fn generate_text(
     roster: &Roster,
     results: &Results,
@@ -2694,6 +2768,7 @@ fn generate_text(
     writeln!(output, "CPU type: {}", machine.cpu_type).unwrap();
     writeln!(output, "CPU count: {}", machine.cpu_count).unwrap();
     writeln!(output, "OS type: {}", machine.os_type).unwrap();
+    writeln!(output, "CPU identity: {}", machine.cpu_identity).unwrap();
     writeln!(output, "Rust compiler: {RUSTC_VERSION}").unwrap();
     writeln!(output, "Build target: {BUILD_TARGET}").unwrap();
     writeln!(output, "Target features: {TARGET_FEATURES}").unwrap();
@@ -2727,7 +2802,7 @@ fn generate_text(
     }
     writeln!(
         output,
-        "Use cases: one message per call, at twenty input sizes from 64 B to 8 MiB; and many messages per call, a batch of {MESSAGE_LEN}-byte messages at twenty batch sizes from 1 to 16384. In the second, a contender with a batch entry point takes the batch as one call (ab-blake3's single_block_hash_many_exact::<N>, BLAKE3 servil's hash_many, BLAKE3 servil mt's hash_many_multithreaded); every other contender hashes the batch one message per call of its plain entry point; BLAKE3 mt takes no part in it."
+        "Use cases: one message per call, at twenty-four input sizes from 64 B to 128 MiB; and many messages per call, a batch of {MESSAGE_LEN}-byte messages at twenty-four batch sizes from 1 to 262144. In the second, a contender with a batch entry point takes the batch as one call (ab-blake3's single_block_hash_many_exact::<N>, BLAKE3 servil's hash_many, BLAKE3 servil mt's hash_many_multithreaded); every other contender hashes the batch one message per call of its plain entry point; BLAKE3 mt takes no part in it."
     )
     .unwrap();
     writeln!(output).unwrap();
@@ -2921,7 +2996,47 @@ fn machine_metadata() -> MachineMetadata {
         cpu_type,
         cpu_count: cpus.len(),
         os_type,
+        cpu_identity: cpu_identity(),
     }
+}
+
+/*
+ * The CPU's identity for comparing runs across machines. Linux: the first
+ * processor's implementer, variant, part, and revision (a hypervisor may
+ * hide the part), its feature list (which pins an ARM core's generation),
+ * and the machine model the device tree or DMI names (a VM says so). macOS:
+ * the brand string and the core count of each performance level. Empty
+ * where neither source exists.
+ */
+fn cpu_identity() -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo") {
+        let first = cpuinfo.split("\n\n").next().unwrap_or("");
+        for key in ["CPU implementer", "CPU variant", "CPU part", "CPU revision", "model name", "Features", "flags"] {
+            if let Some(line) = first.lines().find(|line| line.split(':').next().is_some_and(|k| k.trim() == key)) {
+                parts.push(format!("{key}: {}", line.split_once(':').unwrap().1.trim()));
+            }
+        }
+        for path in ["/sys/firmware/devicetree/base/compatible", "/sys/class/dmi/id/product_name"] {
+            if let Ok(model) = fs::read(path) {
+                let model = String::from_utf8_lossy(&model).replace('\0', " ").trim().to_owned();
+                if !model.is_empty() {
+                    parts.push(format!("machine: {model}"));
+                }
+            }
+        }
+    }
+    if cfg!(target_os = "macos") {
+        for key in ["machdep.cpu.brand_string", "hw.perflevel0.physicalcpu", "hw.perflevel1.physicalcpu"] {
+            if let Ok(out) = std::process::Command::new("sysctl").args(["-n", key]).output() {
+                let value = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+                if out.status.success() && !value.is_empty() {
+                    parts.push(format!("{key}: {value}"));
+                }
+            }
+        }
+    }
+    parts.join(" · ")
 }
 
 fn utc_timestamp() -> String {
@@ -3803,7 +3918,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
             dots.push_str("    </g>\n");
 
             /*
-             * With twenty columns, a value at every dot would overprint.
+             * With twenty-four columns, a value at every dot would overprint.
              * Label the ends and every fourth point counted from the last,
              * so the axis's far end and the points four apart below it
              * carry values; hovering a dot shows the rest. Edge columns
