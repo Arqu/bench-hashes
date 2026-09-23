@@ -556,11 +556,14 @@ const PS_PER_NS: u64 = 1_000;
  * and outliers barely move it. `minimum` and `maximum` are the extremes
  * seen, for the text report.
  *
- * `modes` is set when the samples split into two clusters at least 4%
- * apart with a tenth or more of the samples on each side. That is a real
- * two-speed behaviour of the code in this context (the interleaving's
- * neighbours, branch predictor state), which a single median cannot
- * express; the hover panel reports both clusters.
+ * `two_speeds` is set when the samples split into two clusters at least
+ * 4% apart, their medians at least 1.25× apart, with a tenth or more of
+ * the samples on each side: the code ran
+ * at two speeds in this context (two SME2 copies sharing a unit or not,
+ * the interleaving's neighbours), which a single median cannot express and
+ * would report as whichever cluster happens to hold the middle sample.
+ * Each speed then carries its own median and interval, and every report
+ * shows both, the faster first.
  */
 #[derive(Clone, Copy)]
 struct Statistics {
@@ -571,25 +574,53 @@ struct Statistics {
     median: u64,
     high: u64,
     maximum: u64,
-    modes: Option<Modes>,
+    two_speeds: Option<[Speed; 2]>,
 }
 
-/// Two clusters within one cell: each cluster's median and sample count.
+/// One speed a cell ran at: the median of its samples, the 95% bootstrap
+/// interval of that median, and how many samples it holds.
 #[derive(Clone, Copy)]
-struct Modes {
-    lower_median: u64,
-    lower_count: usize,
-    upper_median: u64,
-    upper_count: usize,
+struct Speed {
+    median: u64,
+    low: u64,
+    high: u64,
+    count: usize,
+}
+
+impl Statistics {
+    /// The cell's speeds, faster first: one, or two for a two-speed cell.
+    fn speeds(&self) -> Vec<Speed> {
+        match self.two_speeds {
+            Some(pair) => pair.to_vec(),
+            None => vec![Speed { median: self.median, low: self.low, high: self.high, count: self.count }],
+        }
+    }
+
+    /// The widest 95% interval among the cell's speeds, in permille of
+    /// its median (see spread_permille).
+    fn widest_spread_permille(&self) -> u64 {
+        self.speeds().into_iter().map(spread_permille).max().unwrap()
+    }
+
+    /// The slower speed: what a user may meet in this cell.
+    fn slowest(&self) -> Speed {
+        *self.speeds().last().unwrap()
+    }
 }
 
 /// Bootstrap resamples per cell. 400 gives the 2.5th and 97.5th percentiles
 /// to within about one rank; the cost is microseconds per cell.
 const BOOTSTRAP_RESAMPLES: usize = 400;
 /// Consecutive sorted samples this far apart (permille of the median) split
-/// the cell into modes, when both sides hold at least MODE_MIN_SHARE.
+/// the cell into two speeds, when both sides hold at least MODE_MIN_SHARE
+/// and the slower side's median is at least TWO_SPEED_RATIO_PERMILLE of the
+/// faster's: a difference a designer would plan around. Measured on the
+/// VM: SME2 copies sharing a unit or not split 1.7–2.0×; the machine's
+/// own noise puts a tenth to a third of many cells' samples 10–14% slow,
+/// for every contender alike, which 1.25× leaves as one speed.
 const MODE_GAP_PERMILLE: u64 = 40;
 const MODE_MIN_SHARE_PERMILLE: usize = 100;
+const TWO_SPEED_RATIO_PERMILLE: u64 = 1250;
 
 /*
  * The two scenarios every run measures. Solo: one copy of the contender
@@ -2234,7 +2265,7 @@ fn summarize(samples: &mut [u64]) -> Statistics {
         median,
         high,
         maximum: samples[samples.len() - 1],
-        modes: find_modes(samples, median),
+        two_speeds: two_speeds(samples, median),
     }
 }
 
@@ -2279,7 +2310,7 @@ fn bootstrap_median_interval(sorted: &[u64]) -> (u64, u64) {
  * the median between consecutive values with at least MODE_MIN_SHARE on
  * each side. The widest such gap splits them. Requires a sorted slice.
  */
-fn find_modes(sorted: &[u64], median: u64) -> Option<Modes> {
+fn two_speeds(sorted: &[u64], median: u64) -> Option<[Speed; 2]> {
     let n = sorted.len();
     let min_side = (n * MODE_MIN_SHARE_PERMILLE).div_ceil(1000).max(1);
     let threshold = median * MODE_GAP_PERMILLE / 1000;
@@ -2290,12 +2321,13 @@ fn find_modes(sorted: &[u64], median: u64) -> Option<Modes> {
             best = Some((split, gap));
         }
     }
-    best.map(|(split, _)| Modes {
-        lower_median: median_of_sorted(&sorted[..split]),
-        lower_count: split,
-        upper_median: median_of_sorted(&sorted[split..]),
-        upper_count: n - split,
-    })
+    let speed = |part: &[u64]| {
+        let (low, high) = bootstrap_median_interval(part);
+        Speed { median: median_of_sorted(part), low, high, count: part.len() }
+    };
+    let (split, _) = best?;
+    let pair = [speed(&sorted[..split]), speed(&sorted[split..])];
+    (pair[1].median * 1000 >= pair[0].median * TWO_SPEED_RATIO_PERMILLE).then_some(pair)
 }
 
 /*
@@ -2747,7 +2779,7 @@ fn generate_text(roster: &Roster, results: &Results, machine: &MachineMetadata, 
     writeln!(output, "Hash speed on {} ({}, {} CPUs), {}", machine.cpu_type, machine.os_type, machine.cpu_count, machine.timestamp).unwrap();
     writeln!(
         output,
-        "{} run: {} rounds{}. Each cell is the median time per unit; lower is better. ~ marks a median known only to within {}%.",
+        "{} run: {} rounds{}. Each cell is the median time per unit, lower is better; a|b: the cell ran at two speeds, both medians given, faster first; ~ marks a median known only to within {}%.",
         if roster.points.iter().all(|&index| POINTS[index].quick()) { "Quick" } else { "Thorough" },
         roster.rounds,
         if roster.points.iter().all(|&index| POINTS[index].quick()) { "; --thorough confirms and adds the largest inputs and batches" } else { "" },
@@ -2764,10 +2796,10 @@ fn generate_text(roster: &Roster, results: &Results, machine: &MachineMetadata, 
         }
     }
 
-    let findings = checks(roster, results);
+    let (findings, two_speed) = checks(roster, results);
     writeln!(
         output,
-        "CHECKS: where BLAKE3 servil or servil mt is slower than another contender, or slower per unit on larger work than on a size that divides it; by {}% or more, with the two medians' 95% intervals apart.",
+        "CHECKS: where BLAKE3 servil or servil mt is slower than another contender, or slower per unit on larger work than on a size that divides it; each cell judged by its slower speed, by {}% or more, with the two medians' 95% intervals apart.",
         CHECK_GAP_PERMILLE / 10,
     )
     .unwrap();
@@ -2776,6 +2808,15 @@ fn generate_text(roster: &Roster, results: &Results, machine: &MachineMetadata, 
     }
     for finding in &findings {
         writeln!(output, "  {finding}").unwrap();
+    }
+    writeln!(output).unwrap();
+
+    writeln!(output, "TWO SPEEDS: the servil cells whose samples split into two speeds; a|b gives both medians, faster first, wherever a table shows one.").unwrap();
+    if two_speed.is_empty() {
+        writeln!(output, "  none").unwrap();
+    }
+    for line in &two_speed {
+        writeln!(output, "  {line}").unwrap();
     }
     writeln!(output).unwrap();
 
@@ -2812,15 +2853,16 @@ fn append_table(output: &mut String, roster: &Roster, results: &Results, scenari
     writeln!(output, "  {} ({})", use_case.heading(), use_case.time_unit()).unwrap();
     write!(output, "  {:<8}", use_case.column()).unwrap();
     for &algorithm_index in &contenders {
-        write!(output, "  {:>13}", column_heading(roster.algorithms[algorithm_index])).unwrap();
+        write!(output, "  {:>14}", column_heading(roster.algorithms[algorithm_index])).unwrap();
     }
     writeln!(output).unwrap();
     for &point_index in &points {
         write!(output, "  {:<8}", POINTS[point_index].label).unwrap();
         for &algorithm_index in &contenders {
             let statistics = cell(results, algorithm_index, point_index).get(scenario);
-            let mark = if spread_permille(statistics) >= SPREAD_WIDE_PERMILLE { "~" } else { " " };
-            write!(output, "  {:>12}{mark}", format_ps(statistics.median)).unwrap();
+            let mark = if statistics.widest_spread_permille() >= SPREAD_WIDE_PERMILLE { "~" } else { " " };
+            let figures: Vec<String> = statistics.speeds().iter().map(|speed| format_ps(speed.median)).collect();
+            write!(output, "  {:>13}{mark}", figures.join("|")).unwrap();
         }
         writeln!(output).unwrap();
     }
@@ -2829,19 +2871,23 @@ fn append_table(output: &mut String, roster: &Roster, results: &Results, scenari
 
 /*
  * The checks a regression hunter would make by eye, for the servil
- * contenders, each a comparison of two medians whose 95% intervals are
- * apart and at least CHECK_GAP_PERMILLE different:
+ * contenders. A cell is judged by its slower speed, which a user may meet.
+ * Each check compares two such speeds whose 95% intervals are apart and
+ * whose medians differ by CHECK_GAP_PERMILLE or more:
  * - slower than another contender at the same point: BLAKE3 servil
  *   against the single-threaded ones, BLAKE3 servil mt against all (BLAKE3
  *   servil too: it could have run single-threaded);
  * - slower per unit at a point N than at a smaller point M that divides
  *   it (it could have done M's work N / M times).
- * Consecutive points with the same finding share a line.
+ * Beside them, the servil cells that ran at two speeds. Consecutive points
+ * with the same finding share a line; identical lines merge across the two
+ * contenders and the two scenarios; the worst comes first.
  */
 const CHECK_GAP_PERMILLE: u64 = 50;
 
-fn checks(roster: &Roster, results: &Results) -> Vec<String> {
-    let slower = |slow: Statistics, fast: Statistics| {
+/// (checks, two-speed cells), each a list of report lines.
+fn checks(roster: &Roster, results: &Results) -> (Vec<String>, Vec<String>) {
+    let slower = |slow: Speed, fast: Speed| {
         slow.low > fast.high && slow.median * 1000 >= fast.median * (1000 + CHECK_GAP_PERMILLE)
     };
     /* A claim about one contender in one scenario; its worst case in figures. */
@@ -2853,6 +2899,7 @@ fn checks(roster: &Roster, results: &Results) -> Vec<String> {
         worst: String,
     }
     let mut claims: Vec<Claim> = Vec::new();
+    let mut pairs: Vec<Claim> = Vec::new();
     for (a, &algorithm) in roster.algorithms.iter().enumerate() {
         if !matches!(algorithm, Algorithm::Blake3Servil | Algorithm::Blake3ServilMt) {
             continue;
@@ -2860,113 +2907,133 @@ fn checks(roster: &Roster, results: &Results) -> Vec<String> {
         for scenario in Scenario::ALL {
             for use_case in UseCase::ALL.into_iter().filter(|&use_case| algorithm.takes_part(use_case)) {
                 let points: Vec<usize> = use_case.points().filter(|&index| roster.measures(index)).collect();
-                let median = |algorithm_index: usize, point_index: usize| cell(results, algorithm_index, point_index).get(scenario).median;
+                let stats = |algorithm_index: usize, point_index: usize| cell(results, algorithm_index, point_index).get(scenario);
+                let at = |algorithm_index: usize, point_index: usize| stats(algorithm_index, point_index).slowest();
                 let unit = use_case.time_unit();
-                let mut claim = |text: String, (slow, fast): (u64, u64), at: String| {
-                    claims.push(Claim {
-                        contender: algorithm,
-                        scenario,
-                        text,
-                        worst_permille: slow * 1000 / fast,
-                        worst: format!("{at}, {} against {} {unit}", format_ps(slow), format_ps(fast)),
-                    });
-                };
                 let span = |run: &[usize]| match (run, use_case) {
                     ([one], _) => POINTS[*one].name(),
                     ([first, .., last], UseCase::ManyMessages) => format!("{} to {} messages", POINTS[*first].label, POINTS[*last].label),
                     ([first, .., last], UseCase::OneMessage) => format!("{} to {}", POINTS[*first].label, POINTS[*last].label),
                     ([], _) => unreachable!("a run holds a point"),
                 };
-                /* Runs of consecutive points where this contender is slower than another. */
+                /* The runs of consecutive points where `flag` holds. */
+                let runs = |flag: &dyn Fn(usize) -> bool| -> Vec<Vec<usize>> {
+                    let mut runs: Vec<Vec<usize>> = Vec::new();
+                    let mut current: Vec<usize> = Vec::new();
+                    for &index in &points {
+                        if flag(index) {
+                            current.push(index);
+                        } else if !current.is_empty() {
+                            runs.push(std::mem::take(&mut current));
+                        }
+                    }
+                    if !current.is_empty() {
+                        runs.push(current);
+                    }
+                    runs
+                };
+                let claim = |into: &mut Vec<Claim>, text: String, (slow, fast): (u64, u64), worst: String| {
+                    into.push(Claim { contender: algorithm, scenario, text, worst_permille: slow * 1000 / fast, worst });
+                };
+                let against = |at_point: String, slow: u64, fast: u64| format!("{at_point}, {} against {} {unit}", format_ps(slow), format_ps(fast));
+
+                /* Slower than another contender. */
                 for (b, &other) in roster.algorithms.iter().enumerate() {
                     /* A single-threaded contender answers to single-threaded ones alone. */
                     if b == a || !other.takes_part(use_case) || (!algorithm.multithreaded() && other.multithreaded()) {
                         continue;
                     }
-                    let flags: Vec<bool> = points
-                        .iter()
-                        .map(|&index| slower(cell(results, a, index).get(scenario), cell(results, b, index).get(scenario)))
-                        .collect();
-                    let mut k = 0;
-                    while k < points.len() {
-                        if !flags[k] {
-                            k += 1;
-                            continue;
-                        }
-                        let start = k;
-                        while k < points.len() && flags[k] {
-                            k += 1;
-                        }
-                        let run = &points[start..k];
-                        let worst = *run.iter().max_by_key(|&&index| median(a, index) * 1000 / median(b, index)).unwrap();
-                        claim(format!("slower than {}: {}", other.name(), span(run)), (median(a, worst), median(b, worst)), POINTS[worst].name());
+                    for run in runs(&|index| slower(at(a, index), at(b, index))) {
+                        let worst = *run.iter().max_by_key(|&&index| at(a, index).median * 1000 / at(b, index).median).unwrap();
+                        let (mine, theirs) = (at(a, worst).median, at(b, worst).median);
+                        claim(&mut claims, format!("slower than {}: {}", other.name(), span(&run)), (mine, theirs), against(POINTS[worst].name(), mine, theirs));
                     }
                 }
+
                 /* Larger work slower per unit than a size that divides it, runs sharing that size. */
                 let size = |index: usize| match use_case {
                     UseCase::OneMessage => POINTS[index].bytes,
                     UseCase::ManyMessages => POINTS[index].messages,
                 };
-                let divisor_for: Vec<Option<usize>> = points
-                    .iter()
-                    .map(|&large| {
-                        points
-                            .iter()
-                            .copied()
-                            .filter(|&small| size(small) < size(large) && size(large) % size(small) == 0)
-                            .filter(|&small| slower(cell(results, a, large).get(scenario), cell(results, a, small).get(scenario)))
-                            .max_by_key(|&small| median(a, large) * 1000 / median(a, small))
-                    })
-                    .collect();
+                let divisor_for = |large: usize| {
+                    points
+                        .iter()
+                        .copied()
+                        .filter(|&small| size(small) < size(large) && size(large) % size(small) == 0)
+                        .filter(|&small| slower(at(a, large), at(a, small)))
+                        .max_by_key(|&small| at(a, large).median * 1000 / at(a, small).median)
+                };
                 let mut k = 0;
                 while k < points.len() {
-                    let Some(small) = divisor_for[k] else {
+                    let Some(small) = divisor_for(points[k]) else {
                         k += 1;
                         continue;
                     };
                     let start = k;
-                    while k < points.len() && divisor_for[k] == Some(small) {
+                    while k < points.len() && divisor_for(points[k]) == Some(small) {
                         k += 1;
                     }
                     let run = &points[start..k];
-                    let worst = *run.iter().max_by_key(|&&index| median(a, index) * 1000 / median(a, small)).unwrap();
+                    let worst = *run.iter().max_by_key(|&&index| at(a, index).median * 1000 / at(a, small).median).unwrap();
+                    let (large, base) = (at(a, worst).median, at(a, small).median);
                     claim(
+                        &mut claims,
                         format!("slower per unit at {} than at {}", span(run), POINTS[small].name()),
-                        (median(a, worst), median(a, small)),
-                        POINTS[worst].name(),
+                        (large, base),
+                        against(POINTS[worst].name(), large, base),
+                    );
+                }
+
+                /* Two-speed cells. */
+                for run in runs(&|index| stats(a, index).two_speeds.is_some()) {
+                    let pair = |index: usize| stats(a, index).two_speeds.unwrap();
+                    let worst = *run.iter().max_by_key(|&&index| pair(index)[1].median * 1000 / pair(index)[0].median).unwrap();
+                    let [fast, slow] = pair(worst);
+                    claim(
+                        &mut pairs,
+                        format!("two speeds: {}", span(&run)),
+                        (slow.median, fast.median),
+                        format!(
+                            "{}, {}|{} {unit}, {}% of samples at the faster",
+                            POINTS[worst].name(), format_ps(fast.median), format_ps(slow.median),
+                            fast.count * 100 / (fast.count + slow.count),
+                        ),
                     );
                 }
             }
         }
     }
     /* Claims with the same text merge across contenders and scenarios; the worst case leads. */
-    let mut merged: Vec<(Vec<Algorithm>, Vec<Scenario>, String, u64, String)> = Vec::new();
-    for claim in claims {
-        match merged.iter_mut().find(|entry| entry.2 == claim.text) {
-            Some(entry) => {
-                if !entry.0.contains(&claim.contender) {
-                    entry.0.push(claim.contender);
+    let render = |claims: Vec<Claim>| -> Vec<String> {
+        let mut merged: Vec<(Vec<Algorithm>, Vec<Scenario>, String, u64, String)> = Vec::new();
+        for claim in claims {
+            match merged.iter_mut().find(|entry| entry.2 == claim.text) {
+                Some(entry) => {
+                    if !entry.0.contains(&claim.contender) {
+                        entry.0.push(claim.contender);
+                    }
+                    if !entry.1.contains(&claim.scenario) {
+                        entry.1.push(claim.scenario);
+                    }
+                    if claim.worst_permille > entry.3 {
+                        entry.3 = claim.worst_permille;
+                        entry.4 = claim.worst;
+                    }
                 }
-                if !entry.1.contains(&claim.scenario) {
-                    entry.1.push(claim.scenario);
-                }
-                if claim.worst_permille > entry.3 {
-                    entry.3 = claim.worst_permille;
-                    entry.4 = claim.worst;
-                }
+                None => merged.push((vec![claim.contender], vec![claim.scenario], claim.text, claim.worst_permille, claim.worst)),
             }
-            None => merged.push((vec![claim.contender], vec![claim.scenario], claim.text, claim.worst_permille, claim.worst)),
         }
-    }
-    merged.sort_by(|x, y| y.3.cmp(&x.3));
-    merged
-        .into_iter()
-        .map(|(contenders, scenarios, text, permille, worst)| {
-            let who: Vec<&str> = contenders.iter().map(|algorithm| algorithm.name()).collect();
-            let when: Vec<&str> = scenarios.iter().map(|scenario| scenario.key()).collect();
-            format!("x{}.{:02} {} ({}) {text}; most at {worst}", permille / 1000, permille % 1000 / 10, who.join(", "), when.join(", "))
-        })
-        .collect()
+        merged.sort_by(|x, y| y.3.cmp(&x.3));
+        merged
+            .into_iter()
+            .map(|(contenders, scenarios, text, permille, worst)| {
+                let who: Vec<&str> = contenders.iter().map(|algorithm| algorithm.name()).collect();
+                let when: Vec<&str> = scenarios.iter().map(|scenario| scenario.key()).collect();
+                format!("x{}.{:02} {} ({}) {text}; most at {worst}", permille / 1000, permille % 1000 / 10, who.join(", "), when.join(", "))
+            })
+            .collect()
+    };
+    (render(claims), render(pairs))
 }
 
 /// Column heading that fits the 13-character summary columns.
@@ -3840,22 +3907,29 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
 
         writeln!(svg, r##"    <g class="marks">"##).unwrap();
 
+        /*
+         * Two speeds, drawn alike: speed 0 is each point's faster speed,
+         * speed 1 its slower, the same speed at a point that ran at one.
+         * Band and line each carry one subpath per speed, so where every
+         * point ran at one speed the two coincide into one, and where a
+         * point ran at two the line forks into two equal lines.
+         */
+        let speed_at = |k: usize, speed: usize| {
+            let speeds = cell_at(k).get(plot.scenario).speeds();
+            speeds[speed.min(speeds.len() - 1)]
+        };
         let mut band = String::new();
-        for k in 0..plot.len() {
-            let x = plot.x_positions[k];
-            let y = plot.map_y(cell_at(k).get(plot.scenario).high);
-            if k == 0 {
-                write!(band, "M {x:.2} {y:.2}").unwrap();
-            } else {
+        for speed in 0..2 {
+            for k in 0..plot.len() {
+                let (x, y) = (plot.x_positions[k], plot.map_y(speed_at(k, speed).high));
+                write!(band, "{} {x:.2} {y:.2}", if k == 0 { "M" } else { " L" }).unwrap();
+            }
+            for k in (0..plot.len()).rev() {
+                let (x, y) = (plot.x_positions[k], plot.map_y(speed_at(k, speed).low));
                 write!(band, " L {x:.2} {y:.2}").unwrap();
             }
+            band.push_str(" Z ");
         }
-        for k in (0..plot.len()).rev() {
-            let x = plot.x_positions[k];
-            let y = plot.map_y(cell_at(k).get(plot.scenario).low);
-            write!(band, " L {x:.2} {y:.2}").unwrap();
-        }
-        band.push_str(" Z");
 
         /*
          * The band's tint reports the run's precision for this contender.
@@ -3865,7 +3939,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
          * precision, and the plot stays quiet.
          */
         let worst_spread = (0..plot.len())
-            .map(|k| spread_permille(cell_at(k).get(plot.scenario)))
+            .map(|k| cell_at(k).get(plot.scenario).widest_spread_permille())
             .max()
             .expect("there is at least one point");
         let (opacity_hundredths, _) = band_style(worst_spread);
@@ -3877,13 +3951,10 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
             .unwrap();
 
         let mut path = String::new();
-        for k in 0..plot.len() {
-            let x = plot.x_positions[k];
-            let y = plot.map_y(cell_at(k).get(plot.scenario).median);
-            if k == 0 {
-                write!(path, "M {x:.2} {y:.2}").unwrap();
-            } else {
-                write!(path, " L {x:.2} {y:.2}").unwrap();
+        for speed in 0..2 {
+            for k in 0..plot.len() {
+                let (x, y) = (plot.x_positions[k], plot.map_y(speed_at(k, speed).median));
+                write!(path, "{} {x:.2} {y:.2}", if k == 0 { " M" } else { " L" }).unwrap();
             }
         }
 
@@ -3898,7 +3969,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
         for k in 0..plot.len() {
             let x = plot.x_positions[k];
             let statistics = cell_at(k).get(plot.scenario);
-            let median_y = plot.map_y(statistics.median);
+            let speeds = statistics.speeds();
 
             /*
              * The dot's shape names the code path that produced this point;
@@ -3906,13 +3977,16 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
              * size with no ring. Hovering shows the path's explanation.
              */
             let kernel = &kernels.kernels[kernels.kernel_index_for(POINTS[plot.points.start + k].bytes)];
-            writeln!(
-                dots,
-                r##"    <g class="dot" data-size="{k}" transform="translate({x:.2} {median_y:.2})" onpointerenter="hoverDot(event,{p},{algorithm_index},{k})" onpointerleave="leaveDot(event)" onclick="tapDot(event,{p},{algorithm_index},{k})">"##,
-            )
-                .unwrap();
-            writeln!(dots, "      {}", mark_shape(kernel.mark, color, 5.0)).unwrap();
-            dots.push_str("    </g>\n");
+            for (speed_index, speed) in speeds.iter().enumerate() {
+                let median_y = plot.map_y(speed.median);
+                writeln!(
+                    dots,
+                    r##"    <g class="dot" data-size="{k}" data-speed="{speed_index}" transform="translate({x:.2} {median_y:.2})" onpointerenter="hoverDot(event,{p},{algorithm_index},{k})" onpointerleave="leaveDot(event)" onclick="tapDot(event,{p},{algorithm_index},{k})">"##,
+                )
+                    .unwrap();
+                writeln!(dots, "      {}", mark_shape(kernel.mark, color, 5.0)).unwrap();
+                dots.push_str("    </g>\n");
+            }
 
             /*
              * With two dozen columns, a value at every dot would overprint.
@@ -3940,7 +4014,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
                 svg,
                 r##"      <text class="value-label" data-size="{k}" x="{label_x:.2}" y="{:.2}" fill="{color}" text-anchor="{anchor}">{}</text>"##,
                 value_label_y[algorithm_index][k],
-                format_rate_value(statistics.median, plot.use_case),
+                speeds.iter().map(|speed| format_rate_value(speed.median, plot.use_case)).collect::<Vec<_>>().join(" | "),
             )
                 .unwrap();
         }
@@ -4092,9 +4166,9 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
  * low) / median, rounded. Zero when every resample agrees on the median;
  * 20 means the median is known to within 2%.
  */
-fn spread_permille(statistics: Statistics) -> u64 {
-    let range = statistics.high - statistics.low;
-    (range * 1000 + statistics.median / 2) / statistics.median
+fn spread_permille(speed: Speed) -> u64 {
+    let range = speed.high - speed.low;
+    (range * 1000 + speed.median / 2) / speed.median
 }
 
 /*
@@ -4391,36 +4465,36 @@ fn write_interaction_script(
                 .unwrap();
             }
             let cell_at = |k: usize| cell(results, algorithm_index, plot.points.start + k);
-            for (key, pick) in [
-                ("min", (|t: Statistics| t.minimum) as fn(Statistics) -> u64),
-                ("low", |t| t.low),
-                ("med", |t| t.median),
-                ("high", |t| t.high),
-                ("max", |t| t.maximum),
-            ] {
+            /* Whole-cell figures, then each speed's (speed 1 repeats speed 0 at a one-speed point). */
+            for (key, pick) in [("min", (|t: Statistics| t.minimum) as fn(Statistics) -> u64), ("max", |t| t.maximum), ("n", |t| t.count as u64)] {
                 write!(data, "],\"{key}\":[").unwrap();
                 for k in 0..plot.len() {
                     if k > 0 { data.push(','); }
-                    write!(data, "{}", format_ps(pick(cell_at(k).get(plot.scenario)))).unwrap();
+                    let value = pick(cell_at(k).get(plot.scenario));
+                    if key == "n" { write!(data, "{value}").unwrap() } else { write!(data, "{}", format_ps(value)).unwrap() }
                 }
             }
-            data.push_str("],\"n\":[");
-            for k in 0..plot.len() {
-                if k > 0 { data.push(','); }
-                write!(data, "{}", cell_at(k).get(plot.scenario).count).unwrap();
-            }
-            data.push_str("],\"modes\":[");
-            for k in 0..plot.len() {
-                if k > 0 { data.push(','); }
-                match cell_at(k).get(plot.scenario).modes {
-                    Some(m) => write!(
-                        data,
-                        "[{},{},{},{}]",
-                        format_ps(m.lower_median), m.lower_count, format_ps(m.upper_median), m.upper_count
-                    )
-                    .unwrap(),
-                    None => data.push_str("null"),
+            for speed in 0..2 {
+                let suffix = if speed == 0 { "" } else { "2" };
+                for (key, pick) in [
+                    ("med", (|v: Speed| v.median) as fn(Speed) -> u64),
+                    ("low", |v| v.low),
+                    ("high", |v| v.high),
+                    ("cnt", |v| v.count as u64),
+                ] {
+                    write!(data, "],\"{key}{suffix}\":[").unwrap();
+                    for k in 0..plot.len() {
+                        if k > 0 { data.push(','); }
+                        let speeds = cell_at(k).get(plot.scenario).speeds();
+                        let value = pick(speeds[speed.min(speeds.len() - 1)]);
+                        if key == "cnt" { write!(data, "{value}").unwrap() } else { write!(data, "{}", format_ps(value)).unwrap() }
+                    }
                 }
+            }
+            data.push_str("],\"two\":[");
+            for k in 0..plot.len() {
+                if k > 0 { data.push(','); }
+                data.push_str(if cell_at(k).get(plot.scenario).two_speeds.is_some() { "1" } else { "0" });
             }
             data.push_str("]}");
         }
@@ -4558,14 +4632,20 @@ function relayout() {
   layoutProv();
 }
 
+/* A point's speed or speeds in the settled unit: "12" or "10 | 19", faster first. */
+function speedsText(s, k, p, digits) {
+  const one = v => fmt(v, p, digits);
+  return s.two[k] ? `${one(s.med[k])} | ${one(s.med2[k])}` : one(s.med[k]);
+}
+
 function relayoutPlot(p) {
   const plot = DATA.plots[p];
   const visible = plot.series.map((s, i) => i).filter(i => on[i] && plot.series[i]);
   let lo = Infinity, hi = 0;
   for (const i of visible) {
     const s = plot.series[i];
-    lo = Math.min(lo, ...s.low);
-    hi = Math.max(hi, ...s.high);
+    lo = Math.min(lo, ...s.low, ...s.low2);
+    hi = Math.max(hi, ...s.high, ...s.high2);
   }
   if (visible.length === 0) { lo = 0.1; hi = 1; }
   /*
@@ -4624,16 +4704,20 @@ function relayoutPlot(p) {
     dots.setAttribute("data-on", on[i] ? "true" : "false");
     if (!on[i]) return;
     const X = plot.x;
-    let band = "";
-    X.forEach((x, k) => { band += (k ? " L " : "M ") + x + " " + mapY(s.high[k]).toFixed(2); });
-    for (let k = X.length - 1; k >= 0; k--) band += " L " + X[k] + " " + mapY(s.low[k]).toFixed(2);
-    g.querySelector(".band").setAttribute("d", band + " Z");
-    let med = "";
-    X.forEach((x, k) => { med += (k ? " L " : "M ") + x + " " + mapY(s.med[k]).toFixed(2); });
+    /* One subpath per speed; they coincide wherever a point ran at one speed. */
+    let band = "", med = "";
+    for (const [m, lo, hi] of [[s.med, s.low, s.high], [s.med2, s.low2, s.high2]]) {
+      X.forEach((x, k) => { band += (k ? " L " : " M ") + x + " " + mapY(hi[k]).toFixed(2); });
+      for (let k = X.length - 1; k >= 0; k--) band += " L " + X[k] + " " + mapY(lo[k]).toFixed(2);
+      band += " Z";
+      X.forEach((x, k) => { med += (k ? " L " : " M ") + x + " " + mapY(m[k]).toFixed(2); });
+    }
+    g.querySelector(".band").setAttribute("d", band);
     g.querySelector(".median").setAttribute("d", med);
     dots.querySelectorAll(".dot").forEach(dot => {
       const k = +dot.getAttribute("data-size");
-      dot.setAttribute("transform", `translate(${X[k]} ${mapY(s.med[k]).toFixed(2)})`);
+      const m = dot.getAttribute("data-speed") === "1" ? s.med2 : s.med;
+      dot.setAttribute("transform", `translate(${X[k]} ${mapY(m[k]).toFixed(2)})`);
     });
   });
 
@@ -4650,7 +4734,7 @@ function relayoutPlot(p) {
       document.getElementById("series-" + p + "-" + i).querySelectorAll(".value-label").forEach(t => {
         if (+t.getAttribute("data-size") === k) {
           t.setAttribute("y", y.toFixed(2));
-          t.textContent = fmt(plot.series[i].med[k], p, 2);
+          t.textContent = speedsText(plot.series[i], k, p, 2);
         }
       });
     }
@@ -4676,8 +4760,10 @@ function relayoutPlot(p) {
     const lab = document.getElementById("series-" + p + "-" + i).querySelector(".series-label");
     lab.setAttribute("transform", `translate(0 ${(y - overrun).toFixed(2)})`);
     const detail = lab.querySelector(".series-detail");
-    const m = plot.series[i].med[last];
-    detail.textContent = `${fmt(m, p, 2)} ${unitLabel(p)} · ${fmtOther(m, p)} at ${plot.sizes[last]}`;
+    const s = plot.series[i];
+    detail.textContent = s.two[last]
+      ? `${speedsText(s, last, p, 2)} ${unitLabel(p)} at ${plot.sizes[last]}`
+      : `${fmt(s.med[last], p, 2)} ${unitLabel(p)} · ${fmtOther(s.med[last], p)} at ${plot.sizes[last]}`;
   }
 }
 
@@ -4800,29 +4886,29 @@ function showHover(p, focus, k) {
   let y = PAD + 12;
   body.appendChild(textEl(PAD, y, "hover-head", `${name(focus)} at ${plot.sizes[k]}`));
   y += 14;
-  const spread = (f.high[k] - f.low[k]) / f.med[k];
-  const spreadNote = spread >= DATA.spreadWide ? " · median poorly determined"
-    : spread >= DATA.spreadNoticeable ? " · median less certain" : "";
   /* In the rate unit the fastest sample (min time) is the top of the range. */
   const asc = (a, b) => unit === "ns" ? [a, b] : [b, a];
-  const [cLo, cHi] = asc(f.low[k], f.high[k]);
   const [rLo, rHi] = asc(f.min[k], f.max[k]);
-  const rangeRow = textEl(PAD, y, "hover-sub",
-    `median ${fmt(f.med[k], p)} ${unitLabel(p)} (${fmtOther(f.med[k], p)}) · 95% interval ${fmt(cLo, p)}–${fmt(cHi, p)} (±${(spread * 50).toFixed(1)}%)${spreadNote}`);
-  if (spread >= DATA.spreadWide) rangeRow.setAttribute("fill", "#b45309");
-  body.appendChild(rangeRow);
-  y += 13;
-  const modes = f.modes[k];
-  if (modes) {
-    const [mLo, mHi] = asc(modes[0], modes[2]);
-    const [nLo, nHi] = asc(modes[1], modes[3]);
-    const modeRow = textEl(PAD, y, "hover-sub",
-      `two speeds: ${nLo} samples near ${fmt(mLo, p)}, ${nHi} near ${fmt(mHi, p)} ${unitLabel(p)} · extremes ${fmt(rLo, p)}–${fmt(rHi, p)}`);
-    modeRow.setAttribute("fill", "#b45309");
-    body.appendChild(modeRow);
+  const speedRow = (label, m, lo, hi, share) => {
+    const spread = (hi - lo) / m;
+    const note = spread >= DATA.spreadWide ? " · poorly determined" : spread >= DATA.spreadNoticeable ? " · less certain" : "";
+    const [cLo, cHi] = asc(lo, hi);
+    const row = textEl(PAD, y, "hover-sub",
+      `${label} ${fmt(m, p)} ${unitLabel(p)} (${fmtOther(m, p)}) · 95% interval ${fmt(cLo, p)}–${fmt(cHi, p)}${share}${note}`);
+    if (spread >= DATA.spreadWide) row.setAttribute("fill", "#b45309");
+    body.appendChild(row);
+    y += 13;
+  };
+  if (f.two[k]) {
+    const total = f.cnt[k] + f.cnt2[k];
+    body.appendChild(textEl(PAD, y, "hover-sub", `two speeds, the samples split between them`));
+    y += 13;
+    speedRow("median", f.med[k], f.low[k], f.high[k], ` · ${Math.round(f.cnt[k] * 100 / total)}% of samples`);
+    speedRow("median", f.med2[k], f.low2[k], f.high2[k], ` · ${Math.round(f.cnt2[k] * 100 / total)}% of samples`);
   } else {
-    body.appendChild(textEl(PAD, y, "hover-sub", `extremes ${fmt(rLo, p)}–${fmt(rHi, p)} ${unitLabel(p)} over ${f.n[k]} samples`));
+    speedRow("median", f.med[k], f.low[k], f.high[k], "");
   }
+  body.appendChild(textEl(PAD, y, "hover-sub", `extremes ${fmt(rLo, p)}–${fmt(rHi, p)} ${unitLabel(p)} over ${f.n[k]} samples`));
 
   /* Code path at this point; the first point of a new path explains why. */
   let ri = 0;
@@ -4866,15 +4952,22 @@ function showHover(p, focus, k) {
       body.appendChild(sw);
       const cls = "hover-row" + (i === focus ? " hover-row-focus" : "");
       body.appendChild(textEl(PAD + 15, y, cls, name(i)));
-      body.appendChild(textEl(PAD + 150, y, cls, fmt(med, p), { "text-anchor": "end" }));
-      body.appendChild(textEl(PAD + 215, y, cls, fmtOther(med, p).replace(" " + otherUnitLabel(p), ""), { "text-anchor": "end" }));
+      body.appendChild(textEl(PAD + 150, y, cls, speedsText(s, k, p), { "text-anchor": "end" }));
+      const other = v => fmtOther(v, p).replace(" " + otherUnitLabel(p), "");
+      body.appendChild(textEl(PAD + 215, y, cls, s.two[k] ? `${other(s.med[k])} | ${other(s.med2[k])}` : other(med), { "text-anchor": "end" }));
       let rel, color;
       if (i === focus) { rel = "—"; color = "#9a9a9a"; }
       else {
-        const r = f.med[k] / med;
-        if (Math.abs(r - 1) < 0.05) { rel = "about the same"; color = "#777777"; }
-        else if (r > 1) { rel = "\u25b2 " + r.toFixed(2) + "\u00d7 faster"; color = "#15803d"; }
-        else { rel = "\u25bc " + (1 / r).toFixed(2) + "\u00d7 slower"; color = "#b91c1c"; }
+        /* Every pairing of the focus's speeds with this row's: time ratios, focus over row. */
+        const mine = f.two[k] ? [f.med[k], f.med2[k]] : [f.med[k]];
+        const theirs = s.two[k] ? [s.med[k], s.med2[k]] : [s.med[k]];
+        const ratios = mine.flatMap(a => theirs.map(b => a / b));
+        const rMin = Math.min(...ratios), rMax = Math.max(...ratios);
+        const x = (a, b) => a.toFixed(2) === b.toFixed(2) ? a.toFixed(2) : `${a.toFixed(2)}–${b.toFixed(2)}`;
+        if (rMin > 0.95 && rMax < 1.05) { rel = "about the same"; color = "#777777"; }
+        else if (rMin >= 1.05) { rel = "\u25b2 " + x(rMin, rMax) + "\u00d7 faster"; color = "#15803d"; }
+        else if (rMax <= 0.95) { rel = "\u25bc " + x(1 / rMax, 1 / rMin) + "\u00d7 slower"; color = "#b91c1c"; }
+        else { rel = x(rMin, rMax) + "\u00d7, faster or slower"; color = "#777777"; }
       }
       body.appendChild(textEl(W - PAD, y, "hover-ratio", rel, { "text-anchor": "end", fill: color }));
     }
@@ -5078,7 +5171,7 @@ mod correctness_tests {
             median,
             high: median + half,
             maximum: median + half,
-            modes: None,
+            two_speeds: None,
         };
         Some(Cell { solo: statistics, shared: statistics })
     }
@@ -5102,16 +5195,30 @@ mod correctness_tests {
             results[0][many(label)] = synthetic(servil, 100);
             results[1][many(label)] = synthetic(sha, 100);
         }
-        let findings = checks(&roster, &results);
+        let (findings, two_speed) = checks(&roster, &results);
+        assert!(two_speed.is_empty(), "{two_speed:#?}");
         assert_eq!(findings.len(), 1, "{findings:#?}");
         assert!(findings[0].contains("slower per unit at 128 messages than at 64 messages"), "{findings:#?}");
 
         /* servil slower than SHA-256 at 64, intervals apart; at 128 they overlap. */
         results[0][many("64")] = synthetic(40_000, 100);
         results[0][many("128")] = synthetic(31_000, 2_000);
-        let findings = checks(&roster, &results);
+        let (findings, _) = checks(&roster, &results);
         assert!(findings.iter().any(|f| f.contains("slower than SHA-256: 64 messages;")), "{findings:#?}");
         assert!(!findings.iter().any(|f| f.contains("128 messages;")), "{findings:#?}");
+
+        /* A two-speed cell is listed with both speeds, and its slower one drives the checks. */
+        let mut split = synthetic(20_000, 100).unwrap();
+        for statistics in [&mut split.solo, &mut split.shared] {
+            statistics.two_speeds = Some([
+                Speed { median: 20_000, low: 19_900, high: 20_100, count: 12 },
+                Speed { median: 40_000, low: 39_900, high: 40_100, count: 12 },
+            ]);
+        }
+        results[0][many("128")] = Some(split);
+        let (findings, two_speed) = checks(&roster, &results);
+        assert!(two_speed.iter().any(|line| line.contains("two speeds: 128 messages") && line.contains("20.000|40.000")), "{two_speed:#?}");
+        assert!(findings.iter().any(|f| f.contains("slower than SHA-256: 64 to 128 messages;")), "{findings:#?}");
     }
 
     #[test]

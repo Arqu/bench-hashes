@@ -438,13 +438,20 @@ replacement 400 times, each resample's median taken, and the 2.5th and
 the median is known. The hover panel also gives each cell's minimum and
 maximum, which describe the run's environment.
 
-Some cells run at two speeds. On an M4 Max, ring's SHA-256 at 128 B
-spends a third of its samples near 82% of the median and the rest near
-104%, a real effect of which contender ran just before. A single
-median cannot express that, so when a cell's sorted samples split at a
-gap of 4% or more with at least a tenth of the samples on each side,
-the hover panel reports both clusters and their sizes. The band widens
-honestly around the median, which sits between the modes.
+Some cells run at two speeds, and then every report shows both, with
+equal weight, faster first. The clearest case: two copies of an SME2
+kernel run at full speed when macOS places them on different P-clusters
+and at about half when it places them on one, which shares its SME unit;
+the share of rounds in each state varies from run to run, so a single
+median would land on either speed by chance. A cell has two speeds when
+its sorted samples split at a gap of 4% or more, with a tenth or more of
+the samples on each side and the two sides' medians 1.25× or more apart.
+The text tables print such a cell as `a|b`, the TWO SPEEDS section lists
+the servil cells that did, and CHECKS judge every cell by its slower
+speed. In the graph the contender's line forks into two equal lines
+through the two speeds, with a dot, a band, and a value (`a | b`) for
+each, and the hover panel gives each speed's median, interval, and share
+of samples.
 
 The band's appearance reports the interval's width relative to the
 median: under 2% a faint tint; 2–5% a deeper tint; 5% and over a

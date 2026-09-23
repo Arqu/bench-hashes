@@ -85,6 +85,16 @@ lines, released together). Each shared copy's own time is a sample, two
 per interval; the later finish, used until September 2026, measured how
 unevenly two copies are served rather than what each user gets.
 
+**Two speeds.** A cell whose samples split at a gap of 4% of the median
+or more, a tenth or more on each side, with the sides' medians 1.25× or
+more apart, has two speeds; every report shows both with equal weight
+(text `a|b`, a forked line in the graph), and CHECKS judge the slower.
+The 1.25× floor: on the VM the machine's own noise puts a tenth to a
+third of many cells' samples 10–14% slow for every contender alike, which
+drew a second line nearly everywhere at 4% alone; SME2 unit sharing splits
+1.7–2.0×. Open: `perf_regress` judges a cell by its 5th percentile, the
+faster speed alone; a regression confined to the slower speed passes it.
+
 **Quick and thorough.** A quick run (the default) stops below 1 MiB and
 10,000 messages, 24 rounds, SHA-1DC only when named: about 12 s on the
 VM for the default roster, and it may misread a cell. `--thorough`:
