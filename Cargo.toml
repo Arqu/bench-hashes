@@ -31,7 +31,7 @@ version = "0.17"
 default-features = false
 
 # BLAKE3 with the SME2 kernels (Apple M4 and later), from the enclosing
-# checkout of the fork's sme2-bench branch (this repository lives inside
+# checkout of the fork's servil branch (this repository lives inside
 # it). Edits there take effect on the next build.
 [dependencies.blake3-servil]
 path = ".."

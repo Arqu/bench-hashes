@@ -415,7 +415,7 @@ fn emit_path_package(
 
     assert!(
         repository.join("Cargo.toml").is_file(),
-        "{package_name} must be checked out at {} (this repository lives inside that checkout); clone github.com/johnservil/BLAKE3 there and check out its sme2-bench branch",
+        "{package_name} must be checked out at {} (this repository lives inside that checkout); clone github.com/johnservil/BLAKE3 there and check out its servil branch",
         repository.display()
     );
 

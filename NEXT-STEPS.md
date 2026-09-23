@@ -5,11 +5,11 @@ benchmark on the VM, native Mac, and other platforms; VMs are
 first-class targets. Prefer improvements that make the implementation
 simpler and faster together. Shared principles and environment commands
 are in both repositories' `AGENTS.md` files; the fork's
-`NOTES-sme2-bench.md` has every measurement behind the design.
+`NOTES-servil.md` has every measurement behind the design.
 
 ## Where this session stopped
 
-- Fork: `/workspace`, branch `sme2-bench`, commit **737929b**, clean,
+- Fork: `/workspace`, branch `servil`, commit **737929b**, clean,
   pushed. Branch `sme-only-workers` is superseded (the pool no longer
   runs SME2 at all); keep it only for its SME2-only subtree code.
 - Benchmark: `/workspace/bench-hashes`, branch `main`, commit **792d406**

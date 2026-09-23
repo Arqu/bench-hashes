@@ -160,13 +160,13 @@ clocks disagree and says what shape the disagreement has.
 ### Requirements
 
 The BLAKE3 servil contender is a path dependency on a checkout of
-github.com/johnservil/BLAKE3 at `..`, with its `sme2-bench` branch
+github.com/johnservil/BLAKE3 at `..`, with its `servil` branch
 checked out: this repository lives inside that checkout, as
 `BLAKE3/bench-hashes` (the fork's `.git/info/exclude` keeps it out of
 the fork's status).
 
 ```sh
-git clone --branch sme2-bench https://github.com/johnservil/BLAKE3
+git clone --branch servil https://github.com/johnservil/BLAKE3
 git clone https://github.com/johnservil/bench-hashes BLAKE3/bench-hashes
 ```
 
@@ -271,7 +271,7 @@ nanoseconds of setup that sha2 wins back on inputs of one or two
 blocks. The two kernels are the two sides of one design trade-off, so
 the crossover near 128–256 B is structural.
 
-BLAKE3 servil is the same crate from the `sme2-bench` branch of
+BLAKE3 servil is the same crate from the `servil` branch of
 github.com/johnservil/BLAKE3, built from the local checkout at
 `..` under the crate name `blake3-servil` so it links beside the
 crates.io crate. The build requires a toolchain that assembles SME2
