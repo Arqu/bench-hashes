@@ -1,12 +1,13 @@
-TIMESTAMP: 2026-09-22 18:26:44 UTC
+TIMESTAMP: 2026-09-23 02:38:40 UTC
 git source: https://github.com/johnservil/bench-hashes
-git commit: 57434b1bca646dcb0c0802c2f3c10208731f2022
-git tag: v0.6.0+4693c2fe4a275c15421e987cd95ee1d0331a7b8d (+3 commits)
-git clean status: dirty-0173f1fe00e613f48619271d1814c418fdc55143f2f17cfe64db01dc2565c5d7
+git commit: d40c0bcd7575e7edd31913e38359c8bbe214cc0f
+git tag: v0.6.0+4693c2fe4a275c15421e987cd95ee1d0331a7b8d (+11 commits)
+git clean status: clean
 bench-hashes version: 0.6.0+4693c2fe4a275c15421e987cd95ee1d0331a7b8d
 CPU type: aarch64
 CPU count: 16
 OS type: linux6.18.52-0-virt
+CPU identity: CPU implementer: 0x61 · CPU variant: 0x0 · CPU part: 0x000 · CPU revision: 0 · Features: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 asimddp sha512 asimdfhm dit uscat ilrcpc flagm sb paca pacg dcpodp flagm2 frint i8mm bf16 bti afp sme smei16i64 smef64f64 smei8i32 smef16f32 smeb16f32 smef32f32 sme2 smei16i32 smebi32i32 · machine: linux,dummy-virt
 Rust compiler: rustc 1.98.1 (48a229cea 2026-09-01)
 Build target: aarch64-unknown-linux-gnu
 Target features: aes,crc,lse,neon,sha2,sha3
@@ -17,10 +18,10 @@ Contenders: every contender available on this machine
 BLAKE3 source: blake3 1.8.7; crate archive SHA-256 6d9e454fc11f76977dc803893aff6304ed33d6a26efae8696573bea74baa27ae; source registry+https://github.com/rust-lang/crates.io-index
 SHA-256 source: sha2 0.11.0; crate archive SHA-256 446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4; source registry+https://github.com/rust-lang/crates.io-index
 SHA-1DC source: sha1-checked 0.10.0; crate archive SHA-256 89f599ac0c323ebb1c6082821a54962b839832b03984598375bff3975b804423; source registry+https://github.com/rust-lang/crates.io-index
-BLAKE3 servil source: blake3-servil (path dependency ..); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit 6485bd9a565c68739462eb041ca379ce38cb0638; clean
+BLAKE3 servil source: blake3-servil (path dependency ..); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit 66bc96d421f7bb6fb81cb899a74e5524613102f8; clean
 SHA-256 ring source: ring 0.17.14; crate archive SHA-256 a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7; source registry+https://github.com/rust-lang/crates.io-index
 BLAKE3 mt source: blake3 1.8.7; crate archive SHA-256 6d9e454fc11f76977dc803893aff6304ed33d6a26efae8696573bea74baa27ae; source registry+https://github.com/rust-lang/crates.io-index
-BLAKE3 servil mt source: blake3-servil (path dependency ..); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit 6485bd9a565c68739462eb041ca379ce38cb0638; clean
+BLAKE3 servil mt source: blake3-servil (path dependency ..); source https://github.com/johnservil/BLAKE3; branch sme2-bench; commit 66bc96d421f7bb6fb81cb899a74e5524613102f8; clean
 ab-blake3 source: ab-blake3 0.2.0; crate archive SHA-256 02cf5982ca33b3ff819f4f66e17a23d7c7adbf02ac9e7055596ce282cb06ebb4; source registry+https://github.com/rust-lang/crates.io-index
 BLAKE3 mode: single-threaded
 SHA-256 mode: single-threaded
@@ -32,7 +33,7 @@ BLAKE3 servil mt mode: multithreaded; blake3_servil::hash_multithreaded for one 
 ab-blake3 mode: single-threaded; ab_blake3::const_hash for one message, ab_blake3::single_block_hash_many_exact::<N> for a batch of N 64-byte messages
 BLAKE3 mt threads: Rayon's global pool, at its default size (one thread per logical CPU)
 Measurement: duo. Every sample ran two independent copies of the contender at once, on two threads over two inputs of the size, released together, timed to the later finish, per byte of one copy. A contender that takes the whole machine to go faster alone runs beside a copy of itself and shows what that costs. Duo times are measured time. Pass --solo to also take a solo sample beside each duo sample.
-Use cases: one message per call, at twenty input sizes from 64 B to 8 MiB; and many messages per call, a batch of 64-byte messages at twenty batch sizes from 1 to 16384. In the second, a contender with a batch entry point takes the batch as one call (ab-blake3's single_block_hash_many_exact::<N>, BLAKE3 servil's hash_many, BLAKE3 servil mt's hash_many_multithreaded); every other contender hashes the batch one message per call of its plain entry point; BLAKE3 mt takes no part in it.
+Use cases: one message per call, at twenty-four input sizes from 64 B to 128 MiB; and many messages per call, a batch of 64-byte messages at twenty-four batch sizes from 1 to 262144. In the second, a contender with a batch entry point takes the batch as one call (ab-blake3's single_block_hash_many_exact::<N>, BLAKE3 servil's hash_many, BLAKE3 servil mt's hash_many_multithreaded); every other contender hashes the batch one message per call of its plain entry point; BLAKE3 mt takes no part in it.
 
 One message per call — kernels:
 BLAKE3 kernels by size (platform NEON):
@@ -56,6 +57,10 @@ BLAKE3 kernels by size (platform NEON):
      3 MiB: NEON hash_many (4-way)
      4 MiB: NEON hash_many (4-way)
      8 MiB: NEON hash_many (4-way)
+    16 MiB: NEON hash_many (4-way)
+    32 MiB: NEON hash_many (4-way)
+    64 MiB: NEON hash_many (4-way)
+   128 MiB: NEON hash_many (4-way)
 SHA-256 kernel: sha2 aarch64_sha2 backend (ARMv8 SHA-256 instructions) (platform sha2)
 SHA-1DC kernel: SHA-1 with collision detection, pure Rust (platform sha1-checked)
 BLAKE3 servil kernels by size (platform SME2):
@@ -79,6 +84,10 @@ BLAKE3 servil kernels by size (platform SME2):
      3 MiB: SME2 hash16_chunks kernel
      4 MiB: SME2 hash16_chunks kernel
      8 MiB: SME2 hash16_chunks kernel
+    16 MiB: SME2 hash16_chunks kernel
+    32 MiB: SME2 hash16_chunks kernel
+    64 MiB: SME2 hash16_chunks kernel
+   128 MiB: SME2 hash16_chunks kernel
 SHA-256 ring kernel: sha256_block_data_order_hw (ARMv8 SHA-256 instructions, pipelined schedule) (platform ring)
 BLAKE3 mt kernels by size (platform NEON):
       64 B: caller's thread (below one SIMD width of chunks)
@@ -101,6 +110,10 @@ BLAKE3 mt kernels by size (platform NEON):
      3 MiB: rayon::join over the pool
      4 MiB: rayon::join over the pool
      8 MiB: rayon::join over the pool
+    16 MiB: rayon::join over the pool
+    32 MiB: rayon::join over the pool
+    64 MiB: rayon::join over the pool
+   128 MiB: rayon::join over the pool
 BLAKE3 servil mt kernels by size (platform SME2):
       64 B: scalar kernel c1, one call
      128 B: scalar kernel c1, one call
@@ -122,6 +135,10 @@ BLAKE3 servil mt kernels by size (platform SME2):
      3 MiB: subtrees over threads
      4 MiB: subtrees over threads
      8 MiB: subtrees over threads
+    16 MiB: subtrees over threads
+    32 MiB: subtrees over threads
+    64 MiB: subtrees over threads
+   128 MiB: subtrees over threads
 ab-blake3 kernel: const_hash (const fn reference tree, portable compression) (platform portable)
 
 Many 64-byte messages per call — kernels:
@@ -149,6 +166,10 @@ BLAKE3 servil kernels by messages (platform SME2):
       4096: SME2 hash16_parents kernel
       8192: SME2 hash16_parents kernel
      16384: SME2 hash16_parents kernel
+     32768: SME2 hash16_parents kernel
+     65536: SME2 hash16_parents kernel
+    131072: SME2 hash16_parents kernel
+    262144: SME2 hash16_parents kernel
 SHA-256 ring kernel: sha256_block_data_order_hw (ARMv8 SHA-256 instructions, pipelined schedule) · one 64 B message per call (platform ring)
 BLAKE3 servil mt kernels by messages (platform SME2):
          1: scalar kernel c1, one message per call
@@ -171,6 +192,10 @@ BLAKE3 servil mt kernels by messages (platform SME2):
       4096: message ranges over threads
       8192: message ranges over threads
      16384: message ranges over threads
+     32768: message ranges over threads
+     65536: message ranges over threads
+    131072: message ranges over threads
+    262144: message ranges over threads
 ab-blake3 kernels by messages (platform NEON):
          1: single_block_hash_many_exact::<N>, one compression per block
          2: single_block_hash_many_exact::<N>, one compression per block
@@ -192,6 +217,10 @@ ab-blake3 kernels by messages (platform NEON):
       4096: single_block_hash_many_exact::<N>, NEON hash_many (4-way) per sixteen blocks
       8192: single_block_hash_many_exact::<N>, NEON hash_many (4-way) per sixteen blocks
      16384: single_block_hash_many_exact::<N>, NEON hash_many (4-way) per sixteen blocks
+     32768: single_block_hash_many_exact::<N>, NEON hash_many (4-way) per sixteen blocks
+     65536: single_block_hash_many_exact::<N>, NEON hash_many (4-way) per sixteen blocks
+    131072: single_block_hash_many_exact::<N>, NEON hash_many (4-way) per sixteen blocks
+    262144: single_block_hash_many_exact::<N>, NEON hash_many (4-way) per sixteen blocks
 
 ============================================================
 BENCHMARK SUMMARY
@@ -203,91 +232,107 @@ Each contender has one column: duo, two independent copies at once on two thread
 One message per call (ns/B):
 
   size             BLAKE3        SHA-256        SHA-1DC  BLAKE3 servil   SHA-256 ring      BLAKE3 mt   B3 servil mt      ab-blake3
-  64 B              0.726          0.498          2.601          0.692          0.616          0.843          0.698          0.708
-             0.699–1.062    0.482–0.627    2.511–2.950    0.664–0.738    0.601–0.645    0.813–0.898    0.671–0.747    0.689–0.766 
-  128 B             0.746          0.399          1.814          0.675          0.419          0.734          0.676          0.737
-             0.717–0.800    0.390–0.418    1.751–1.956    0.653–0.739    0.407–0.461    0.711–0.781    0.655–0.726    0.712–0.816 
-  256 B             0.723          0.353          1.459          0.671          0.340          0.728          0.671          0.726
-             0.701–0.769    0.344–0.387    1.411–1.599    0.653–0.734    0.332–0.374    0.701–0.794    0.647–0.734    0.703–0.771 
-  512 B             0.721          0.339          1.248          0.669          0.321          0.721          0.666          0.722
-             0.700–0.772    0.330–0.354    1.211–1.362    0.649–0.713    0.311–0.338    0.697–0.769    0.648–0.709    0.704–0.769 
-  1 KiB             0.721          0.332          1.204          0.669          0.309          0.718          0.669          0.727
-             0.695–0.761    0.326–0.350    1.169–1.348    0.647–0.704    0.303–0.322    0.700–0.755    0.647–0.738    0.702–0.761 
-  2 KiB             0.735          0.331          1.156          0.465          0.304          0.748          0.466          0.742
-             0.719–0.787    0.322–0.347    1.124–1.280    0.455–0.515    0.295–0.335    0.724–0.839    0.452–0.494    0.724–0.773 
-  3 KiB             0.747          0.331          1.141          0.335          0.301          0.751          0.335          0.748
-             0.724–0.811    0.322–0.345    1.108–1.208    0.321–0.357    0.294–0.320    0.729–0.797    0.323–0.363    0.727–0.805 
-  4 KiB             0.411          0.331          1.135          0.315          0.301          0.418          0.315          0.753
-             0.399–0.432    0.322–0.343    1.102–1.254    0.299–0.331    0.293–0.322    0.407–0.435    0.300–0.334    0.727–0.819 
-  8 KiB             0.407          0.333          1.151          0.288          0.302         11.876          0.289          0.760
-             0.395–0.455    0.323–0.368    1.118–1.209    0.272–0.301    0.295–0.318   9.717–14.690!   0.280–0.315    0.735–0.843 
-  16 KiB            0.405          0.333          1.152          0.239          0.302         14.795          0.240          0.758
-             0.393–0.436    0.320–0.373    1.120–1.213    0.235–0.414    0.293–0.327   12.012–18.025!   0.235–0.410    0.740–0.849 
-  32 KiB            0.404          0.333          1.171          0.227          0.301         16.068          0.227          0.760
-             0.393–0.435    0.324–0.348    1.135–1.251    0.217–0.391    0.291–0.320   12.192–21.482!   0.217–0.395    0.743–0.863 
-  64 KiB            0.404          0.334          1.188          0.217          0.302         13.549          0.157          0.765
-             0.390–0.468    0.323–0.379    1.142–1.349    0.210–0.384!   0.293–0.346   0.869–19.567!   0.145–0.190    0.738–0.960 
-  128 KiB           0.405          0.334          1.215          0.211          0.301          7.545          0.114          0.769
-             0.391–0.458    0.321–0.420    1.164–1.617    0.197–0.381!   0.291–0.387   1.035–11.746!   0.107–0.156    0.744–0.872 
-  256 KiB           0.405          0.333          1.250          0.201          0.302          3.915          0.096          0.764
-             0.392–0.474    0.323–0.411    1.196–1.544    0.187–0.349    0.292–0.376    0.455–7.491!   0.083–0.117    0.741–0.919 
-  512 KiB           0.403          0.334          1.262          0.185          0.302          1.993          0.080          0.770
-             0.391–0.474    0.322–0.398    1.209–1.622    0.180–0.325    0.293–0.342    0.249–3.750!   0.073–0.100!   0.743–1.011 
-  1 MiB             0.404          0.334          1.264          0.174          0.302          1.002          0.069          0.771
-             0.388–0.501    0.323–0.424    1.222–1.465    0.168–0.323!   0.291–0.366    0.196–1.864!   0.062–0.086!   0.737–0.977 
-  2 MiB             0.405          0.338          1.261          0.171          0.301          0.507          0.062          0.764
-             0.388–0.490    0.322–0.440    1.224–1.406    0.166–0.318!   0.292–0.344    0.165–1.079!   0.056–0.088    0.742–0.980 
-  3 MiB             0.402          0.334          1.265          0.171          0.302          0.738          0.060          0.765
-             0.390–0.433    0.325–0.402    1.221–1.355    0.163–0.316    0.292–0.340    0.136–1.382!   0.051–0.076!   0.742–0.803 
-  4 MiB             0.400          0.333          1.268          0.173          0.301          0.340          0.058          0.762
-             0.389–0.449    0.323–0.390    1.215–1.348    0.160–0.325!   0.293–0.339    0.108–0.642!   0.052–0.075!   0.739–0.817 
-  8 MiB             0.394          0.329          1.288          0.171          0.297          0.197          0.055          0.763
-             0.388–0.449    0.321–0.588    1.232–1.502    0.165–0.320    0.291–0.317    0.087–0.338!   0.049–0.075    0.738–0.823 
+  64 B              0.796          0.545          2.867          0.759          0.681          0.925          0.759          0.777
+             0.780–1.225    0.526–0.839    2.761–3.741    0.741–0.791    0.663–0.800    0.898–1.315    0.740–1.213    0.757–1.204 
+  128 B             0.816          0.440          2.037          0.743          0.464          0.805          0.743          0.811
+             0.766–1.217    0.417–0.632    1.982–3.144    0.723–1.171    0.449–0.692    0.783–1.249    0.717–1.164    0.785–1.244 
+  256 B             0.798          0.388          1.601          0.736          0.376          0.800          0.735          0.798
+             0.759–1.201    0.365–0.575    1.560–2.508    0.705–1.151    0.352–0.566    0.756–1.206    0.718–1.151    0.776–1.187 
+  512 B             0.796          0.375          1.371          0.735          0.352          0.794          0.735          0.800
+             0.771–1.241    0.355–0.559    1.323–2.125    0.715–1.157    0.339–0.518    0.754–1.225    0.706–1.143    0.773–1.218 
+  1 KiB             0.792          0.370          1.332          0.734          0.342          0.792          0.734          0.800
+             0.772–1.195    0.332–0.528    1.285–2.075    0.718–1.154    0.323–0.490    0.774–1.177    0.707–1.178    0.779–1.198 
+  2 KiB             0.814          0.367          1.254          0.512          0.335          0.822          0.510          0.821
+             0.791–1.227    0.328–0.515    1.220–1.938    0.490–0.740    0.315–0.467    0.800–1.261    0.495–0.776    0.799–1.294 
+  3 KiB             0.824          0.365          1.265          0.366          0.333          0.826          0.366          0.829
+             0.799–1.269    0.335–0.515    1.234–2.029    0.355–0.579    0.315–0.487    0.807–1.280    0.354–0.569    0.799–1.281 
+  4 KiB             0.456          0.365          1.236          0.341          0.333          0.461          0.340          0.832
+             0.434–0.664    0.331–0.512    1.213–1.965    0.332–0.592    0.318–0.460    0.436–0.643    0.329–0.595    0.812–1.307 
+  8 KiB             0.451          0.366          1.241          0.319          0.332         10.494          0.319          0.838
+             0.433–0.540    0.341–0.506    1.194–2.009    0.306–0.535    0.305–0.459   8.800–13.514    0.307–0.500    0.813–1.261 
+  16 KiB            0.446          0.366          1.239          0.243          0.331         13.240          0.244          0.838
+             0.423–0.463    0.329–0.391    1.213–1.904    0.234–0.416!   0.308–0.348   10.910–15.986    0.237–0.418!   0.814–1.283 
+  32 KiB            0.445          0.365          1.243          0.229          0.330         14.360          0.269          0.837
+             0.421–0.470    0.326–0.394    1.181–1.300    0.218–0.395!   0.307–0.347   12.386–17.518!   0.216–0.404!   0.806–0.903 
+  64 KiB            0.445          0.365          1.251          0.310          0.331         12.784          0.144          0.842
+             0.430–0.484    0.326–0.504    1.221–1.388    0.208–0.390!   0.295–0.363   5.210–16.086!   0.103–0.244    0.804–0.973 
+  128 KiB           0.446          0.366          1.274          0.314          0.331          6.740          0.102          0.844
+             0.430–0.614    0.326–0.408    1.232–1.465    0.201–0.355    0.305–0.371   1.050–13.260!   0.095–0.199    0.818–0.931 
+  256 KiB           0.443          0.366          1.299          0.315          0.331          3.858          0.094          0.844
+             0.433–0.517    0.330–0.413    1.270–1.482    0.185–0.344    0.303–0.402    1.094–7.383!   0.075–0.135    0.804–0.949 
+  512 KiB           0.444          0.366          1.327          0.312          0.331          1.995          0.076          0.847
+             0.431–0.513    0.332–0.404    1.277–1.633    0.171–0.326    0.301–0.361   0.352–21.006!   0.072–0.110    0.803–0.948 
+  1 MiB             0.444          0.367          1.314          0.312          0.331          0.985          0.065          0.845
+             0.420–0.520    0.333–0.401    1.279–1.464    0.164–0.331    0.306–0.373    0.177–1.875!   0.060–0.096    0.821–1.039 
+  2 MiB             0.444          0.368          1.295          0.310          0.333          0.487          0.058          0.838
+             0.424–0.520    0.329–0.423    1.272–1.418    0.169–0.327!   0.303–0.398    0.156–1.073!   0.053–0.093    0.822–0.940 
+  3 MiB             0.442          0.367          1.283          0.179          0.333          0.731          0.058          0.837
+             0.418–0.486    0.339–0.398    1.253–1.641    0.167–0.320!   0.311–0.381    0.140–1.441!   0.054–0.099    0.822–0.892 
+  4 MiB             0.440          0.365          1.281          0.182          0.331          0.289          0.057          0.835
+             0.425–0.481    0.337–0.394    1.254–1.332    0.165–0.335!   0.301–0.366    0.114–0.556!   0.052–0.085    0.823–0.892 
+  8 MiB             0.436          0.363          1.267          0.173          0.329          0.174          0.052          0.832
+             0.422–0.458    0.340–0.469    1.252–1.300    0.163–0.319!   0.313–0.351    0.077–0.326!   0.048–0.075    0.821–0.855 
+  16 MiB            0.435          0.361          1.259          0.168          0.326          0.135          0.053          0.828
+             0.429–0.456    0.338–0.370    1.248–1.434    0.162–0.319    0.298–0.341    0.075–0.253!   0.047–0.081!   0.821–0.849 
+  32 MiB            0.434          0.359          1.254          0.169          0.326          0.101          0.053          0.828
+             0.430–0.445    0.344–0.371    1.247–1.284    0.164–0.312!   0.310–0.335    0.071–0.158!   0.048–0.076    0.820–0.849 
+  64 MiB            0.436          0.361          1.259          0.243          0.327          0.080          0.051          0.827
+             0.430–0.445    0.337–0.386    1.246–1.285    0.174–0.248    0.308–0.333    0.067–0.108!   0.047–0.078    0.821–0.839 
+  128 MiB           0.438          0.362          1.267          0.213          0.328          0.071          0.051          0.834
+             0.431–0.542    0.338–0.408    1.252–1.429    0.182–0.250    0.309–0.393    0.065–0.090    0.048–0.078    0.824–0.867 
 
 Many 64-byte messages per call (ns/msg):
 
   messages         BLAKE3        SHA-256        SHA-1DC  BLAKE3 servil   SHA-256 ring   B3 servil mt      ab-blake3
-  1                46.564         31.544        167.756         44.367         39.768         44.465         45.325
-            45.123–49.387   30.733–37.219   161.736–195.996   42.714–47.911   38.465–42.149   42.708–48.642   43.485–48.119 
-  2                44.109         30.782        162.524         26.356         39.612         26.450         42.572
-            42.821–47.444   30.014–34.398   157.442–182.048   25.000–28.282   38.488–44.130   25.706–28.193   41.435–47.526 
-  3                44.141         30.878        162.266         29.062         39.623         29.408         42.738
-            42.681–48.717   30.200–34.269   156.729–173.611   28.259–30.737   38.439–44.350   28.406–31.138   41.073–45.614 
-  4                44.211         30.851        168.239         23.635         39.516         23.681         42.692
-            42.388–49.005   29.954–32.471   160.710–182.766   22.734–26.179   38.410–42.189   22.909–25.384   41.377–45.551 
-  6                44.204         30.836        181.781         24.733         39.711         24.591         42.619
-            42.445–47.466   30.017–32.647   175.830–203.159   23.664–26.121   38.398–41.967   23.491–27.015   41.184–45.629 
-  8                44.079         30.758        167.064         18.624         39.685         19.537         42.552
-            42.447–91.620   29.699–35.290   162.166–189.188   17.597–21.478   38.302–44.930   18.819–21.885   41.349–46.367 
-  12               44.375         30.749        177.561         19.950         39.523         19.906         42.652
-            42.905–49.778   30.010–33.627   171.179–197.207   19.311–21.821   38.532–46.414   19.249–21.560   41.172–47.508 
-  16               44.074         30.810        169.373         18.552         39.362         18.780         22.359
-            43.008–48.949   30.077–34.349   164.553–187.889   18.189–45.107   38.377–44.296   18.346–46.677   21.593–24.913 
-  24               43.868         30.712        170.254         30.423         39.323         30.590         28.370
-            42.597–46.470   30.094–31.865   165.728–187.149   12.423–31.970   38.437–42.667   12.714–31.714   27.699–30.195 
-  32               43.695         30.662        168.944         14.303         39.324         14.549         22.079
-            42.512–46.770   29.914–34.110   165.565–192.601   13.983–28.912   38.287–41.448   14.207–28.858   21.363–23.255 
-  48               43.676         30.686        169.404         12.725         39.273         12.813         21.988
-            42.758–47.054   30.073–34.083   164.110–186.461   9.776–21.798   38.343–43.644   9.807–22.122   21.484–23.403 
-  64               43.598         30.662        169.861          9.897         39.253          9.981         22.013
-            42.667–47.941   30.016–34.052   164.385–186.534   9.611–19.379   38.377–42.792   9.759–19.190   21.491–24.847 
-  128              43.433         30.616        172.024         15.438         39.318         15.901         21.985
-            42.444–45.431   29.947–32.172   167.068–178.295   10.158–20.764!  38.404–41.587   10.188–19.524!  21.477–23.438 
-  256              43.491         30.606        171.289         10.220         39.276         10.379         21.924
-            42.722–46.830   29.950–31.843   167.223–182.115   9.970–19.186   38.276–42.839   10.049–19.507   21.397–23.053 
-  512              43.599         30.598        173.035         10.234         39.174         12.688         21.934
-            42.359–45.086   29.997–32.478   167.555–183.933   9.913–19.236   38.646–41.032   12.484–19.370   21.357–22.678 
-  1024             44.040         30.760        174.245         12.166         39.382         11.080         22.091
-            42.357–49.221   30.113–39.175   168.932–219.225   11.741–19.495   38.322–44.295   10.302–15.165   21.432–27.646 
-  2048             44.186         30.904        174.849         11.904         39.446          7.750         22.166
-            42.895–51.088   29.970–38.723   170.254–212.538   11.647–21.663   38.360–49.368   7.118–11.743   21.409–28.524 
-  4096             43.794         31.021        178.020         11.505         39.806          6.834         22.108
-            42.503–48.854   30.093–34.940   171.661–238.454   11.086–21.407   38.108–46.565    6.250–8.511   21.514–28.991 
-  8192             43.895         31.006        176.567         11.360         39.663          6.207         22.268
-            42.443–55.589   29.942–39.903   170.074–215.454   11.069–20.501   38.447–50.891    5.789–7.435   21.395–25.266 
-  16384            44.539         31.021        176.940         10.923         39.500          5.728         22.567
-            42.440–58.978   29.931–38.733   170.535–193.484   10.576–20.298   38.461–45.797    5.276–8.771!  21.651–27.172 
+  1                50.939         34.900        183.980         48.484         43.637         48.563         49.852
+            50.128–53.686   34.174–41.653   179.769–192.113   47.699–51.089   42.889–45.987   47.754–51.212   48.908–52.298 
+  2                48.205         33.951        180.293         28.792         43.658         29.947         46.894
+            47.391–50.612   33.018–35.932   175.172–188.361   28.306–29.914   43.021–44.785   28.605–31.118   46.115–49.404 
+  3                48.181         33.961        180.823         31.951         43.610         32.242         46.556
+            47.378–51.829   33.283–35.925   174.937–188.782   31.306–33.603   42.898–46.341   31.513–34.163   45.866–48.555 
+  4                48.442         33.922        179.928         25.959         43.553         26.255         46.631
+            47.420–49.897   31.940–35.964   175.018–186.748   24.188–26.734   42.248–45.670   24.767–27.543   45.940–48.938 
+  6                48.308         33.925        179.444         27.058         43.607         27.197         46.662
+            47.359–50.539   30.979–36.737   174.808–195.471   25.734–28.335   42.305–51.887   26.133–28.353   45.608–48.521 
+  8                48.179         33.903        180.501         20.361         43.510         20.383         46.583
+            47.430–50.220   33.434–35.175   176.087–188.609   19.324–21.307   42.307–49.551   20.011–21.016   45.944–48.903 
+  12               48.590         33.902        187.469         21.754         43.515         21.790         46.720
+            47.787–50.942   33.088–35.816   182.036–195.126   21.132–22.696   42.268–45.623   21.345–23.714   45.941–48.189 
+  16               48.504         33.899        186.606         23.081         43.607         23.211         24.832
+            47.114–51.904   31.275–34.784   179.513–196.001   17.857–46.053   39.901–66.467   17.975–47.167   23.805–35.869 
+  24               48.361         33.899        183.409         13.394         43.543         13.436         31.627
+            47.522–51.214   31.477–34.728   174.047–193.289   11.292–32.063   41.328–45.350   11.584–31.864   30.766–32.803 
+  32               48.283         33.925        181.999         19.215         43.504         19.311         24.520
+            46.628–51.858   30.845–34.895   176.933–191.045   13.932–31.226   40.555–46.446   14.108–29.002   22.863–25.759 
+  48               48.112         33.788        184.300         17.559         43.481         13.312         24.362
+            46.990–50.159   30.967–35.807   180.308–195.204   9.847–27.419!  41.373–48.184   9.811–26.083!  23.516–25.455 
+  64               48.037         33.786        182.221          9.836         43.482          9.893         24.305
+            46.513–50.328   30.538–35.776   176.133–191.489   9.642–19.323   42.136–46.496   9.591–19.307   22.681–26.198 
+  128              47.918         33.740        183.946         14.924         43.257         14.967         24.283
+            46.759–53.054   30.152–36.180   178.143–194.707   10.076–19.084   41.917–45.288   10.194–19.217   23.232–25.377 
+  256              47.758         33.664        183.727         10.529         43.404         10.670         24.270
+            46.097–50.569   30.290–35.338   176.809–194.181   9.842–19.284   41.727–47.485   9.957–19.121   23.258–25.548 
+  512              47.827         33.719        184.323         12.899         43.282         13.413         24.186
+            46.352–50.810   30.293–35.538   177.749–191.591   9.914–19.619   40.248–46.167   12.421–19.506   23.195–26.549 
+  1024             48.046         33.724        185.840         12.037         43.797          9.969         24.415
+            46.796–52.665   30.486–35.140   178.540–210.409   11.732–20.215   41.849–48.494   8.758–14.188   23.395–25.634 
+  2048             48.201         33.873        188.077         11.712         43.440          6.946         24.448
+            47.508–51.648   31.124–39.764   184.279–213.481   11.200–21.651   42.157–47.597    6.556–9.346   22.613–27.353 
+  4096             48.163         33.910        189.896         11.421         43.525          6.648         24.568
+            47.188–52.671   31.811–37.334   182.271–217.041   11.185–20.806   40.989–47.975    5.459–9.491   22.086–27.359 
+  8192             48.016         33.884        189.346         11.121         43.504          5.890         24.534
+            47.280–54.030   32.272–37.778   184.764–201.151   10.563–20.465!  42.323–48.879    5.596–7.714   23.591–27.697 
+  16384            48.317         33.869        188.204         10.698         43.751          5.447         24.775
+            47.068–51.097   30.827–38.518   184.784–205.231   10.348–21.355   42.043–52.172    5.117–7.436   24.083–28.746 
+  32768            47.977         33.980        186.620         10.524         43.453          5.058         24.894
+            47.081–51.748   31.708–40.474   183.567–195.999   10.236–21.016   41.894–47.427    4.758–6.927   23.806–28.763 
+  65536            47.729         33.790        186.564         10.942         43.337          4.954         24.544
+            46.949–95.969   31.537–35.535   183.723–245.963   10.382–21.699   41.409–45.932    4.500–7.985   23.594–26.953 
+  131072           47.452         33.483        185.846         10.775         42.924          4.831         24.230
+            47.020–49.304   30.959–56.911   183.704–193.157   10.485–20.519   42.118–45.440    4.526–6.894   23.703–25.377 
+  262144           47.414         33.408        185.528         10.680         42.832          4.809         24.073
+            46.989–62.989   31.467–34.152   183.649–214.911   10.442–20.499   42.430–45.154    4.545–7.641   23.790–25.271 
 
 
-!  marks a cell whose 95% median interval is at least 5% of its median: 24 of 300 cells; those medians are poorly determined.
+!  marks a cell whose 95% median interval is at least 5% of its median: 27 of 360 cells; those medians are poorly determined.
 
