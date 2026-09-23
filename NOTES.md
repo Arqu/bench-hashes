@@ -41,6 +41,16 @@ vector, 128 MiB included, in five seconds; the earlier byte-per-step
 xorshift could not), and hash speed does not depend on the bytes. The
 bootstrap resampler uses SplitMix64 with multiply-shift ranges.
 
+**Time budget for long cells.** 78% of a full run went to 58 cells
+whose single hash takes over 2 ms (SHA-1DC at 128 MiB, 170 ms a sample).
+Sampling them in every fourth round alone moved noisy cells' medians by
+up to 16% (Rayon at 16 MiB), so the budget adapts: from 4 ms a hash, every
+fourth round, and every round while the median's 95% interval is wider
+than 1%. Simulated on the recorded samples: every such median within
+0.6% of the full one. Measured: 150 s -> 101 s a run; budgeted cells
+agree with a full run to a median 0.68%, against 1.37% run-to-run for
+cells sampled every round.
+
 **Interleaving.** Williams orders over the contenders, size order
 rotated per round. Every contender takes every position and follows
 every other equally often. Solo and duo samples of a batch are taken

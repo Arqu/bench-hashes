@@ -440,6 +440,17 @@ interval narrows with the square root of the count, and a 1 ms sample
 is long enough that the clock's resolution is far below noise. A whole
 run reports its elapsed time and remaining-time estimate as it progresses.
 
+Cells whose single hash takes 4 ms or more (the plateau sizes, where a
+sample is one hash of tens of milliseconds) get a time budget: such a
+cell is sampled in every fourth round, at an offset of its own so its
+samples span the run, and in every round while the 95% interval of its
+median is wider than 1% of it. Steady cells take about 30 samples, noisy
+ones keep nearly all of theirs, and the report gives the count wherever a
+cell took fewer than the rounds. On the VM this took a full run from
+about 150 s to 100 s; measured against a full-sample run, those cells'
+medians differ by a median 0.68%, less than cells sampled in every round
+differ between two runs (1.37%).
+
 The band around each median line is the **95% bootstrap confidence
 interval of the median**: the cell's samples are resampled with
 replacement 400 times, each resample's median taken, and the 2.5th and

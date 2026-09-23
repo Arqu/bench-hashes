@@ -34,6 +34,23 @@ const THOROUGH_MULTIPLIER: usize = 3;
 const CALIBRATION_PROBE_NS: u128 = 500_000;
 const TARGET_SAMPLE_NS: u128 = 1_000_000;
 
+/*
+ * Cells with a long hash get a time budget. A cell whose single hash
+ * takes LONG_HASH_NS or more (every sample is then one hash, tens of
+ * milliseconds for the plateau sizes) is sampled in every LONG_EVERY-th
+ * round, at an offset of its own so its samples still span the run, and
+ * in every round while the 95% interval of its median is wider than
+ * LONG_PRECISION_PERMILLE of the median (or it has fewer than
+ * LONG_MIN_SAMPLES): steady cells take fewer samples, noisy ones keep
+ * theirs. Measured on the VM's --all record: sampling time 136 s -> 79 s,
+ * every such cell's median within 0.6% of the one all 96 samples gave
+ * (0.04% for the typical cell), none with fewer than 30 samples.
+ */
+const LONG_HASH_NS: u128 = 4_000_000;
+const LONG_EVERY: usize = 4;
+const LONG_PRECISION_PERMILLE: u64 = 10;
+const LONG_MIN_SAMPLES: usize = 8;
+
 /// Points on the one-message axis, and on the many-messages axis.
 const INPUT_COUNT: usize = 24;
 const BATCH_COUNT: usize = 24;
@@ -525,6 +542,8 @@ type MilliCyclesPerByte = u64;
  */
 #[derive(Clone, Copy)]
 struct Statistics {
+    /// Samples behind these figures.
+    count: usize,
     minimum: u64,
     low: u64,
     median: u64,
@@ -1197,13 +1216,16 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
     progress.phase("calibrating");
 
     let mut batch_iterations: Vec<Vec<usize>> = vec![vec![1usize; POINT_COUNT]; roster.len()];
+    /* Cells under the time budget (see LONG_HASH_NS). */
+    let mut budgeted: Vec<Vec<bool>> = vec![vec![false; POINT_COUNT]; roster.len()];
 
     for (point_index, point) in POINTS.iter().enumerate() {
         for algorithm_index in 0..roster.len() {
             let algorithm = roster.algorithms[algorithm_index];
             if algorithm.takes_part(point.use_case) && roster.measures(point_index) {
-                batch_iterations[algorithm_index][point_index] =
-                    calibrate_batch(algorithm, &inputs[point_index], point.messages);
+                let (iterations, per_iteration_ns) = calibrate_batch(algorithm, &inputs[point_index], point.messages);
+                batch_iterations[algorithm_index][point_index] = iterations;
+                budgeted[algorithm_index][point_index] = iterations == 1 && per_iteration_ns >= LONG_HASH_NS;
             }
         }
     }
@@ -1251,6 +1273,11 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                 }
                 let iterations =
                     batch_iterations[algorithm_index][size_index];
+                if budgeted[algorithm_index][size_index]
+                    && !long_cell_wants_sample(&duo_samples[algorithm_index][size_index], round + size_index)
+                {
+                    continue;
+                }
 
                 /* Trace reads bracket the sample; the sample clock sits innermost. */
                 let (trace_cpu0, trace_proc0, trace_mach0, trace_perf0) = if trace.is_some() {
@@ -1351,9 +1378,9 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                 continue;
             }
             let duo = &mut duo_samples[algorithm_index][size_index];
-            assert_eq!(duo.len(), roster.rounds, "one duo sample per round");
+            assert!(!duo.is_empty() && duo.len() <= roster.rounds, "one duo sample per round at most, and one at least");
             let cell = if roster.solo {
-                let mut cell = summarize_cell(&samples[algorithm_index][size_index], roster.rounds, basis);
+                let mut cell = summarize_cell(&samples[algorithm_index][size_index], basis);
                 cell.duo = Some(summarize(&mut duo.clone()));
                 cell
             } else {
@@ -2205,11 +2232,27 @@ mod sample_clock {
     }
 }
 
+/// Whether a cell under the time budget takes a sample this round:
+/// in every LONG_EVERY-th round (`slot` is the round plus the cell's own
+/// offset), and in every round while its median is not yet known to within
+/// LONG_PRECISION_PERMILLE.
+fn long_cell_wants_sample(taken: &[u64], slot: usize) -> bool {
+    if slot % LONG_EVERY == 0 || taken.len() < LONG_MIN_SAMPLES {
+        return true;
+    }
+    let mut sorted = taken.to_vec();
+    sorted.sort_unstable();
+    let median = median_of_sorted(&sorted);
+    let (low, high) = bootstrap_median_interval(&sorted);
+    (high - low) * 1000 > LONG_PRECISION_PERMILLE * median
+}
+
+/// (iterations per sample, nanoseconds per iteration measured).
 fn calibrate_batch(
     algorithm: Algorithm,
     input: &[u8],
     messages: usize,
-) -> usize {
+) -> (usize, u128) {
     let mut iterations = 1usize;
 
     loop {
@@ -2242,7 +2285,7 @@ fn calibrate_batch(
                 "calibrated iteration count must fit in usize"
             );
 
-            return scaled as usize;
+            return (scaled as usize, elapsed_ns / iterations as u128);
         }
 
         let growth =
@@ -2278,12 +2321,8 @@ fn median_of_sorted(sorted: &[u64]) -> u64 {
     }
 }
 
-fn summarize_cell(samples: &[Sample], rounds: usize, basis: TimeBasis) -> Cell {
-    assert_eq!(
-        samples.len(),
-        rounds,
-        "every result must contain exactly one sample per round"
-    );
+fn summarize_cell(samples: &[Sample], basis: TimeBasis) -> Cell {
+    assert!(!samples.is_empty(), "a cell has at least one sample");
 
     /*
      * The reported time per sample: measured, or cycles per byte at the
@@ -2318,6 +2357,7 @@ fn summarize(samples: &mut [u64]) -> Statistics {
     let (low, high) = bootstrap_median_interval(samples);
 
     Statistics {
+        count: samples.len(),
         minimum: samples[0],
         low,
         median,
@@ -2891,6 +2931,15 @@ fn generate_text(
         "Use cases: one message per call, at twenty-four input sizes from 64 B to 128 MiB; and many messages per call, a batch of {MESSAGE_LEN}-byte messages at twenty-four batch sizes from 1 to 262144. In the second, a contender with a batch entry point takes the batch as one call (ab-blake3's single_block_hash_many_exact::<N>, BLAKE3 servil's hash_many, BLAKE3 servil mt's hash_many_multithreaded); every other contender hashes the batch one message per call of its plain entry point; BLAKE3 mt takes no part in it."
     )
     .unwrap();
+    writeln!(
+        output,
+        "Samples: {} rounds. A cell whose single hash takes {} ms or more is sampled in every {}th round, and in every round while the 95% interval of its median is wider than {}% of it; a third row gives the sample counts, in brackets, wherever a cell took fewer.",
+        roster.rounds,
+        LONG_HASH_NS / 1_000_000,
+        LONG_EVERY,
+        LONG_PRECISION_PERMILLE / 10,
+    )
+    .unwrap();
     writeln!(output).unwrap();
 
     for use_case in UseCase::ALL {
@@ -2994,6 +3043,20 @@ fn generate_text(
                 }
             }
             writeln!(output).unwrap();
+
+            /* Cells the time budget sampled less often say how many samples they took. */
+            let counts: Vec<usize> = contenders
+                .iter()
+                .flat_map(|&algorithm_index| columns(cell(results, algorithm_index, point_index)))
+                .map(|statistics| statistics.count)
+                .collect();
+            if counts.iter().any(|&count| count < roster.rounds) {
+                write!(output, "  {:<8}", "").unwrap();
+                for count in counts {
+                    write!(output, "  {:>13}", format!("[{count}]")).unwrap();
+                }
+                writeln!(output).unwrap();
+            }
         }
         writeln!(output).unwrap();
     }
@@ -3564,14 +3627,14 @@ fn generate_svg(
     if roster.solo {
         writeln!(
             svg,
-            r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Solid line and dot: solo median of {} interleaved samples · dashed line: duo median (two copies at once, later finish) · shaded band: 95% confidence interval of that median; a deeper tint marks a median that is less certain</text>"##,
+            r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Solid line and dot: solo median of up to {} interleaved samples · dashed line: duo median (two copies at once, later finish) · shaded band: 95% confidence interval of that median; a deeper tint marks a median that is less certain</text>"##,
             roster.rounds,
         )
         .unwrap();
     } else {
         writeln!(
             svg,
-            r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Line and dot: median of {} interleaved duo samples (two copies at once, later finish) · shaded band: 95% confidence interval of that median; a deeper tint marks a median that is less certain</text>"##,
+            r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Line and dot: median of up to {} interleaved duo samples (two copies at once, later finish) · shaded band: 95% confidence interval of that median; a deeper tint marks a median that is less certain</text>"##,
             roster.rounds,
         )
         .unwrap();
@@ -4531,6 +4594,11 @@ fn write_interaction_script(
                     }
                 }
             }
+            data.push_str("],\"n\":[");
+            for k in 0..plot.len() {
+                if k > 0 { data.push(','); }
+                write!(data, "{}", cell_at(k).time.count).unwrap();
+            }
             data.push_str("],\"modes\":[");
             for k in 0..plot.len() {
                 if k > 0 { data.push(','); }
@@ -4963,7 +5031,7 @@ function showHover(p, focus, k) {
     modeRow.setAttribute("fill", "#b45309");
     body.appendChild(modeRow);
   } else {
-    body.appendChild(textEl(PAD, y, "hover-sub", `extremes ${fmt(rLo, p)}–${fmt(rHi, p)} ${unitLabel(p)} over ${DATA.rounds} samples`));
+    body.appendChild(textEl(PAD, y, "hover-sub", `extremes ${fmt(rLo, p)}–${fmt(rHi, p)} ${unitLabel(p)} over ${f.n[k]} samples`));
   }
 
   /* Code path at this point; the first point of a new path explains why. */
