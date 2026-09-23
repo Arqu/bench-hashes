@@ -180,6 +180,40 @@ type Samples = Vec<Vec<Vec<u64>>>;
 struct RunSamples {
     solo: Samples,
     shared: Samples,
+    /// The round of each solo sample, by contender and point; the shared
+    /// samples of that interval are the two at twice its index.
+    rounds: Vec<Vec<Vec<usize>>>,
+}
+
+impl RunSamples {
+    /*
+     * Samples of two cells taken in the same sample interval: for each
+     * round both cells were sampled in, the solo samples, or the shared
+     * samples copy with copy. The cells of one round run back to back, so
+     * a pair shares whatever state the machine was in: an efficiency core,
+     * a lowered clock, a busy memory system.
+     */
+    fn paired(&self, scenario: Scenario, a: (usize, usize), b: (usize, usize)) -> Vec<(u64, u64)> {
+        let values = |(algorithm, point): (usize, usize)| match scenario {
+            Scenario::Solo => &self.solo[algorithm][point],
+            Scenario::Shared => &self.shared[algorithm][point],
+        };
+        let per_round = match scenario {
+            Scenario::Solo => 1,
+            Scenario::Shared => 2,
+        };
+        let b_index: std::collections::HashMap<usize, usize> =
+            self.rounds[b.0][b.1].iter().enumerate().map(|(index, &round)| (round, index)).collect();
+        let mut pairs = Vec::new();
+        for (index, round) in self.rounds[a.0][a.1].iter().enumerate() {
+            if let Some(&other) = b_index.get(round) {
+                for copy in 0..per_round {
+                    pairs.push((values(a)[index * per_round + copy], values(b)[other * per_round + copy]));
+                }
+            }
+        }
+        pairs
+    }
 }
 
 /*
@@ -1000,7 +1034,8 @@ fn main() {
             let kept = |rows: Samples| -> Samples {
                 rows.into_iter().enumerate().filter(|(index, _)| keep.contains(index)).map(|(_, row)| row).collect()
             };
-            let samples = RunSamples { solo: kept(full_samples.solo), shared: kept(full_samples.shared) };
+            let rounds = full_samples.rounds.into_iter().enumerate().filter(|(index, _)| keep.contains(index)).map(|(_, row)| row).collect();
+            let samples = RunSamples { solo: kept(full_samples.solo), shared: kept(full_samples.shared), rounds };
             (roster, results, samples, note)
         }
     };
@@ -1009,7 +1044,7 @@ fn main() {
         trace.write();
     }
 
-    let text = generate_text(&roster, &results, &machine, &selection_note);
+    let text = generate_text(&roster, &results, &samples, &machine, &selection_note);
     /* The graph draws whole axes: every point of each use case it shows. */
     let svg = roster.whole_axes().then(|| generate_svg(&roster, &results, &machine, &selection_note));
 
@@ -1249,7 +1284,11 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
     let empty = || -> Samples {
         (0..roster.len()).map(|_| (0..POINT_COUNT).map(|_| Vec::with_capacity(2 * roster.rounds)).collect()).collect()
     };
-    let mut samples = RunSamples { solo: empty(), shared: empty() };
+    let mut samples = RunSamples {
+        solo: empty(),
+        shared: empty(),
+        rounds: (0..roster.len()).map(|_| (0..POINT_COUNT).map(|_| Vec::new()).collect()).collect(),
+    };
 
     /*
      * The algorithm order cycles through the Williams orders. Point order
@@ -1314,6 +1353,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                     per_unit
                 };
                 samples.solo[algorithm_index][size_index].push(per_unit(elapsed_ns));
+                samples.rounds[algorithm_index][size_index].push(round);
                 for copy in &copies {
                     samples.shared[algorithm_index][size_index].push(per_unit(copy.elapsed_ns));
                 }
@@ -2773,7 +2813,7 @@ fn generate_samples_tsv(roster: &Roster, samples: &RunSamples, machine: &Machine
  * made for them; then which code path each contender ran, and where the
  * numbers came from, for whoever needs to trust or reproduce them.
  */
-fn generate_text(roster: &Roster, results: &Results, machine: &MachineMetadata, selection_note: &str) -> String {
+fn generate_text(roster: &Roster, results: &Results, samples: &RunSamples, machine: &MachineMetadata, selection_note: &str) -> String {
     let mut output = String::new();
 
     writeln!(output, "Hash speed on {} ({}, {} CPUs), {}", machine.cpu_type, machine.os_type, machine.cpu_count, machine.timestamp).unwrap();
@@ -2796,10 +2836,10 @@ fn generate_text(roster: &Roster, results: &Results, machine: &MachineMetadata, 
         }
     }
 
-    let (findings, two_speed) = checks(roster, results);
+    let (findings, two_speed) = checks(roster, results, samples);
     writeln!(
         output,
-        "CHECKS: where BLAKE3 servil or servil mt is slower than another contender, or slower per unit on larger work than on a size that divides it; each cell judged by its slower speed, by {}% or more, with the two medians' 95% intervals apart.",
+        "CHECKS: where BLAKE3 servil or servil mt is slower than another contender, or slower per unit on larger work than on a size that divides it; compared round by round (samples taken in the same moment), judged at the worse ratio where the ratios split in two, by {}% or more with the ratio's 95% interval above 1.",
         CHECK_GAP_PERMILLE / 10,
     )
     .unwrap();
@@ -2885,11 +2925,41 @@ fn append_table(output: &mut String, roster: &Roster, results: &Results, scenari
  */
 const CHECK_GAP_PERMILLE: u64 = 50;
 
-/// (checks, two-speed cells), each a list of report lines.
-fn checks(roster: &Roster, results: &Results) -> (Vec<String>, Vec<String>) {
-    let slower = |slow: Speed, fast: Speed| {
-        slow.low > fast.high && slow.median * 1000 >= fast.median * (1000 + CHECK_GAP_PERMILLE)
+/*
+ * How much slower the first samples of `pairs` are than the second, round
+ * by round: the ratio a user may meet (the slower of two speeds where the
+ * ratios split), in permille, and the two sides' medians over the rounds
+ * at that ratio. None unless that ratio is CHECK_GAP_PERMILLE above even
+ * with its 95% interval above 1. A round that slows both sides (an
+ * efficiency core, a lowered clock) leaves the ratio alone; a slowdown of
+ * one side (two copies sharing an SME unit) raises it.
+ */
+fn paired_slower(pairs: &[(u64, u64)]) -> Option<(u64, u64, u64)> {
+    if pairs.is_empty() {
+        return None;
+    }
+    let mut ratios: Vec<u64> = pairs.iter().map(|&(mine, theirs)| (mine * 1000 + theirs / 2) / theirs).collect();
+    let statistics = summarize(&mut ratios);
+    let worst = statistics.slowest();
+    if worst.low <= 1000 || worst.median < 1000 + CHECK_GAP_PERMILLE {
+        return None;
+    }
+    /* The rounds at that ratio: all of them, or those past the split. */
+    let floor = match statistics.two_speeds {
+        Some([fast, slow]) => (fast.median + slow.median) / 2,
+        None => 0,
     };
+    let at: Vec<&(u64, u64)> = pairs.iter().filter(|&&(mine, theirs)| (mine * 1000 + theirs / 2) / theirs >= floor).collect();
+    let median_of = |side: fn(&(u64, u64)) -> u64| {
+        let mut values: Vec<u64> = at.iter().map(|pair| side(pair)).collect();
+        values.sort_unstable();
+        median_of_sorted(&values)
+    };
+    Some((worst.median, median_of(|pair| pair.0), median_of(|pair| pair.1)))
+}
+
+/// (checks, two-speed cells), each a list of report lines.
+fn checks(roster: &Roster, results: &Results, samples: &RunSamples) -> (Vec<String>, Vec<String>) {
     /* A claim about one contender in one scenario; its worst case in figures. */
     struct Claim {
         contender: Algorithm,
@@ -2908,7 +2978,7 @@ fn checks(roster: &Roster, results: &Results) -> (Vec<String>, Vec<String>) {
             for use_case in UseCase::ALL.into_iter().filter(|&use_case| algorithm.takes_part(use_case)) {
                 let points: Vec<usize> = use_case.points().filter(|&index| roster.measures(index)).collect();
                 let stats = |algorithm_index: usize, point_index: usize| cell(results, algorithm_index, point_index).get(scenario);
-                let at = |algorithm_index: usize, point_index: usize| stats(algorithm_index, point_index).slowest();
+                let judged = |mine: (usize, usize), theirs: (usize, usize)| paired_slower(&samples.paired(scenario, mine, theirs));
                 let unit = use_case.time_unit();
                 let span = |run: &[usize]| match (run, use_case) {
                     ([one], _) => POINTS[*one].name(),
@@ -2932,8 +3002,8 @@ fn checks(roster: &Roster, results: &Results) -> (Vec<String>, Vec<String>) {
                     }
                     runs
                 };
-                let claim = |into: &mut Vec<Claim>, text: String, (slow, fast): (u64, u64), worst: String| {
-                    into.push(Claim { contender: algorithm, scenario, text, worst_permille: slow * 1000 / fast, worst });
+                let claim = |into: &mut Vec<Claim>, text: String, worst_permille: u64, worst: String| {
+                    into.push(Claim { contender: algorithm, scenario, text, worst_permille, worst });
                 };
                 let against = |at_point: String, slow: u64, fast: u64| format!("{at_point}, {} against {} {unit}", format_ps(slow), format_ps(fast));
 
@@ -2943,10 +3013,13 @@ fn checks(roster: &Roster, results: &Results) -> (Vec<String>, Vec<String>) {
                     if b == a || !other.takes_part(use_case) || (!algorithm.multithreaded() && other.multithreaded()) {
                         continue;
                     }
-                    for run in runs(&|index| slower(at(a, index), at(b, index))) {
-                        let worst = *run.iter().max_by_key(|&&index| at(a, index).median * 1000 / at(b, index).median).unwrap();
-                        let (mine, theirs) = (at(a, worst).median, at(b, worst).median);
-                        claim(&mut claims, format!("slower than {}: {}", other.name(), span(&run)), (mine, theirs), against(POINTS[worst].name(), mine, theirs));
+                    let verdict: Vec<Option<(u64, u64, u64)>> = POINTS.iter().enumerate()
+                        .map(|(index, _)| if points.contains(&index) { judged((a, index), (b, index)) } else { None })
+                        .collect();
+                    for run in runs(&|index| verdict[index].is_some()) {
+                        let worst = *run.iter().max_by_key(|&&index| verdict[index].unwrap().0).unwrap();
+                        let (ratio, mine, theirs) = verdict[worst].unwrap();
+                        claim(&mut claims, format!("slower than {}: {}", other.name(), span(&run)), ratio, against(POINTS[worst].name(), mine, theirs));
                     }
                 }
 
@@ -2955,14 +3028,21 @@ fn checks(roster: &Roster, results: &Results) -> (Vec<String>, Vec<String>) {
                     UseCase::OneMessage => POINTS[index].bytes,
                     UseCase::ManyMessages => POINTS[index].messages,
                 };
-                let divisor_for = |large: usize| {
-                    points
-                        .iter()
-                        .copied()
-                        .filter(|&small| size(small) < size(large) && size(large) % size(small) == 0)
-                        .filter(|&small| slower(at(a, large), at(a, small)))
-                        .max_by_key(|&small| at(a, large).median * 1000 / at(a, small).median)
-                };
+                /* For each point: the divisor it is most slower than, with the verdict. */
+                let divisor: Vec<Option<(usize, (u64, u64, u64))>> = POINTS.iter().enumerate()
+                    .map(|(large, _)| {
+                        if !points.contains(&large) {
+                            return None;
+                        }
+                        points
+                            .iter()
+                            .copied()
+                            .filter(|&small| size(small) < size(large) && size(large) % size(small) == 0)
+                            .filter_map(|small| judged((a, large), (a, small)).map(|verdict| (small, verdict)))
+                            .max_by_key(|(_, verdict)| verdict.0)
+                    })
+                    .collect();
+                let divisor_for = |large: usize| divisor[large].map(|(small, _)| small);
                 let mut k = 0;
                 while k < points.len() {
                     let Some(small) = divisor_for(points[k]) else {
@@ -2974,12 +3054,12 @@ fn checks(roster: &Roster, results: &Results) -> (Vec<String>, Vec<String>) {
                         k += 1;
                     }
                     let run = &points[start..k];
-                    let worst = *run.iter().max_by_key(|&&index| at(a, index).median * 1000 / at(a, small).median).unwrap();
-                    let (large, base) = (at(a, worst).median, at(a, small).median);
+                    let worst = *run.iter().max_by_key(|&&index| divisor[index].unwrap().1 .0).unwrap();
+                    let (ratio, large, base) = divisor[worst].unwrap().1;
                     claim(
                         &mut claims,
                         format!("slower per unit at {} than at {}", span(run), POINTS[small].name()),
-                        (large, base),
+                        ratio,
                         against(POINTS[worst].name(), large, base),
                     );
                 }
@@ -2992,7 +3072,7 @@ fn checks(roster: &Roster, results: &Results) -> (Vec<String>, Vec<String>) {
                     claim(
                         &mut pairs,
                         format!("two speeds: {}", span(&run)),
-                        (slow.median, fast.median),
+                        slow.median * 1000 / fast.median,
                         format!(
                             "{}, {}|{} {unit}, {}% of samples at the faster",
                             POINTS[worst].name(), format_ps(fast.median), format_ps(slow.median),
@@ -5162,63 +5242,71 @@ fn xml_escape(input: &str) -> String {
 mod correctness_tests {
     use super::*;
 
-    /// A cell whose every figure is `median` ± `half`, solo and shared alike.
-    fn synthetic(median: u64, half: u64) -> Option<Cell> {
-        let statistics = Statistics {
-            count: 24,
-            minimum: median - half,
-            low: median - half,
-            median,
-            high: median + half,
-            maximum: median + half,
-            two_speeds: None,
-        };
-        Some(Cell { solo: statistics, shared: statistics })
-    }
-
     fn point(label: &str, use_case: UseCase) -> usize {
         POINTS.iter().position(|point| point.label == label && point.use_case == use_case).unwrap()
     }
 
-    /// The checks flag what a regression hunter would, and only that: a
-    /// slower cell with apart intervals, larger work slower per unit than
-    /// a size that divides it; not 3 messages against 2, nor overlapping
-    /// intervals.
+    /// Results and samples for two contenders over `rounds` rounds: each
+    /// cell's sample in round r is `value(contender, point, r)`, solo and
+    /// both shared copies alike, summarised as measure_all does.
+    fn run(roster: &Roster, rounds: usize, value: impl Fn(usize, usize, usize) -> u64) -> (Results, RunSamples) {
+        let empty = || -> Samples { vec![vec![Vec::new(); POINT_COUNT]; roster.len()] };
+        let mut samples = RunSamples { solo: empty(), shared: empty(), rounds: vec![vec![Vec::new(); POINT_COUNT]; roster.len()] };
+        let mut results: Results = vec![vec![None; POINT_COUNT]; roster.len()];
+        for a in 0..roster.len() {
+            for &p in &roster.points {
+                for r in 0..rounds {
+                    let v = value(a, p, r);
+                    samples.solo[a][p].push(v);
+                    samples.shared[a][p].extend([v, v]);
+                    samples.rounds[a][p].push(r);
+                }
+                results[a][p] = Some(Cell {
+                    solo: summarize(&mut samples.solo[a][p].clone()),
+                    shared: summarize(&mut samples.shared[a][p].clone()),
+                });
+            }
+        }
+        (results, samples)
+    }
+
+    /// The checks flag what a regression hunter would, and only that:
+    /// larger work slower per unit than a size that divides it (not 3
+    /// messages against 2); a contender slower round by round, judged at
+    /// its worse ratio; never a slowdown that hits both sides of a round.
     #[test]
     fn checks_flag_slower_cells_and_divisible_work_only() {
         let many = |label| point(label, UseCase::ManyMessages);
         let points = vec![many("2"), many("3"), many("64"), many("128")];
-        let roster = Roster::new(vec![Algorithm::Blake3Servil, Algorithm::Sha256], true, Some(points.clone()), Some(1));
-        let mut results: Results = vec![vec![None; POINT_COUNT]; 2];
-        /* servil: 3 slower than 2 (no divisor), 128 slower than 64 (divisor). */
-        for (label, servil, sha) in [("2", 20_000, 30_000), ("3", 26_000, 30_000), ("64", 10_000, 30_000), ("128", 15_000, 30_000)] {
-            results[0][many(label)] = synthetic(servil, 100);
-            results[1][many(label)] = synthetic(sha, 100);
-        }
-        let (findings, two_speed) = checks(&roster, &results);
+        let roster = Roster::new(vec![Algorithm::Blake3Servil, Algorithm::Sha256], true, Some(points.clone()), Some(24));
+        /* A little jitter per round, so intervals have width. */
+        let jitter = |r: usize| (r % 5) as u64 * 20;
+
+        /* servil: 3 slower than 2 (no divisor), 128 slower than 64 (divisor); SHA-256 slower everywhere. */
+        let base = |p: usize| match POINTS[p].label { "2" => 20_000, "3" => 26_000, "64" => 10_000, _ => 15_000 };
+        let (results, samples) = run(&roster, 24, |a, p, r| if a == 0 { base(p) + jitter(r) } else { 30_000 + jitter(r) });
+        let (findings, two_speed) = checks(&roster, &results, &samples);
         assert!(two_speed.is_empty(), "{two_speed:#?}");
         assert_eq!(findings.len(), 1, "{findings:#?}");
         assert!(findings[0].contains("slower per unit at 128 messages than at 64 messages"), "{findings:#?}");
 
-        /* servil slower than SHA-256 at 64, intervals apart; at 128 they overlap. */
-        results[0][many("64")] = synthetic(40_000, 100);
-        results[0][many("128")] = synthetic(31_000, 2_000);
-        let (findings, _) = checks(&roster, &results);
-        assert!(findings.iter().any(|f| f.contains("slower than SHA-256: 64 messages;")), "{findings:#?}");
-        assert!(!findings.iter().any(|f| f.contains("128 messages;")), "{findings:#?}");
+        /* Rounds 0-4 slow both contenders threefold at every point: no finding from them. */
+        let (results, samples) = run(&roster, 24, |a, p, r| {
+            let v = if a == 0 { base(p).min(10_000) } else { 30_000 } + jitter(r);
+            if r < 5 { v * 3 } else { v }
+        });
+        let (findings, _) = checks(&roster, &results, &samples);
+        assert!(findings.is_empty(), "{findings:#?}");
 
-        /* A two-speed cell is listed with both speeds, and its slower one drives the checks. */
-        let mut split = synthetic(20_000, 100).unwrap();
-        for statistics in [&mut split.solo, &mut split.shared] {
-            statistics.two_speeds = Some([
-                Speed { median: 20_000, low: 19_900, high: 20_100, count: 12 },
-                Speed { median: 40_000, low: 39_900, high: 40_100, count: 12 },
-            ]);
-        }
-        results[0][many("128")] = Some(split);
-        let (findings, two_speed) = checks(&roster, &results);
-        assert!(two_speed.iter().any(|line| line.contains("two speeds: 128 messages") && line.contains("20.000|40.000")), "{two_speed:#?}");
-        assert!(findings.iter().any(|f| f.contains("slower than SHA-256: 64 to 128 messages;")), "{findings:#?}");
+        /* servil alone twice as slow in 40% of rounds at 64: slower than SHA-256 there, at about x2, and two-speed. */
+        let (results, samples) = run(&roster, 24, |a, p, r| {
+            if a == 1 { return 20_000 + jitter(r); }
+            let v = 15_000 + jitter(r);
+            if POINTS[p].label == "64" && r % 5 < 2 { v * 2 } else { v }
+        });
+        let (findings, two_speed) = checks(&roster, &results, &samples);
+        assert!(findings.iter().any(|f| f.starts_with("x1.5") && f.contains("slower than SHA-256: 64 messages;")), "{findings:#?}");
+        assert!(two_speed.iter().any(|line| line.contains("two speeds: 64 messages")), "{two_speed:#?}");
     }
 
     #[test]

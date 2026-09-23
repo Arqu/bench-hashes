@@ -88,7 +88,7 @@ unevenly two copies are served rather than what each user gets.
 **Two speeds.** A cell whose samples split at a gap of 4% of the median
 or more, a tenth or more on each side, with the sides' medians 1.25× or
 more apart, has two speeds; every report shows both with equal weight
-(text `a|b`, a forked line in the graph), and CHECKS judge the slower.
+(text `a|b`, a forked line in the graph).
 The 1.25× floor: on the VM the machine's own noise puts a tenth to a
 third of many cells' samples 10–14% slow for every contender alike, which
 drew a second line nearly everywhere at 4% alone; SME2 unit sharing splits
@@ -100,6 +100,17 @@ faster speed alone; a regression confined to the slower speed passes it.
 VM for the default roster, and it may misread a cell. `--thorough`:
 every point, 96 rounds, the long-cell budget, SHA-1DC in the rosters:
 about 140 s on the VM for `--all`.
+
+**Checks compare round by round.** Judging each cell by its slower speed
+(30f6776) compared unlike moments: on the Mac a tenth of the solo samples
+from 256 B to 8 KiB ran 1.65-3.3x slow for every contender (every fourth
+round, when the thorough run's long all-core cells are sampled; likely an
+efficiency core), and a cell that happened to split was compared at its
+slow speed with a neighbour that had not: servil "x4.70 slower than SHA-256
+ring" at 256 B. Every comparison now pairs the samples of one round (each
+cell records its rounds), judges the ratio's worse speed where the ratios
+split, and needs it 5% above 1 with its 95% interval above 1. A moment
+that slows both sides cancels; a slowdown of one side counts.
 
 **Checks.** The report's CHECKS section lists what a regression hunter
 looks for, for the servil contenders: slower than another contender at a

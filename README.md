@@ -141,9 +141,13 @@ The report's CHECKS section lists, for the servil contenders, every cell
 slower than another contender (single-threaded servil against the
 single-threaded contenders, servil mt against all, and servil mt against
 servil), and every larger point slower per unit than a smaller point that
-divides it, which could have been done as that smaller work repeated:
-each by 5% or more with the two medians' 95% intervals apart, the worst
-first.
+divides it, which could have been done as that smaller work repeated.
+Each comparison pairs the samples taken in the same round, back to back,
+so a moment that slows both sides (an efficiency core, a lowered clock)
+cancels out, and a slowdown of one side (two copies sharing an SME unit)
+counts; where the round-by-round ratios split in two, the worse one is
+judged. A finding needs that ratio 5% or more above 1, with its 95%
+interval above 1; the worst come first.
 
 `--trace-clocks PATH` writes one CSV line per sample interval with the
 wall (`Instant`), thread-CPU, process-CPU, and `mach_absolute_time`
@@ -446,9 +450,8 @@ the share of rounds in each state varies from run to run, so a single
 median would land on either speed by chance. A cell has two speeds when
 its sorted samples split at a gap of 4% or more, with a tenth or more of
 the samples on each side and the two sides' medians 1.25× or more apart.
-The text tables print such a cell as `a|b`, the TWO SPEEDS section lists
-the servil cells that did, and CHECKS judge every cell by its slower
-speed. In the graph the contender's line forks into two equal lines
+The text tables print such a cell as `a|b`, and the TWO SPEEDS section
+lists the servil cells that did. In the graph the contender's line forks into two equal lines
 through the two speeds, with a dot, a band, and a value (`a | b`) for
 each, and the hover panel gives each speed's median, interval, and share
 of samples.
