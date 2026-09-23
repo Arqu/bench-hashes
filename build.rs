@@ -188,6 +188,14 @@ fn watch_repository(repository: &Path) {
         "cargo:rerun-if-changed={}",
         git_directory.join("index").display()
     );
+    // HEAD names a branch, so a commit changes the branch's ref and leaves
+    // HEAD itself alone (and the index too, when the commit follows a
+    // build of the staged tree, as a pre-commit check does). The reflog
+    // gains a line on every commit, checkout, and reset.
+    println!(
+        "cargo:rerun-if-changed={}",
+        git_directory.join("logs/HEAD").display()
+    );
     println!(
         "cargo:rerun-if-changed={}",
         git_directory.join("refs/tags").display()
