@@ -66,23 +66,39 @@ samples (62 s, every median 1.6% slow).
 
 **Interleaving.** Williams orders over the contenders, size order
 rotated per round. Every contender takes every position and follows
-every other equally often. Solo and duo samples of a batch are taken
-back to back within one interval, so a duo/solo pair share whatever the
+every other equally often. The solo and shared samples of a batch are
+taken back to back within one interval, so they share whatever the
 machine was doing at that moment.
 
-**Time basis.** On Apple, solo samples are cycles per byte at the run's
-sustained clock, which removes frequency excursions; samples whose cycle
-count fell short of that rate (SME2 streaming mode counts at 70–75% of
-core rate) keep measured time. Duo samples are always measured time:
-two threads' cycle counters describe two threads and no one rate
-normalises the later finish.
+**Time basis.** Wall time, always. Cycle normalisation (cycles per byte
+at the run's sustained clock) was used for solo samples on Apple until
+September 2026 and removed: the core's cycle counter does not see time
+spent waiting on the SME unit (a 25% slower SME2 batch cell read the
+same cycles per message at a lower apparent clock), so normalising
+hid real SME2 slowdowns, and would hide a GPU's the same way; and a
+contender's own power draw throttling the clock is a cost its user pays.
 
-**Duo.** Two independent copies of a contender on two persistent
-threads, each over its own input of the size (different contents, so
-the copies share no cache lines), released together, scored by the
-later finish per byte of one copy. Every contender in the run gets it,
-single-threaded ones included, so columns compare. Every run measures duo. `--solo` also reports solo beside duo; in that
-view the graph draws duo as a dashed line with hollow dots.
+**Scenarios.** Every run measures solo (one copy on one thread) and
+shared (two independent copies on two persistent threads, each over its
+own input of the size, with different contents so they share no cache
+lines, released together). Each shared copy's own time is a sample, two
+per interval; the later finish, used until September 2026, measured how
+unevenly two copies are served rather than what each user gets.
+
+**Quick and thorough.** A quick run (the default) stops below 1 MiB and
+10,000 messages, 24 rounds, SHA-1DC only when named: about 12 s on the
+VM for the default roster, and it may misread a cell. `--thorough`:
+every point, 96 rounds, the long-cell budget, SHA-1DC in the rosters:
+about 140 s on the VM for `--all`.
+
+**Checks.** The report's CHECKS section lists what a regression hunter
+looks for, for the servil contenders: slower than another contender at a
+point (servil against single-threaded contenders, servil mt against all,
+servil mt against servil), and slower per unit at a point N than at a
+smaller point M dividing N (M's work N / M times would have been
+faster); 5% or more, intervals apart; identical claims merge across the
+two contenders and scenarios; worst first. "Divides" matters: 3 messages
+slower per message than 2 is no defect, 128 slower than 64 is.
 
 **Correctness.** Before calibration, selected contenders hash identical
 inputs and assert equality with checked-in golden digests. The deterministic
@@ -178,9 +194,8 @@ automatically.
   way to cap threads. The fork reads no `BLAKE3_*` variables now, so the
   report has nothing to record there.
 
-- **Solo-tuned defaults.** The default report uses duo medians, including
-  "best per family" selection. With `--solo`, selection still uses the
-  solo column; interpreting that diagnostic view needs care.
+- **Best per family.** A member must be at least as fast at every point
+  in both scenarios to be named best.
 
 ## Open questions and next steps
 
@@ -199,14 +214,11 @@ automatically.
 
 - **Idle between calls.** See "persistent worker threads" above.
 
-- **Best-per-family with `--solo`.** Consider Pareto over both columns
-  or reporting two bests. The default duo-only selection already uses duo.
+- **Per-copy clock traces.** `--trace-clocks` records the solo sample
+  and, for each shared copy, its time and its thread's P/E counts, read
+  outside the copy's timed interval.
 
-- **Per-copy clock traces.** `--trace-clocks` (with `--solo`) records the
-  solo sample and, for each duo copy, its time and its thread's P/E
-  counts, read outside the copy's timed interval.
-
-- **Noise floor.** `!` marks cells whose 95% median interval is at least
+- **Noise floor.** `~` marks cells whose 95% median interval is at least
   5% of its median. Keep VM and native results separate: both are target
   deployments. Narrow within-run bands still allow between-run drift;
   alternate baseline and candidate builds when assessing small gains.
@@ -214,12 +226,11 @@ automatically.
 ## Running it
 
     cargo run --release -- --all --thorough
-    cargo run --release -- --all --solo
+    cargo run --release -- --all
     cargo run --release -- --contenders blake3,blake3-servil-mt
 
-Every run measures duo; `--solo` adds the diagnostic single-copy column.
-Results are `benchmark-results/{CPU}.{OS}/bench-hashes.duo.result.txt`
-and `.graph.svg`. In the VM prefix commands with
+Results are `benchmark-results/{CPU}.{OS}/bench-hashes.result.txt`,
+`.graph.svg`, and `.samples.tsv`. In the VM prefix commands with
 `HOME=/workspace/vm/home CC=clang-19 TMPDIR=/tmp CARGO_TARGET_DIR=/tmp/target`.
 On macOS these environment overrides are unnecessary.
 

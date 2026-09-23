@@ -1,6 +1,6 @@
 # bench-hashes
 
-Written by GPT-5.6 Sol and Claude Fable 5 to my (Zooko's) specifications.
+Written by GPT-5.6 Sol, Claude Fable 5, and Claude Opus 5.5 to my (Zooko's) specifications.
 
 A small benchmark comparing BLAKE3, SHA-256, SHA-1DC (SHA-1 with
 collision detection, the construction git uses), BLAKE3 servil (a fork
@@ -9,16 +9,16 @@ with SME2 kernels for Apple M4 and later), ab-blake3 (a crate with a
 and on Apple platforms the system's CommonCrypto SHA-256. Two
 multithreaded contenders, BLAKE3 mt (the crates.io crate on a Rayon
 pool) and BLAKE3 servil mt (the fork's `hash_multithreaded`), join
-default and `--all` runs. Every run measures every contender under
-contention, two copies at once; `--solo` adds a single-copy column
-beside it: see "The duo measurement" below.
+default and `--all` runs. Every run measures every contender in two
+scenarios, **solo** (one copy, the machine otherwise idle) and
+**shared** (two copies at once): see "Solo and shared" below.
 
 Every run measures two use cases. **One message per call**: a call
 hashes one input, at twenty-three sizes from 64 B to 128 MiB, reported
 per byte. **Many messages per call**: a call hashes a batch of 64-byte
 messages, at twenty-four batch sizes from 1 to 262144 messages, reported
-per message; see "The many-messages use case" below. The graph shows the
-two as two plots, one below the other.
+per message; see "The many-messages use case" below. The report and the
+graph show each use case once per scenario, solo first.
 
 The one-message axis tests every power-of-two input size from 64 B to
 128 MiB, plus 3 KiB and 3 MiB: 64 B, 128 B, 256 B, 512 B, 1 KiB, 2 KiB,
@@ -40,34 +40,12 @@ ramp: a tree that is no power of two (a 2 MiB left subtree beside a
 1 MiB right one), so a splitter that cuts at subtree boundaries hands
 its threads unequal work there.
 
-It reports median, minimum, and maximum time per byte in integer
-picoseconds. Lower is better.
-
-Duo samples report measured time: the copies' cycle counters describe
-two threads, and no one rate normalises the later finish. Solo samples
-(`--solo`) on Apple silicon report **cycles per byte at the run's
-sustained clock**. Each sample reads the thread's cycle counter
-(`thread_selfcounts`) around the work; the run's sustained clock is the
-median over every sample of cycles ÷ elapsed time; and each sample's
-cycles per byte is divided by that rate. A core boost or throttle during
-a sample stretches or shrinks its elapsed time and leaves its cycles
-alone, so the reported time is unmoved. On an M4 Max this took the
-median cell's sample spread from 11% to 1.3%, with medians unchanged;
-what remains in the band is the code's own variation, cache effects,
-and the cycles a preempted thread spends warming back up. The result
-reads in the unit a stopwatch gives, with the machine's frequency
-excursions removed. The provenance names the rate.
-
-Where no per-thread cycle counter is available, the reported time is
-the elapsed time on the platform's hardware counter (`CLOCK_UPTIME_RAW`
-on Darwin, `CLOCK_MONOTONIC` on Linux, via `std::time::Instant`), and
-the provenance says so.
-
-Elapsed time is always measured on that hardware counter: a register
-read with no NTP slew that stops while the machine sleeps. Thread CPU
-time was examined as an alternative and found accurate but no better
-at the millisecond scale; the frequency excursions it appeared to
-reveal were real, and cycles are the instrument that sees them.
+The report gives each cell's median time per unit (integer picoseconds
+inside, nanoseconds on the page); lower is better. Every time is wall
+time on the platform's hardware counter (`CLOCK_UPTIME_RAW` on Darwin,
+`CLOCK_MONOTONIC` on Linux, via `std::time::Instant`), so a throttled
+clock, a busy SME unit, or a GPU's latency counts as the user would
+feel it.
 
 ## Build and run
 
@@ -75,10 +53,17 @@ reveal were real, and cycles are the instrument that sees them.
 cargo run --release
 ```
 
-With no options the benchmark compares SHA-1DC with the best available
-BLAKE3 and the best available SHA-256 on this machine. "Best" means
-Pareto-better: at least as fast at every tested size and faster at
-one. When two members of a family each win at some sizes, both are
+A run takes seconds: one-message inputs from 64 B to 512 KiB, batches of
+1 to 8192 messages, 24 rounds. It can misread a cell now and then; a
+second run, or `--thorough`, settles it. `--thorough` takes minutes: every
+point up to 128 MiB and 262144 messages, 96 rounds, and the longest cells
+sampled until their medians are known to 2%. SHA-1DC joins the default
+and `--all` rosters in thorough runs only.
+
+With no options the benchmark compares the best available BLAKE3 and the
+best available SHA-256 on this machine. "Best" means Pareto-better: at
+least as fast at every tested point, in both scenarios, and faster at
+one. When two members of a family each win at some points, both are
 shown and the report says so and names the size where the lead changes.
 The default run measures every available contender to make that choice,
 so it costs the same as `--all`.
@@ -86,8 +71,7 @@ so it costs the same as `--all`.
 ```sh
 cargo run --release -- --all                         # every contender this machine can run
 cargo run --release -- --contenders sha256,sha256-cc # exactly these, in this column order
-cargo run --release -- --thorough                    # three times the rounds, narrower bands
-cargo run --release -- --solo                        # a solo column beside every duo column
+cargo run --release -- --thorough                    # minutes: every point, 96 rounds
 cargo run --release -- --list                        # keys and availability here
 ```
 
@@ -97,8 +81,6 @@ available for direct comparison; on Apple silicon the ring and sha2
 crates are each faster than CommonCrypto at every size, so the default
 and `--all` runs leave it out. `blake3-mt` and `blake3-servil-mt` are
 the multithreaded contenders; they join default and `--all` runs.
-`blake3-servil-mt1`, the multithreaded call capped at one thread, runs
-when named, as a check that it costs what `blake3-servil` costs.
 
 ### The many-messages use case
 
@@ -114,8 +96,7 @@ digests; the bencher calls it with N the batch size (N is a const
 generic, so each batch size on the axis is its own call). BLAKE3
 servil's `hash_many(&[&[u8]], &mut [Hash])` takes messages of any
 lengths and fills one digest each; BLAKE3 servil mt's
-`hash_many_multithreaded` does the same over the fork's worker threads
-(`blake3-servil-mt1` calls it with a budget of one). Messages are 64
+`hash_many_multithreaded` does the same over the fork's worker threads. Messages are 64
 bytes for every contender because that is the one size ab-blake3's
 batch entry point accepts.
 
@@ -134,45 +115,43 @@ batch entry point. The bencher writes no wrapper of its own around any
 contender; the contenders' own entry points are the whole of what it
 calls.
 
-The duo measurement below applies unchanged: each sample runs two copies
-of the contender, each over its own batch, and times the later finish.
+Both scenarios apply unchanged: in the shared one each copy hashes its
+own batch.
 
-### The duo measurement
+### Solo and shared
 
-A hash tuned to take every core finishes sooner on an idle machine and
-later on a busy one: when the cores it counted on are running something
-else, its threads queue behind that work, and the pair finishes after
-two single-threaded hashes would have. Every sample is therefore a duo
-sample: two independent copies of the contender run at the same time,
-each on its own thread over its own input of the size, released
-together, timed to the later finish, per byte of one copy. Every
-contender is measured this way, single-threaded ones included, so the
-columns compare; a single-threaded hash costs about the same either way
-(the two copies share memory bandwidth and, under a hypervisor, a
-scheduler), and a multithreaded one shows what its threads cost when
-the machine is shared.
+A reader of these results wants to compare contenders on a load pattern,
+to spot a regression, or to estimate speed in a system they are
+designing. Each needs two numbers per contender, so every sample
+interval takes two samples of the same batch:
 
-`--solo` adds the idle-machine view: every sample interval then takes a
-solo sample (one copy, one thread) and a duo sample of the same batch,
-the text report gives every contender a `solo` and a `duo` column, and
-the graph draws the duo medians as a dashed line with hollow dots in the
-contender's colour beside the solid solo line, with both and their ratio
-in the hover panel. A multithreaded contender's solo number describes an
-idle machine, the one case it is built for; its duo number describes the
-rest, and the default report is that number alone.
+- **Solo**: one copy of the contender on one thread, the machine
+  otherwise idle. What a program gets with the machine to itself.
+- **Shared**: two independent copies at once, each on its own thread
+  over its own input, released together; each copy's own time is a
+  sample. What each of two users of the same code gets. They compete for
+  every resource the code uses: cores and memory bandwidth, and for the
+  SME2 fork an SME unit, which serves a whole cluster of cores.
 
-Duo samples report measured time: the copies' cycle counters describe
-two threads, and no one rate normalises the later finish. Solo samples
-follow the reported-time rule described at the top.
+A single-threaded hash costs about the same in both. A multithreaded one
+shows in the shared scenario what its threads cost when the machine is
+shared; an SME2 kernel shows what sharing its unit costs.
 
-`--trace-clocks PATH` (with `--solo`) writes one CSV line per sample
-interval with the wall (`Instant`), thread-CPU, process-CPU, and
-`mach_absolute_time` readings taken around the solo sample, its use case,
-and the duo sample's two copies: each copy's own time and, on Apple, its
-thread's P- and E-core cycles, instructions, and time, which say where
-each copy ran and at what clock. For clock diagnosis;
-`tools/analyze-clock-trace.py PATH` finds windows where the clocks
-disagree and says what shape the disagreement has.
+The report's CHECKS section lists, for the servil contenders, every cell
+slower than another contender (single-threaded servil against the
+single-threaded contenders, servil mt against all, and servil mt against
+servil), and every larger point slower per unit than a smaller point that
+divides it, which could have been done as that smaller work repeated:
+each by 5% or more with the two medians' 95% intervals apart, the worst
+first.
+
+`--trace-clocks PATH` writes one CSV line per sample interval with the
+wall (`Instant`), thread-CPU, process-CPU, and `mach_absolute_time`
+readings around the solo sample, its use case, and each shared copy's own
+time and, on Apple, its thread's P- and E-core cycles, instructions, and
+time, which say where each copy ran and at what clock. For clock
+diagnosis; `tools/analyze-clock-trace.py PATH` finds windows where the
+clocks disagree and says what shape the disagreement has.
 
 ### Requirements
 
@@ -235,13 +214,13 @@ report alone, so redirecting it captures the results cleanly.
 Results are written to a machine-specific subdirectory:
 
 ```text
-benchmark-results/{CPU}.{OS}/bench-hashes.duo.result.txt
-benchmark-results/{CPU}.{OS}/bench-hashes.duo.graph.svg
-benchmark-results/{CPU}.{OS}/bench-hashes.duo.samples.tsv
+benchmark-results/{CPU}.{OS}/bench-hashes.result.txt
+benchmark-results/{CPU}.{OS}/bench-hashes.graph.svg
+benchmark-results/{CPU}.{OS}/bench-hashes.samples.tsv
 ```
 
-The samples file holds every duo sample of every cell in the order
-taken, with the provenance and a CPU identity (Linux: implementer, part,
+The samples file holds every sample of every cell, both scenarios, in
+the order taken, with the provenance and a CPU identity (Linux: implementer, part,
 feature list, machine model; macOS: brand and core counts per
 performance level) as `# key: value` lines. The fork's
 `tools/perf_regress.py` reads it.
@@ -309,7 +288,7 @@ program calls it by default: `Hasher::new().update_rayon(input)` on
 Rayon's global pool, which Rayon sizes to one thread per logical CPU.
 The method splits the tree recursively with `rayon::join` down to the
 SIMD degree, so any input above one SIMD width of chunks may cross
-threads, and idle pool threads steal the halves. The two duo copies are
+threads, and idle pool threads steal the halves. The two shared copies are
 two callers in one process sharing that one pool, the same situation
 the servil fork's fair sharing addresses, so the two multithreaded
 columns compare like for like.
@@ -325,9 +304,8 @@ machine, and concurrent callers in one process share the workers
 fairly: two callers at once each get about half the machine. Across
 processes the operating system's scheduler shares the workers' CPUs.
 The fork also offers `hash_multithreaded_with_budget(input,
-max_threads)` to cap one call's threads. The standard contender measures
-the uncapped call; `--contenders blake3-servil,blake3-servil-mt1` compares
-the one-thread cap with the ordinary single-threaded entry point.
+max_threads)` to cap one call's threads; the contender measures the
+uncapped call.
 
 The benchmark touches each implementation in three ways only: it lists
 it, it calls its single-threaded (`hash`, `const_hash`), multithreaded
@@ -403,7 +381,7 @@ deterministically generated bytes and checks its digest against
 `src/test_vectors.rs`. An input of `n` bytes for seed `s` is the
 little-endian 64-bit words `s << 48 | 0, s << 48 | 1, ...` cut to `n`
 bytes: every block of every input differs, so a kernel that mixed up
-its lanes would fail, and seed 1 gives the duo copy different bytes.
+its lanes would fail, and seed 1 gives the second shared copy different bytes.
 Its 72 one-message vectors cover both input seeds at every benchmark
 size, empty input, and short boundary tails; its 48 batch vectors cover both seeds at every batch size, each the SHA-256 of
 the batch's digests concatenated in message order, so a batch entry
@@ -421,9 +399,9 @@ digests in the error.
 
 Correctness and timing share one implementation dispatch. The timed loop
 black-boxes digest bytes; the checking loop asserts their equality.
-Checks run outside the measured samples. During timing, the two copies
-still use separate buffers with different contents, preserving the duo
-measurement's cache behavior.
+Checks run outside the measured samples. During timing, the two shared
+copies use separate buffers with different contents, as two programs
+would.
 
 ## Interleaving and precision
 
@@ -435,39 +413,30 @@ order (the forty input sizes and batch sizes of the two use cases
 together) rotates independently. Each contender/point combination is
 calibrated separately so its timed samples last about 1 ms each.
 
-Each combination collects 96 samples (288 with `--thorough`; fewer for
-long cells, below). The rounds cycle through the orders and rotate the
-point that starts a round; when 96 is no multiple of the order or point
-count, some orders or starting points recur once more than others, an
-imbalance of a fraction of a sample per cell, far below the difference
-between two runs. The
+Each combination collects 24 solo samples and 48 shared ones in a quick
+run, 96 and 192 with `--thorough` (fewer for long cells, below). The
+rounds cycle through the orders and rotate the point that starts a
+round; a round count that is no multiple of the order or point count
+leaves some orders or starting points once more than others, a fraction
+of a sample per cell, far below the difference between two runs. The
 runtime budget favours sample count over sample length: the median's
 interval narrows with the square root of the count, and a 1 ms sample
-is long enough that the clock's resolution is far below noise. A whole
-run reports its elapsed time and remaining-time estimate as it progresses.
+is long enough that the clock's resolution is far below noise.
 
-Cells whose single hash takes 4 ms or more (the plateau sizes, where a
-sample is one hash of tens of milliseconds) get a time budget: such a
-cell is sampled in every fourth round, at an offset of its own so its
-samples span the run, and in every round while the 95% interval of its
-median is wider than 2% of it, in every second round. Steady cells take
-a quarter of the samples, noisy ones half, and the report gives the
-count wherever a cell took fewer than the rounds. On the VM this took a
-full run from about 150 s to 80 s, with medians inside the variation
-between two full-sample runs of the same code. Shorter samples (0.5 ms)
-were tried and rejected: 62 s a run, but every median 1.6% slower,
-since a sample's fixed cost weighs twice as much.
+In thorough runs, cells whose single hash takes 4 ms or more (the
+plateau sizes, where a sample is one hash of tens of milliseconds) get a
+time budget: such a cell is sampled in every fourth round, at an offset
+of its own so its samples span the run, and in every second round while
+the 95% interval of its median is wider than 2% of it. Shorter samples
+(0.5 ms) were tried and rejected: every median read 1.6% slower, since
+a sample's fixed cost weighs twice as much.
 
 The band around each median line is the **95% bootstrap confidence
 interval of the median**: the cell's samples are resampled with
 replacement 400 times, each resample's median taken, and the 2.5th and
 97.5th percentiles of those medians drawn. That interval says how well
-the median is known. On an M4 Max with 80 rounds the typical cell's
-interval is ±0.1–0.2%, and adjacent contenders' bands touch at one
-size in sixty-four in that run. `--thorough` triples the target sample
-count; rounding to complete orders determines the actual round count. The extremes are still reported in the text
-table and in the hover panel, where they belong: a minimum and maximum
-describe the run's environment, the interval describes the number.
+the median is known. The hover panel also gives each cell's minimum and
+maximum, which describe the run's environment.
 
 Some cells run at two speeds. On an M4 Max, ring's SHA-256 at 128 B
 spends a third of its samples near 82% of the median and the rest near
@@ -480,15 +449,14 @@ honestly around the median, which sits between the modes.
 The band's appearance reports the interval's width relative to the
 median: under 2% a faint tint; 2–5% a deeper tint; 5% and over a
 dashed outline, and the hover panel says the median is poorly
-determined. The text report marks such cells with `!`.
+determined. The text report marks such cells with `~`.
 
 ## The graph
 
-The SVG shows two plots, one per use case, each with median lines and
-confidence bands on a log-log grid: one message per call above, many
-messages per call below.
+The SVG shows four plots, each use case solo and then shared, each with
+median lines and confidence bands on a log-log grid.
 
-A switch above the first y axis flips both plots between rate (the
+A switch above the first y axis flips every plot between rate (the
 default; higher is better: GB/s above, million messages per second
 below) and time (lower is better: ns/B above, ns per message below).
 Rate is the reciprocal of time, so on the log axis each plot mirrors
@@ -506,8 +474,8 @@ Hidden contenders stay out of the ranking. On a touch screen, tapping a
 dot pins the panel; tapping it again or the background clears it. Name
 highlighting follows the mouse, since a finger has no way to leave.
 
-The names at the right edge of either plot are toggles. Clicking one
-hides that contender in both plots: its marks fade out, each y axis
+The names at the right edge of each plot are toggles. Clicking one
+hides that contender in every plot: its marks fade out, each y axis
 rescales to the contenders still showing, and its provenance line drops
 out of the block below. The name stays in
 place, greyed with a hollow swatch and a "hidden · click to show" hint,

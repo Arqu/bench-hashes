@@ -32,9 +32,12 @@ compile_error!("bench-hashes currently supports native targets only");
  * than others; that imbalance is a fraction of a sample per cell, far
  * below the difference between two runs, so any count serves.
  */
-const SAMPLE_ROUNDS: usize = 96;
-/// --thorough multiplies the rounds; the median's interval narrows as 1/√n.
-const THOROUGH_MULTIPLIER: usize = 3;
+const THOROUGH_ROUNDS: usize = 96;
+/// A quick run: seconds, not minutes, for a first look; `--thorough`
+/// confirms. Its axes stop below QUICK_BYTES and QUICK_MESSAGES.
+const QUICK_ROUNDS: usize = 24;
+const QUICK_BYTES: usize = 1 << 20;
+const QUICK_MESSAGES: usize = 10_000;
 const CALIBRATION_PROBE_NS: u128 = 250_000;
 /// Measured: 0.5 ms samples ran a full --all in 62 s instead of 80 s but
 /// read 1.6% slower across the board (each sample's fixed cost, the duo
@@ -170,10 +173,14 @@ const POINTS: [Point; POINT_COUNT] = [
 /// results[contender_index][point_index], contenders in the roster's
 /// order; None where the contender takes no part in the point's use case.
 type Results = Vec<Vec<Option<Cell>>>;
-/// Solo samples; empty vectors without --solo.
-type Samples = Vec<Vec<Vec<Sample>>>;
-/// Duo samples, in the same shape, one per round.
-type DuoSamples = Vec<Vec<Vec<u64>>>;
+/// Samples in picoseconds per unit, by contender and point.
+type Samples = Vec<Vec<Vec<u64>>>;
+/// Every sample of a run: one solo sample per sample interval, and two
+/// shared samples beside it, one per copy.
+struct RunSamples {
+    solo: Samples,
+    shared: Samples,
+}
 
 /*
  * The two use cases. One message: a call hashes one input of the size,
@@ -236,6 +243,14 @@ impl UseCase {
         }
     }
 
+    /// The unit a sample is per, in the samples file.
+    fn unit_key(self) -> &'static str {
+        match self {
+            Self::OneMessage => "B",
+            Self::ManyMessages => "msg",
+        }
+    }
+
     fn time_unit(self) -> &'static str {
         match self {
             Self::OneMessage => "ns/B",
@@ -277,12 +292,30 @@ struct Point {
 }
 
 impl Point {
+    /// The point as a reader names it: "64 KiB", "512 messages".
+    fn name(&self) -> String {
+        match self.use_case {
+            UseCase::OneMessage => self.label.to_owned(),
+            UseCase::ManyMessages if self.messages == 1 => "1 message".to_owned(),
+            UseCase::ManyMessages => format!("{} messages", self.label),
+        }
+    }
+
     const fn one(label: &'static str, bytes: usize) -> Self {
         Self { label, bytes, messages: 1, use_case: UseCase::OneMessage }
     }
 
     const fn many(label: &'static str, messages: usize) -> Self {
         Self { label, bytes: messages * MESSAGE_LEN, messages, use_case: UseCase::ManyMessages }
+    }
+
+    /// Whether a quick run measures this point: inputs below QUICK_BYTES,
+    /// batches below QUICK_MESSAGES.
+    fn quick(&self) -> bool {
+        match self.use_case {
+            UseCase::OneMessage => self.bytes < QUICK_BYTES,
+            UseCase::ManyMessages => self.messages < QUICK_MESSAGES,
+        }
     }
 }
 
@@ -315,10 +348,6 @@ enum Algorithm {
     /// own resident workers, shared fairly between concurrent callers in
     /// one process.
     Blake3ServilMt,
-    /// The fork's hash_multithreaded_with_budget with a cap of one thread:
-    /// a sanity check that the capped call is the single-threaded call, so
-    /// its column should lie on BLAKE3 servil's. Runs only when named.
-    Blake3ServilMt1,
     /// The ab-blake3 crate: const_hash for one message (a const fn copy of
     /// the reference tree), and single_block_hash_many_exact for a batch of
     /// 64-byte messages.
@@ -345,7 +374,7 @@ impl Family {
 }
 
 impl Algorithm {
-    const ALL: [Algorithm; 10] = [
+    const ALL: [Algorithm; 9] = [
         Algorithm::Blake3,
         Algorithm::Sha256,
         Algorithm::Sha1Dc,
@@ -354,7 +383,6 @@ impl Algorithm {
         Algorithm::Sha256Ring,
         Algorithm::Blake3Rayon,
         Algorithm::Blake3ServilMt,
-        Algorithm::Blake3ServilMt1,
         Algorithm::AbBlake3,
     ];
 
@@ -369,14 +397,13 @@ impl Algorithm {
             Self::Sha256Ring => "sha256-ring",
             Self::Blake3Rayon => "blake3-mt",
             Self::Blake3ServilMt => "blake3-servil-mt",
-            Self::Blake3ServilMt1 => "blake3-servil-mt1",
             Self::AbBlake3 => "ab-blake3",
         }
     }
 
     fn family(self) -> Family {
         match self {
-            Self::Blake3 | Self::Blake3Servil | Self::Blake3Rayon | Self::Blake3ServilMt | Self::Blake3ServilMt1 | Self::AbBlake3 => Family::Blake3,
+            Self::Blake3 | Self::Blake3Servil | Self::Blake3Rayon | Self::Blake3ServilMt | Self::AbBlake3 => Family::Blake3,
             Self::Sha256 | Self::Sha256CommonCrypto | Self::Sha256Ring => Family::Sha256,
             Self::Sha1Dc => Family::Sha1Dc,
         }
@@ -406,7 +433,7 @@ impl Algorithm {
      * so a default or --all run gains nothing from them.
      */
     fn on_request_only(self) -> bool {
-        matches!(self, Self::Sha256CommonCrypto | Self::Blake3ServilMt1)
+        matches!(self, Self::Sha256CommonCrypto)
     }
 
     /// Whether this contender can run in this build, or why not. A
@@ -423,7 +450,6 @@ impl Algorithm {
             | Self::Blake3Servil
             | Self::Blake3Rayon
             | Self::Blake3ServilMt
-            | Self::Blake3ServilMt1
             | Self::AbBlake3 => Ok(()),
             Self::Sha256CommonCrypto => {
                 if cfg!(target_vendor = "apple") {
@@ -445,7 +471,6 @@ impl Algorithm {
             Self::Sha256Ring => "SHA-256 ring",
             Self::Blake3Rayon => "BLAKE3 mt",
             Self::Blake3ServilMt => "BLAKE3 servil mt",
-            Self::Blake3ServilMt1 => "BLAKE3 servil mt·1",
             Self::AbBlake3 => "ab-blake3",
         }
     }
@@ -465,7 +490,6 @@ impl Algorithm {
             Self::Sha256Ring => "#c2410c",
             Self::Blake3Rayon => "#1e3a8a",
             Self::Blake3ServilMt => "#4c1d95",
-            Self::Blake3ServilMt1 => "#a78bfa",
             Self::AbBlake3 => "#c026d3",
         }
     }
@@ -480,7 +504,7 @@ impl Algorithm {
             Self::Sha256CommonCrypto => "CommonCrypto CC_SHA256_Init/Update/Final from the running macOS (libSystem); version follows the OS",
             Self::Sha256Ring => RING_SOURCE_INFO,
             Self::Blake3Rayon => BLAKE3_SOURCE_INFO,
-            Self::Blake3ServilMt | Self::Blake3ServilMt1 => BLAKE3_SERVIL_SOURCE_INFO,
+            Self::Blake3ServilMt => BLAKE3_SERVIL_SOURCE_INFO,
             Self::AbBlake3 => AB_BLAKE3_SOURCE_INFO,
         }
     }
@@ -499,7 +523,6 @@ impl Algorithm {
             Self::AbBlake3 => "single-threaded; ab_blake3::const_hash for one message, ab_blake3::single_block_hash_many_exact::<N> for a batch of N 64-byte messages",
             Self::Blake3Rayon => "multithreaded; Hasher::update_rayon on Rayon's global pool, the crate's own multithreading as a program gets it by default: the tree splits recursively over the pool, and inputs under a few chunks stay on the caller's thread",
             Self::Blake3ServilMt => "multithreaded; blake3_servil::hash_multithreaded for one message and hash_many_multithreaded for a batch: the fork chooses whether to use its shared resident workers; the kernel tables below show the thresholds",
-            Self::Blake3ServilMt1 => "capped at one thread; blake3_servil::hash_multithreaded_with_budget(input, 1) and hash_many_multithreaded_with_budget(batch, digests, 1): the single-threaded path through the multithreaded entry points, a check that it costs what hash() and hash_many() cost",
         }
     }
 
@@ -525,14 +548,6 @@ impl Algorithm {
 type PsPerByte = u64;
 const PS_PER_NS: u64 = 1_000;
 
-/*
- * Cycles per byte in integer millicycles. The thread's cycle count over a
- * sample divided by bytes hashed: frequency-independent, so a core boost
- * or throttle mid-run leaves it unmoved, and comparable across runs on the
- * same microarchitecture. Read on Apple silicon from thread_selfcounts;
- * zero where no per-thread cycle counter is available.
- */
-type MilliCyclesPerByte = u64;
 
 /*
  * Summary of one cell's samples. `low` and `high` bound the band the graph
@@ -576,89 +591,67 @@ const BOOTSTRAP_RESAMPLES: usize = 400;
 const MODE_GAP_PERMILLE: u64 = 40;
 const MODE_MIN_SHARE_PERMILLE: usize = 100;
 
-/// One (contender, size) cell: the reported time per byte (see TimeBasis),
-/// and in a duo run the duo time per byte beside it.
-#[derive(Clone, Copy)]
-struct Cell {
-    time: Statistics,
-    /// Time to the later finish of two copies, per byte of one copy;
-    /// present in duo runs.
-    duo: Option<Statistics>,
-}
-
-/// One timed run of a contender over an input.
-#[derive(Clone, Copy)]
-struct Sample {
-    /// Measured on the hardware counter.
-    ps_per_byte: PsPerByte,
-    /// From the thread cycle counter; zero without one.
-    millicycles_per_byte: MilliCyclesPerByte,
-    /// The raw readings the two above came from, for the run's clock rate.
-    elapsed_ns: u64,
-    cycles: u64,
-}
-
 /*
- * How each cell's reported time was arrived at.
- *
- * With a per-thread cycle counter, the reported time is cycles per byte
- * at the run's sustained clock: the median over every sample of cycles ÷
- * elapsed time. A core boost or throttle during a sample changes its
- * elapsed time and leaves its cycles alone, so the normalised time is
- * unmoved; the median rate is unmoved too, since excursions are brief.
- * The result reads in the same unit a stopwatch gives, with the machine's
- * frequency excursions taken out.
- *
- * Without a counter the reported time is the measured time.
+ * The two scenarios every run measures. Solo: one copy of the contender
+ * on one thread, the machine otherwise idle. Shared: two independent
+ * copies at once, each on its own thread over its own input, so two users
+ * of the same code compete for every resource it uses, cores, memory, and
+ * an SME unit alike; each copy's own time is a sample.
  */
-#[derive(Clone, Copy)]
-enum TimeBasis {
-    Measured,
-    /// Cycles per byte divided by this rate, in kHz, for samples whose own
-    /// cycles ÷ elapsed matches the rate; measured time for the rest.
-    NormalisedToKhz {
-        khz: u64,
-        /// Samples whose cycle count fell short of the rate and were
-        /// reported as measured time instead.
-        measured_samples: usize,
-        total_samples: usize,
-    },
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Scenario {
+    Solo,
+    Shared,
 }
 
-/*
- * A sample's cycles ÷ elapsed is the core clock when the counter saw every
- * cycle. Work on an execution engine the counter misses (Apple's SME2
- * streaming mode counts at 70–75% of the core rate) reads low. A sample
- * more than this far below the run's rate keeps its measured time.
- */
-const CYCLE_COUNTER_TOLERANCE_PERMILLE: u64 = 60;
+impl Scenario {
+    const ALL: [Scenario; 2] = [Scenario::Solo, Scenario::Shared];
 
-impl TimeBasis {
-    fn describe(self) -> String {
+    fn key(self) -> &'static str {
         match self {
-            Self::Measured => "measured elapsed time on the hardware counter".to_owned(),
-            Self::NormalisedToKhz { khz, measured_samples, total_samples } => {
-                let mut text = format!(
-                    "per-thread cycles at the run's sustained clock, {} GHz (median of cycles ÷ elapsed time over every sample)",
-                    format_khz_as_ghz(khz),
-                );
-                if measured_samples > 0 {
-                    write!(
-                        text,
-                        "; {measured_samples} of {total_samples} samples whose cycle count fell short of that rate (work the counter does not see, such as SME2 streaming mode) keep their measured time",
-                    )
-                    .unwrap();
-                }
-                text
-            }
+            Self::Solo => "solo",
+            Self::Shared => "shared",
+        }
+    }
+
+    fn heading(self) -> &'static str {
+        match self {
+            Self::Solo => "Solo",
+            Self::Shared => "Shared",
+        }
+    }
+
+    /// The scenario in a plot's subtitle.
+    fn subtitle(self) -> &'static str {
+        match self {
+            Self::Solo => "one copy, the machine otherwise idle",
+            Self::Shared => "two copies at once, each timed",
+        }
+    }
+
+    /// What a reader of the results needs to know about the scenario.
+    fn description(self) -> &'static str {
+        match self {
+            Self::Solo => "one copy of each contender on one thread, the machine otherwise idle",
+            Self::Shared => "two copies of the contender at once, each hashing its own input on its own thread; the time of each copy",
         }
     }
 }
 
-/// kHz as GHz with three decimals: 3_996_000 → "3.996".
-fn format_khz_as_ghz(khz: u64) -> String {
-    let mhz = (khz + 500) / 1_000;
-    format!("{}.{:03}", mhz / 1_000, mhz % 1_000)
+/// One (contender, point) cell: measured time per unit in each scenario.
+#[derive(Clone, Copy)]
+struct Cell {
+    solo: Statistics,
+    shared: Statistics,
+}
+
+impl Cell {
+    fn get(&self, scenario: Scenario) -> Statistics {
+        match scenario {
+            Scenario::Solo => self.solo,
+            Scenario::Shared => self.shared,
+        }
+    }
 }
 
 struct MachineMetadata {
@@ -687,20 +680,16 @@ struct Roster {
     points: Vec<usize>,
     /// Sample rounds.
     rounds: usize,
-    /// Every sample runs two independent copies of the contender at once
-    /// and times the later finish (see Duo). With `solo`, a solo sample
-    /// (one copy, one thread) is taken beside each duo sample and the
-    /// report shows both columns. Off by default; --solo enables it.
-    solo: bool,
 }
 
 impl Roster {
     /*
-     * `points` restricts the run to those POINTS indices (every point when
-     * None); `rounds` fixes the round count (positive), else SAMPLE_ROUNDS,
-     * three times over with `thorough`.
+     * `points` restricts the run to those POINTS indices; without it a
+     * thorough run measures every point and a quick run the points below
+     * QUICK_BYTES and QUICK_MESSAGES. `rounds` fixes the round count
+     * (positive), else THOROUGH_ROUNDS or QUICK_ROUNDS.
      */
-    fn new(algorithms: Vec<Algorithm>, thorough: bool, solo: bool, points: Option<Vec<usize>>, rounds: Option<usize>) -> Self {
+    fn new(algorithms: Vec<Algorithm>, thorough: bool, points: Option<Vec<usize>>, rounds: Option<usize>) -> Self {
         assert!(
             (2..=8).contains(&algorithms.len()),
             "a run compares two to eight contenders; {} were selected",
@@ -717,11 +706,21 @@ impl Roster {
             }
         }
         let orders = williams_orders(algorithms.len());
-        let points = points.unwrap_or_else(|| (0..POINT_COUNT).collect());
+        let points = points.unwrap_or_else(|| (0..POINT_COUNT).filter(|&index| thorough || POINTS[index].quick()).collect());
         assert!(!points.is_empty() && points.windows(2).all(|w| w[0] < w[1]), "points ascend, without repeats");
-        let rounds = rounds.unwrap_or(SAMPLE_ROUNDS * if thorough { THOROUGH_MULTIPLIER } else { 1 });
+        let rounds = rounds.unwrap_or(if thorough { THOROUGH_ROUNDS } else { QUICK_ROUNDS });
         assert!(rounds > 0, "--rounds must be positive");
-        Self { algorithms, orders, points, rounds, solo }
+        Self { algorithms, orders, points, rounds }
+    }
+
+    /// Whether every point of each use case measured runs from the axis's
+    /// start to the run's limit for it (a quick run's shorter axes count):
+    /// the graph needs axes without holes.
+    fn whole_axes(&self) -> bool {
+        UseCase::ALL.iter().all(|&use_case| {
+            let measured: Vec<usize> = use_case.points().filter(|&index| self.measures(index)).collect();
+            measured.is_empty() || measured == (use_case.points().start..measured.last().unwrap() + 1).collect::<Vec<_>>()
+        })
     }
 
     /// Whether this run measures POINTS[point_index].
@@ -783,11 +782,12 @@ enum Selection {
 }
 
 const USAGE: &str = "\
-bench-hashes: hash throughput by input size, and by messages per batch
+bench-hashes: hash speed by input size and by messages per batch, alone and
+shared with a second copy of the same contender
 
-  bench-hashes                     SHA-1DC plus the best available BLAKE3 and
-                                   SHA-256 on this machine (best = Pareto-better
-                                   at every size; the run says so if none is)
+  bench-hashes                     the best available BLAKE3 and SHA-256 on
+                                   this machine (best = Pareto-better at every
+                                   point; the run says so if none is)
   bench-hashes --all               every contender this machine can run,
                                    apart from those marked on-request in --list
   bench-hashes --contenders K,...  exactly these, in this column order
@@ -795,27 +795,25 @@ bench-hashes: hash throughput by input size, and by messages per batch
 
 Keys: blake3, ab-blake3, blake3-servil, sha256, sha256-ring, sha1dc; sha256-cc on
       request; blake3-mt and blake3-servil-mt (multithreaded) in --all and
-      default runs, or when named; blake3-servil-mt1 (the multithreaded call
-      capped at one thread, a check that it matches blake3-servil) on request
+      default runs, or when named; sha1dc in --thorough runs, or when named
 
-Every run measures two use cases: one message per call at twenty-three input
-sizes from 64 B to 128 MiB, and a batch of 64-byte messages per call at
-twenty-four batch sizes from 1 to 262144 messages (BLAKE3 mt sits that one out).
+A run takes seconds: inputs from 64 B to 512 KiB and batches of 1 to 8192
+64-byte messages, 24 rounds. It can misread now and then; --thorough confirms.
 
+  --thorough                       minutes: every point, to 128 MiB inputs and
+                                   batches of 262144 messages, 96 rounds, the
+                                   longest cells sampled until their medians
+                                   are known to 2%; adds SHA-1DC to the default
+                                   and --all rosters
   --points LABEL,...               measure only these points (labels as in the
                                    report: \"64 B\", \"8 MiB\", \"1024\" messages);
-                                   with --contenders only; no graph
-  --rounds N                       exactly N sample rounds (default 96)
-  --solo                           also take a solo sample (one copy, one
-                                   thread) beside each duo sample and report
-                                   solo and duo side by side
-  --thorough                       three times the sample rounds, for narrower
-                                   bands; about three times the run time
-  --trace-clocks PATH              also write one CSV line per sample with
-                                   wall, thread-CPU, mach_absolute_time, and
-                                   (on Apple) per-core-kind cycles and
-                                   instructions, for the solo sample and
-                                   each duo copy; needs --solo
+                                   with --contenders only
+  --rounds N                       exactly N sample rounds
+  --trace-clocks PATH              also write one CSV line per sample interval
+                                   with wall, thread-CPU, mach_absolute_time,
+                                   and (on Apple) per-core-kind cycles and
+                                   instructions, for the solo sample and each
+                                   shared copy
 ";
 
 struct Options {
@@ -825,14 +823,12 @@ struct Options {
     rounds: Option<usize>,
     trace_path: Option<std::path::PathBuf>,
     thorough: bool,
-    /// Also take a solo sample beside each duo sample.
-    solo: bool,
 }
 
 fn parse_arguments() -> Options {
     let mut arguments: Vec<String> = std::env::args().skip(1).collect();
 
-    /* --thorough and --solo may accompany any selection. Every run is a duo run. */
+    /* --thorough may accompany any selection. */
     let mut take_flag = |flag: &str| {
         arguments
             .iter()
@@ -843,7 +839,6 @@ fn parse_arguments() -> Options {
             .is_some()
     };
     let thorough = take_flag("--thorough");
-    let solo = take_flag("--solo");
 
     /* --trace-clocks PATH may accompany any selection. */
     let trace_path = arguments
@@ -886,7 +881,7 @@ fn parse_arguments() -> Options {
         (points.is_none() && rounds.is_none()) || selection == Selection::Explicit,
         "--points and --rounds narrow a --contenders run\n\n{USAGE}"
     );
-    Options { selection, explicit, points, rounds, trace_path, thorough, solo }
+    Options { selection, explicit, points, rounds, trace_path, thorough }
 }
 
 fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
@@ -931,15 +926,13 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
 }
 
 fn main() {
-    let Options { selection, explicit, points, rounds, trace_path, thorough, solo } = parse_arguments();
+    let Options { selection, explicit, points, rounds, trace_path, thorough } = parse_arguments();
     let mut trace = trace_path.map(ClockTrace::new);
-    assert!(
-        trace.is_none() || solo,
-        "--trace-clocks reads the clocks around the solo sample and each duo copy, so it needs --solo"
-    );
+    /* SHA-1DC, the slowest by far, runs in quick runs only when named. */
     let available: Vec<Algorithm> = Algorithm::ALL
         .into_iter()
         .filter(|algorithm| algorithm.availability().is_ok() && !algorithm.on_request_only())
+        .filter(|&algorithm| thorough || algorithm != Algorithm::Sha1Dc)
         .collect();
 
     let machine = machine_metadata();
@@ -950,36 +943,34 @@ fn main() {
      * keeps the Pareto-best per family and reports on those alone. Timing
      * cost is the same as --all; only the report narrows.
      */
-    let (roster, results, basis, duo_samples, selection_note) = match selection {
+    let (roster, results, samples, selection_note) = match selection {
         Selection::Explicit => {
             let keys = explicit.iter().map(|algorithm| algorithm.key()).collect::<Vec<_>>().join(",");
-            let roster = Roster::new(explicit, thorough, solo, points, rounds);
-            let (results, basis, duo_samples) = measure_all(&roster, trace.as_mut());
-            (roster, results, basis, duo_samples, format!("--contenders {keys}"))
+            let roster = Roster::new(explicit, thorough, points, rounds);
+            let (results, samples) = measure_all(&roster, trace.as_mut());
+            (roster, results, samples, format!("--contenders {keys}"))
         }
         Selection::All => {
-            let roster = Roster::new(available, thorough, solo, None, None);
-            let (results, basis, duo_samples) = measure_all(&roster, trace.as_mut());
-            (roster, results, basis, duo_samples, String::from("every contender available on this machine"))
+            let roster = Roster::new(available, thorough, None, None);
+            let (results, samples) = measure_all(&roster, trace.as_mut());
+            (roster, results, samples, String::from("every contender available on this machine"))
         }
         Selection::Best => {
-            let full = Roster::new(available, thorough, solo, None, None);
-            let (full_results, basis, full_samples) = measure_all(&full, trace.as_mut());
+            let full = Roster::new(available, thorough, None, None);
+            let (full_results, full_samples) = measure_all(&full, trace.as_mut());
             let (keep, note) = choose_best_per_family(&full, &full_results);
-            let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect(), thorough, solo, None, None);
+            let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect(), thorough, None, None);
             let results: Results = full_results
                 .iter()
                 .enumerate()
                 .filter(|(index, _)| keep.contains(index))
                 .map(|(_, row)| row.clone())
                 .collect();
-            let duo_samples: DuoSamples = full_samples
-                .into_iter()
-                .enumerate()
-                .filter(|(index, _)| keep.contains(index))
-                .map(|(_, row)| row)
-                .collect();
-            (roster, results, basis, duo_samples, note)
+            let kept = |rows: Samples| -> Samples {
+                rows.into_iter().enumerate().filter(|(index, _)| keep.contains(index)).map(|(_, row)| row).collect()
+            };
+            let samples = RunSamples { solo: kept(full_samples.solo), shared: kept(full_samples.shared) };
+            (roster, results, samples, note)
         }
     };
 
@@ -987,10 +978,9 @@ fn main() {
         trace.write();
     }
 
-    /* The Measurement section explains duo; the note names the selection only. */
-    let text = generate_text(&roster, &results, &machine, &selection_note, basis);
-    /* The graph draws whole axes, so a run of a subset of points has none. */
-    let svg = (roster.points.len() == POINT_COUNT).then(|| generate_svg(&roster, &results, &machine, &selection_note, basis));
+    let text = generate_text(&roster, &results, &machine, &selection_note);
+    /* The graph draws whole axes: every point of each use case it shows. */
+    let svg = roster.whole_axes().then(|| generate_svg(&roster, &results, &machine, &selection_note));
 
     print!("{text}");
 
@@ -1003,12 +993,11 @@ fn main() {
         )
     });
 
-    /* Every run measures duo; --solo adds solo beside it under the same names. */
-    let stem = "bench-hashes.duo";
+    let stem = "bench-hashes";
     let text_path = directory.join(format!("{stem}.result.txt"));
     let svg_path = directory.join(format!("{stem}.graph.svg"));
     let samples_path = directory.join(format!("{stem}.samples.tsv"));
-    let samples = generate_samples_tsv(&roster, &duo_samples, &machine, &selection_note);
+    let samples = generate_samples_tsv(&roster, &samples, &machine, &selection_note);
     fs::write(&samples_path, &samples).unwrap_or_else(|error| {
         panic!("failed to write {}: {error}", samples_path.display())
     });
@@ -1029,7 +1018,7 @@ fn main() {
     );
     match svg {
         Some(_) => println!("# Graph results (SVG) are in \"{}\" .", svg_path.display()),
-        None => println!("# No graph: --points measured a subset of the points."),
+        None => println!("# No graph: --points measured part of an axis."),
     }
     println!("# Samples (TSV) are in \"{}\" .", samples_path.display());
 }
@@ -1099,12 +1088,14 @@ fn choose_best_per_family(roster: &Roster, results: &Results) -> (Vec<usize>, St
                 let (Some(ca), Some(cb)) = (results[a][point_index], results[b][point_index]) else {
                     continue;
                 };
-                let (ma, mb) = (ca.time.median, cb.time.median);
-                if ma > mb {
-                    return false;
-                }
-                if ma < mb {
-                    strictly = true;
+                for scenario in Scenario::ALL {
+                    let (ma, mb) = (ca.get(scenario).median, cb.get(scenario).median);
+                    if ma > mb {
+                        return false;
+                    }
+                    if ma < mb {
+                        strictly = true;
+                    }
                 }
             }
             strictly
@@ -1148,10 +1139,12 @@ fn choose_best_per_family(roster: &Roster, results: &Results) -> (Vec<usize>, St
 
 /// The first one-message size at which the faster of two contenders changes.
 fn first_crossover(results: &Results, a: usize, b: usize) -> Option<&'static str> {
-    let leader = |size_index: usize| cell(results, a, size_index).time.median < cell(results, b, size_index).time.median;
-    (1..INPUT_COUNT)
-        .find(|&size_index| leader(size_index) != leader(size_index - 1))
-        .map(|size_index| POINTS[size_index].label)
+    let measured: Vec<usize> = (0..INPUT_COUNT).filter(|&index| results[a][index].is_some() && results[b][index].is_some()).collect();
+    let leader = |size_index: usize| cell(results, a, size_index).solo.median < cell(results, b, size_index).solo.median;
+    measured
+        .windows(2)
+        .find(|pair| leader(pair[1]) != leader(pair[0]))
+        .map(|pair| POINTS[pair[1]].label)
 }
 
 /// The measured cell of a contender that takes part at this point.
@@ -1161,7 +1154,7 @@ fn cell(results: &Results, algorithm_index: usize, point_index: usize) -> &Cell 
         .expect("the contender takes part in this point's use case")
 }
 
-fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results, TimeBasis, DuoSamples) {
+fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results, RunSamples) {
     /* Inputs for the points measured; an empty buffer stands in for the rest. */
     let inputs: Vec<Vec<u8>> = (0..POINT_COUNT)
         .map(|index| if roster.measures(index) { make_input(POINTS[index].bytes) } else { Vec::new() })
@@ -1222,12 +1215,10 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
      * change nothing measurable and cost a minute of run time.
      */
 
-    let mut samples: Samples = (0..roster.len())
-        .map(|_| (0..POINT_COUNT).map(|_| Vec::with_capacity(if roster.solo { roster.rounds } else { 0 })).collect())
-        .collect();
-    let mut duo_samples: DuoSamples = (0..roster.len())
-        .map(|_| (0..POINT_COUNT).map(|_| Vec::with_capacity(roster.rounds)).collect())
-        .collect();
+    let empty = || -> Samples {
+        (0..roster.len()).map(|_| (0..POINT_COUNT).map(|_| Vec::with_capacity(2 * roster.rounds)).collect()).collect()
+    };
+    let mut samples = RunSamples { solo: empty(), shared: empty() };
 
     /*
      * The algorithm order cycles through the Williams orders. Point order
@@ -1237,11 +1228,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
     progress.phase("measuring");
 
     for round in 0..roster.rounds {
-        if roster.solo {
-            progress.round(round, &samples);
-        } else {
-            progress.round_duo(round, &duo_samples);
-        }
+        progress.round(round, &samples.solo);
 
         let algorithm_order = &roster.orders[round % roster.orders.len()];
 
@@ -1259,7 +1246,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                 let iterations =
                     batch_iterations[algorithm_index][size_index];
                 if budgeted[algorithm_index][size_index]
-                    && !long_cell_wants_sample(&duo_samples[algorithm_index][size_index], round + size_index)
+                    && !long_cell_wants_sample(&samples.solo[algorithm_index][size_index], round + size_index)
                 {
                     continue;
                 }
@@ -1276,32 +1263,29 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                     (0, 0, 0, PerfCounters::default())
                 };
 
-                /*
-                 * The solo sample (--solo only): this thread runs the batch
-                 * and its own cycle counter describes the work.
-                 */
-                let (elapsed_ns, cycles) = if roster.solo {
-                    let cycles0 = trace_clocks::thread_cycles();
-                    let started = sample_clock::now();
-                    run_batch(algorithm, input, point.messages, iterations);
-                    let elapsed_ns = sample_clock::since_ns(started);
-                    (elapsed_ns, trace_clocks::thread_cycles() - cycles0)
-                } else {
-                    (0, 0)
-                };
+                /* The solo sample: this thread runs the batch, alone. */
+                let started = sample_clock::now();
+                run_batch(algorithm, input, point.messages, iterations);
+                let elapsed_ns = sample_clock::since_ns(started);
 
                 /*
-                 * The duo sample: two threads run a batch each and the
-                 * sample is the time to the later finish. With --solo it is
-                 * taken beside the solo sample, under the same conditions,
-                 * so the two columns compare. The copies' cycle counts
-                 * describe two threads, so duo times are measured time.
+                 * The shared sample, under the same conditions: two copies
+                 * run a batch each at once, on two threads, and each copy's
+                 * own time is a sample.
                  */
                 let copies = duo.run(algorithm, input, &duo_inputs[size_index], point.messages, iterations);
-                let later_ns = copies.iter().map(|copy| copy.elapsed_ns).max().unwrap();
+
                 let total_units = point.use_case.units(point, iterations);
-                let later_ps = later_ns.checked_mul(PS_PER_NS).expect("a sample of under a second fits in picoseconds");
-                duo_samples[algorithm_index][size_index].push((later_ps + total_units / 2) / total_units);
+                let per_unit = |ns: u64| -> u64 {
+                    let ps = ns.checked_mul(PS_PER_NS).expect("a sample of under a second fits in picoseconds");
+                    let per_unit = (ps + total_units / 2) / total_units;
+                    assert!(per_unit > 0, "every timing sample must be positive");
+                    per_unit
+                };
+                samples.solo[algorithm_index][size_index].push(per_unit(elapsed_ns));
+                for copy in &copies {
+                    samples.shared[algorithm_index][size_index].push(per_unit(copy.elapsed_ns));
+                }
 
                 if let Some(trace) = trace.as_deref_mut() {
                     let perf1 = trace_clocks::perf_counters();
@@ -1309,6 +1293,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                     let proc1 = trace_clocks::process_cpu_ns();
                     let cpu1 = trace_clocks::thread_cpu_ns();
                     let perf = perf1.since(trace_perf0);
+                    let later_ns = copies.iter().map(|copy| copy.elapsed_ns).max().unwrap();
                     trace.lines.push(format!(
                         "{round},{},{},{},{iterations},{elapsed_ns},{},{},{},{},{:?},{later_ns},{},{},{},{}",
                         point_offset * algorithm_order.len() + position,
@@ -1325,36 +1310,11 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                         copies[1].perf.csv(),
                     ));
                 }
-
-                if roster.solo {
-                    let total_units = point.use_case.units(point, iterations);
-
-                    /* Rounded to the nearest picosecond per unit. */
-                    let elapsed_ps = elapsed_ns
-                        .checked_mul(PS_PER_NS)
-                        .expect("a sample of under a second fits in picoseconds");
-                    let ps_per_byte = (elapsed_ps + total_units / 2) / total_units;
-
-                    assert!(ps_per_byte > 0, "every timing sample must be positive");
-
-                    /* Rounded to the nearest millicycle per unit; zero without a counter. */
-                    let millicycles_per_byte = (cycles * 1_000 + total_units / 2) / total_units;
-
-                    samples[algorithm_index][size_index]
-                        .push(Sample { ps_per_byte, millicycles_per_byte, elapsed_ns, cycles });
-                }
             }
         }
     }
 
-    if roster.solo {
-        progress.finish(&samples);
-    } else {
-        progress.finish_duo(&duo_samples);
-    }
-
-    /* Duo-only runs report measured time; --solo runs keep the cycle-normalised basis. */
-    let basis = if roster.solo { time_basis(&samples) } else { TimeBasis::Measured };
+    progress.finish(&samples.solo);
 
     let mut results: Results = vec![vec![None; POINT_COUNT]; roster.len()];
 
@@ -1363,56 +1323,18 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
             if !roster.algorithms[algorithm_index].takes_part(point.use_case) || !roster.measures(size_index) {
                 continue;
             }
-            let duo = &mut duo_samples[algorithm_index][size_index];
-            assert!(!duo.is_empty() && duo.len() <= roster.rounds, "one duo sample per round at most, and one at least");
-            let cell = if roster.solo {
-                let mut cell = summarize_cell(&samples[algorithm_index][size_index], basis);
-                cell.duo = Some(summarize(&mut duo.clone()));
-                cell
-            } else {
-                /* Duo-only: the reported column is the duo measurement. */
-                Cell { time: summarize(&mut duo.clone()), duo: None }
-            };
-            results[algorithm_index][size_index] = Some(cell);
+            let solo = &samples.solo[algorithm_index][size_index];
+            let shared = &samples.shared[algorithm_index][size_index];
+            assert!(!solo.is_empty() && solo.len() <= roster.rounds, "one solo sample per round at most, and one at least");
+            assert_eq!(shared.len(), 2 * solo.len(), "two shared samples, one per copy, beside every solo sample");
+            results[algorithm_index][size_index] =
+                Some(Cell { solo: summarize(&mut solo.clone()), shared: summarize(&mut shared.clone()) });
         }
     }
 
-    (results, basis, duo_samples)
+    (results, samples)
 }
 
-/*
- * The run's sustained clock: the median over all samples of cycles per
- * elapsed nanosecond, in kHz. Measured when any sample lacks cycles.
- */
-fn time_basis(samples: &Samples) -> TimeBasis {
-    let mut rates_khz: Vec<u64> = Vec::new();
-    for cell in samples.iter().flatten() {
-        for sample in cell {
-            if sample.cycles == 0 {
-                return TimeBasis::Measured;
-            }
-            /* cycles / ns = GHz; × 10⁶ = kHz. Rounded. */
-            rates_khz.push((sample.cycles * 1_000_000 + sample.elapsed_ns / 2) / sample.elapsed_ns);
-        }
-    }
-    if rates_khz.is_empty() {
-        return TimeBasis::Measured;
-    }
-    let total_samples = rates_khz.len();
-    rates_khz.sort_unstable();
-    let khz = median_of_sorted(&rates_khz);
-    let measured_samples = rates_khz
-        .iter()
-        .filter(|&&rate| !cycle_count_trustworthy(rate, khz))
-        .count();
-    TimeBasis::NormalisedToKhz { khz, measured_samples, total_samples }
-}
-
-/// Whether a sample's own cycles-per-nanosecond rate is close enough to the
-/// run's sustained clock for its cycle count to have seen all the work.
-fn cycle_count_trustworthy(sample_khz: u64, sustained_khz: u64) -> bool {
-    sample_khz * 1000 >= sustained_khz * (1000 - CYCLE_COUNTER_TOLERANCE_PERMILLE)
-}
 
 /*
  * Live progress on stderr, so stdout stays a clean report. Shows the phase,
@@ -1458,11 +1380,6 @@ impl<'a> Progress<'a> {
         self.round_inner(round, &running_medians(self.roster, samples, self.roster.progress_point()));
     }
 
-    /* Duo-only runs track the duo samples instead. */
-    fn round_duo(&mut self, round: usize, samples: &DuoSamples) {
-        self.round_inner(round, &running_duo_medians(self.roster, samples, self.roster.progress_point()));
-    }
-
     fn round_inner(&mut self, round: usize, medians: &str) {
         let measuring_started = self
             .measuring_started
@@ -1489,10 +1406,6 @@ impl<'a> Progress<'a> {
 
     fn finish(&mut self, samples: &Samples) {
         self.finish_inner(&running_medians(self.roster, samples, self.roster.progress_point()));
-    }
-
-    fn finish_duo(&mut self, samples: &DuoSamples) {
-        self.finish_inner(&running_duo_medians(self.roster, samples, self.roster.progress_point()));
     }
 
     fn finish_inner(&mut self, medians: &str) {
@@ -1530,27 +1443,12 @@ fn running_medians(roster: &Roster, samples: &Samples, size_index: usize) -> Str
 
     let parts: Vec<String> = (0..roster.len())
         .map(|algorithm_index| {
-            let mut sorted: Vec<u64> = samples[algorithm_index][size_index].iter().map(|s| s.ps_per_byte).collect();
-            sorted.sort_unstable();
-            format!("{} {}", roster.algorithms[algorithm_index].name(), format_ps(median_of_sorted(&sorted)))
-        })
-        .collect();
-
-    format!("{} ns/B at {}", parts.join(" · "), POINTS[size_index].label)
-}
-
-/* Duo-only progress: medians over the duo samples collected so far. */
-fn running_duo_medians(roster: &Roster, samples: &DuoSamples, size_index: usize) -> String {
-    if samples[0][size_index].is_empty() {
-        return format!("medians at {} pending", POINTS[size_index].label);
-    }
-    let parts: Vec<String> = (0..roster.len())
-        .map(|algorithm_index| {
             let mut sorted = samples[algorithm_index][size_index].clone();
             sorted.sort_unstable();
             format!("{} {}", roster.algorithms[algorithm_index].name(), format_ps(median_of_sorted(&sorted)))
         })
         .collect();
+
     format!("{} ns/B at {}", parts.join(" · "), POINTS[size_index].label)
 }
 
@@ -1690,13 +1588,6 @@ fn hash_batch(
                 each_message(input, messages, iterations, |m| *blake3_servil::hash_multithreaded(m).as_bytes(), consume)
             } else {
                 servil_batch(input, messages, iterations, blake3_servil::hash_many_multithreaded, consume)
-            }
-        }
-        Algorithm::Blake3ServilMt1 => {
-            if messages == 1 {
-                each_message(input, messages, iterations, |m| *blake3_servil::hash_multithreaded_with_budget(m, 1).as_bytes(), consume)
-            } else {
-                servil_batch(input, messages, iterations, |b, d| blake3_servil::hash_many_multithreaded_with_budget(b, d, 1), consume)
             }
         }
         Algorithm::AbBlake3 => {
@@ -2076,20 +1967,11 @@ impl PerfCounters {
 }
 
 /*
- * Reads around each sample. thread_cycles() feeds the cycles-per-byte
- * result on every sample; the rest serve --trace-clocks.
+ * Clock and counter reads for --trace-clocks.
  */
 mod trace_clocks {
     use super::PerfCounters;
 
-    /// The calling thread's cycles so far, all core kinds together; zero
-    /// where no per-thread counter exists. About 200 ns per call on Apple
-    /// silicon, against a 1 ms sample.
-    #[inline]
-    pub fn thread_cycles() -> u64 {
-        let counters = perf_counters();
-        counters.p_cycles + counters.e_cycles
-    }
 
     #[cfg(target_vendor = "apple")]
     pub fn perf_counters() -> PerfCounters {
@@ -2335,33 +2217,6 @@ fn median_of_sorted(sorted: &[u64]) -> u64 {
     } else {
         sorted[middle]
     }
-}
-
-fn summarize_cell(samples: &[Sample], basis: TimeBasis) -> Cell {
-    assert!(!samples.is_empty(), "a cell has at least one sample");
-
-    /*
-     * The reported time per sample: measured, or cycles per byte at the
-     * sustained rate. (millicycles/B × 10⁻³ cycles/millicycle) ÷ (kHz ×
-     * 10³ cycles/s) = s/B; × 10¹² ps/s gives ps/B = millicycles/B × 10⁶ / kHz.
-     */
-    let mut times: Vec<u64> = samples
-        .iter()
-        .map(|sample| match basis {
-            TimeBasis::Measured => sample.ps_per_byte,
-            TimeBasis::NormalisedToKhz { khz, .. } => {
-                let sample_khz = (sample.cycles * 1_000_000 + sample.elapsed_ns / 2) / sample.elapsed_ns;
-                if cycle_count_trustworthy(sample_khz, khz) {
-                    (sample.millicycles_per_byte * 1_000_000 + khz / 2) / khz
-                } else {
-                    sample.ps_per_byte
-                }
-            }
-        })
-        .collect();
-    assert!(times.iter().all(|&t| t > 0), "all timing samples must be positive");
-
-    Cell { time: summarize(&mut times), duo: None }
 }
 
 /// Requires a non-empty slice; sorts it. Zeros summarise to zeros.
@@ -2693,13 +2548,12 @@ fn detect_kernels(algorithm: Algorithm, use_case: UseCase) -> Kernels {
         Algorithm::Sha256Ring => detect_ring_kernels(),
         Algorithm::Blake3Rayon => detect_blake3_rayon_kernels(),
         Algorithm::Blake3ServilMt => servil_kernels(blake3_servil::kernel_report_multithreaded()),
-        Algorithm::Blake3ServilMt1 => servil_kernels(blake3_servil::kernel_report()),
         Algorithm::AbBlake3 => detect_ab_blake3_kernels(),
     };
     match use_case {
         UseCase::OneMessage => one_message,
         UseCase::ManyMessages if algorithm == Algorithm::AbBlake3 => detect_ab_blake3_many_kernels(),
-        UseCase::ManyMessages if matches!(algorithm, Algorithm::Blake3Servil | Algorithm::Blake3ServilMt1) => {
+        UseCase::ManyMessages if algorithm == Algorithm::Blake3Servil => {
             servil_kernels(blake3_servil::kernel_report_many())
         }
         UseCase::ManyMessages if algorithm == Algorithm::Blake3ServilMt => {
@@ -2797,48 +2651,31 @@ fn detect_blake3_rayon_kernels() -> Kernels {
 /// along the axis.
 fn append_kernel_report(output: &mut String, algorithm: Algorithm, use_case: UseCase) {
     let kernels = detect_kernels(algorithm, use_case);
-
-    if kernels.kernels.len() == 1 {
-        writeln!(
-            output,
-            "{} kernel: {} (platform {})",
-            algorithm.name(),
-            kernels.kernels[0].name,
-            kernels.platform,
-        )
-        .unwrap();
-        return;
-    }
-
-    writeln!(output, "{} kernels by {} (platform {}):", algorithm.name(), use_case.column(), kernels.platform).unwrap();
+    let mut line = format!("    {}:", algorithm.name());
     let mut previous = None;
     for point in &POINTS[use_case.points()] {
         let kernel_index = kernels.kernel_index_for(point.bytes);
-        let kernel = &kernels.kernels[kernel_index];
-        let new_here = previous.is_some_and(|previous| previous != kernel_index);
-        previous = Some(kernel_index);
-        writeln!(
-            output,
-            "  {:>8}: {}{}",
-            point.label,
-            kernel.name,
-            if new_here { "  ← new kernel from here" } else { "" },
-        )
-        .unwrap();
+        if previous != Some(kernel_index) {
+            let separator = if previous.is_some() { ";" } else { "" };
+            write!(line, "{separator} {} {}", point.label, kernels.kernels[kernel_index].name).unwrap();
+            previous = Some(kernel_index);
+        }
     }
+    writeln!(output, "{line}").unwrap();
 }
 
 /*
- * Every duo sample, for tools that do their own statistics (the fork's
+ * Every sample, for tools that do their own statistics (the fork's
  * performance-regression check reads this file). Lines starting with '#'
  * carry the provenance and machine identity as `key: value`; then one row
- * per measured cell: contender key, use case, point label, the unit a
- * sample is per (`B` or `msg`), and the samples in picoseconds per unit,
- * comma-separated, in the order taken.
+ * per measured cell and scenario: contender key, scenario (`solo` or
+ * `shared`), use case, point label, the unit a sample is per (`B` or
+ * `msg`), and the samples in picoseconds per unit, comma-separated, in
+ * the order taken (shared: the two copies of each interval in turn).
  */
-fn generate_samples_tsv(roster: &Roster, duo_samples: &DuoSamples, machine: &MachineMetadata, selection_note: &str) -> String {
+fn generate_samples_tsv(roster: &Roster, samples: &RunSamples, machine: &MachineMetadata, selection_note: &str) -> String {
     let mut out = String::new();
-    writeln!(out, "# bench-hashes samples v1").unwrap();
+    writeln!(out, "# bench-hashes samples v2").unwrap();
     for (key, value) in [
         ("timestamp", machine.timestamp.as_str()),
         ("bench-hashes version", BENCH_VERSION),
@@ -2866,243 +2703,270 @@ fn generate_samples_tsv(roster: &Roster, duo_samples: &DuoSamples, machine: &Mac
             writeln!(out, "# kernel platform {} {:?}: {}", algorithm.key(), use_case, detect_kernels(algorithm, *use_case).platform).unwrap();
         }
     }
-    writeln!(out, "contender\tuse_case\tpoint\tunit\tps_per_unit").unwrap();
+    writeln!(out, "contender\tscenario\tuse_case\tpoint\tunit\tps_per_unit").unwrap();
     for (algorithm_index, &algorithm) in roster.algorithms.iter().enumerate() {
-        for (point_index, point) in POINTS.iter().enumerate() {
-            let samples = &duo_samples[algorithm_index][point_index];
-            if samples.is_empty() {
-                continue;
-            }
-            let unit = match point.use_case {
-                UseCase::OneMessage => "B",
-                UseCase::ManyMessages => "msg",
+        for scenario in Scenario::ALL {
+            let rows = match scenario {
+                Scenario::Solo => &samples.solo,
+                Scenario::Shared => &samples.shared,
             };
-            let values: Vec<String> = samples.iter().map(u64::to_string).collect();
-            writeln!(out, "{}\t{:?}\t{}\t{unit}\t{}", algorithm.key(), point.use_case, point.label, values.join(",")).unwrap();
+            for (point_index, point) in POINTS.iter().enumerate() {
+                let cell_samples = &rows[algorithm_index][point_index];
+                if cell_samples.is_empty() {
+                    continue;
+                }
+                let values: Vec<String> = cell_samples.iter().map(u64::to_string).collect();
+                writeln!(
+                    out,
+                    "{}\t{}\t{:?}\t{}\t{}\t{}",
+                    algorithm.key(),
+                    scenario.key(),
+                    point.use_case,
+                    point.label,
+                    point.use_case.unit_key(),
+                    values.join(","),
+                )
+                .unwrap();
+            }
         }
     }
     out
 }
 
-fn generate_text(
-    roster: &Roster,
-    results: &Results,
-    machine: &MachineMetadata,
-    selection_note: &str,
-    basis: TimeBasis,
-) -> String {
+/*
+ * The text report, for three readers in turn: one comparing contenders on
+ * a load pattern, one looking for a regression, one estimating speed for
+ * a design. Results come first, one table per scenario and use case, the
+ * median alone in each cell; then the checks a regression hunter wants
+ * made for them; then which code path each contender ran, and where the
+ * numbers came from, for whoever needs to trust or reproduce them.
+ */
+fn generate_text(roster: &Roster, results: &Results, machine: &MachineMetadata, selection_note: &str) -> String {
     let mut output = String::new();
 
-    writeln!(output, "TIMESTAMP: {}", machine.timestamp).unwrap();
-    writeln!(output, "git source: {GIT_SOURCE}").unwrap();
-    writeln!(output, "git commit: {GIT_COMMIT}").unwrap();
-    writeln!(output, "git tag: {GIT_TAG}").unwrap();
+    writeln!(output, "Hash speed on {} ({}, {} CPUs), {}", machine.cpu_type, machine.os_type, machine.cpu_count, machine.timestamp).unwrap();
     writeln!(
         output,
-        "git clean status: {GIT_CLEAN_STATUS}"
-    )
-        .unwrap();
-    writeln!(
-        output,
-        "bench-hashes version: {BENCH_VERSION}"
-    )
-        .unwrap();
-    writeln!(output, "CPU type: {}", machine.cpu_type).unwrap();
-    writeln!(output, "CPU count: {}", machine.cpu_count).unwrap();
-    writeln!(output, "OS type: {}", machine.os_type).unwrap();
-    writeln!(output, "CPU identity: {}", machine.cpu_identity).unwrap();
-    writeln!(output, "Rust compiler: {RUSTC_VERSION}").unwrap();
-    writeln!(output, "Build target: {BUILD_TARGET}").unwrap();
-    writeln!(output, "Target features: {TARGET_FEATURES}").unwrap();
-    writeln!(output, "Sample clock: {}", sample_clock::NAME).unwrap();
-    writeln!(output, "Reported time: {}", basis.describe()).unwrap();
-    writeln!(output, "Correctness: selected implementations match checked-in golden digests on identical deterministic inputs before calibration; checks cover both timed input sets, boundary lengths, and concurrent multithreaded calls.").unwrap();
-    writeln!(output, "Contenders: {}", selection_note).unwrap();
-    for algorithm in &roster.algorithms {
-        writeln!(output, "{} source: {}", algorithm.name(), algorithm.source()).unwrap();
-    }
-    for algorithm in &roster.algorithms {
-        writeln!(output, "{} mode: {}", algorithm.name(), algorithm.mode()).unwrap();
-    }
-    for algorithm in &roster.algorithms {
-        if let Some(resources) = algorithm.thread_resources() {
-            writeln!(output, "{} threads: {}", algorithm.name(), resources).unwrap();
-        }
-    }
-    if roster.solo {
-        writeln!(
-            output,
-            "Measurement: solo and duo. Every sample interval took a solo sample (one copy, one thread) and then a duo sample: two independent copies of the contender at once, on two threads over two inputs of the size, released together, timed to the later finish, per byte of one copy. A contender that takes the whole machine to go faster alone runs beside a copy of itself in the duo sample and shows what that costs. Duo times are measured time; solo times follow the reported-time rule above."
-        )
-        .unwrap();
-    } else {
-        writeln!(
-            output,
-            "Measurement: duo. Every sample ran two independent copies of the contender at once, on two threads over two inputs of the size, released together, timed to the later finish, per byte of one copy. A contender that takes the whole machine to go faster alone runs beside a copy of itself and shows what that costs. Duo times are measured time. Pass --solo to also take a solo sample beside each duo sample."
-        )
-        .unwrap();
-    }
-    writeln!(
-        output,
-        "Use cases: one message per call, at twenty-three input sizes from 64 B to 128 MiB; and many messages per call, a batch of {MESSAGE_LEN}-byte messages at twenty-four batch sizes from 1 to 262144. In the second, a contender with a batch entry point takes the batch as one call (ab-blake3's single_block_hash_many_exact::<N>, BLAKE3 servil's hash_many, BLAKE3 servil mt's hash_many_multithreaded); every other contender hashes the batch one message per call of its plain entry point; BLAKE3 mt takes no part in it."
-    )
-    .unwrap();
-    writeln!(
-        output,
-        "Samples: {} rounds. A cell whose single hash takes {} ms or more is sampled in every {}th round, and in every {}nd while the 95% interval of its median is wider than {}% of it; a third row gives the sample counts, in brackets, wherever a cell took fewer.",
+        "{} run: {} rounds{}. Each cell is the median time per unit; lower is better. ~ marks a median known only to within {}%.",
+        if roster.points.iter().all(|&index| POINTS[index].quick()) { "Quick" } else { "Thorough" },
         roster.rounds,
-        LONG_HASH_NS / 1_000_000,
-        LONG_EVERY,
-        LONG_EVERY_UNSURE,
-        LONG_PRECISION_PERMILLE / 10,
+        if roster.points.iter().all(|&index| POINTS[index].quick()) { "; --thorough confirms and adds the largest inputs and batches" } else { "" },
+        SPREAD_WIDE_PERMILLE / 10,
     )
     .unwrap();
     writeln!(output).unwrap();
 
+    for scenario in Scenario::ALL {
+        writeln!(output, "{}: {}.", scenario.heading().to_uppercase(), scenario.description()).unwrap();
+        writeln!(output).unwrap();
+        for use_case in UseCase::ALL {
+            append_table(&mut output, roster, results, scenario, use_case);
+        }
+    }
+
+    let findings = checks(roster, results);
+    writeln!(
+        output,
+        "CHECKS: where BLAKE3 servil or servil mt is slower than another contender, or slower per unit on larger work than on a size that divides it; by {}% or more, with the two medians' 95% intervals apart.",
+        CHECK_GAP_PERMILLE / 10,
+    )
+    .unwrap();
+    if findings.is_empty() {
+        writeln!(output, "  none").unwrap();
+    }
+    for finding in &findings {
+        writeln!(output, "  {finding}").unwrap();
+    }
+    writeln!(output).unwrap();
+
+    writeln!(output, "KERNELS: the code path each contender ran, from the point named on.").unwrap();
     for use_case in UseCase::ALL {
-        writeln!(output, "{} — kernels:", use_case.heading()).unwrap();
+        writeln!(output, "  {}:", use_case.heading()).unwrap();
         for &algorithm in roster.algorithms.iter().filter(|algorithm| algorithm.takes_part(use_case)) {
             append_kernel_report(&mut output, algorithm, use_case);
         }
-        writeln!(output).unwrap();
-    }
-
-    writeln!(
-        output,
-        "============================================================"
-    )
-        .unwrap();
-    writeln!(output, "BENCHMARK SUMMARY").unwrap();
-    writeln!(
-        output,
-        "============================================================"
-    )
-        .unwrap();
-    writeln!(output).unwrap();
-
-    writeln!(
-        output,
-        "Time per byte in ns/B for one message per call, time per message in ns for many messages per call: median, with minimum–maximum beneath; lower is better. Bands in the graph are the 95% interval of each median."
-    )
-        .unwrap();
-    if roster.solo {
-        writeln!(
-            output,
-            "Each contender has two columns. solo: one copy on one thread, the machine otherwise idle. duo: two independent copies at once on two threads, the time to the later finish, per byte of one copy. A contender that takes the whole machine to go faster alone shows the difference between the two."
-        )
-        .unwrap();
-    } else {
-        writeln!(
-            output,
-            "Each contender has one column: duo, two independent copies at once on two threads, the time to the later finish, per byte of one copy."
-        )
-        .unwrap();
     }
     writeln!(output).unwrap();
 
-    let columns = |cell: &Cell| -> Vec<Statistics> {
-        let mut columns = vec![cell.time];
-        if let Some(duo) = cell.duo {
-            columns.push(duo);
-        }
-        columns
-    };
-
-    for use_case in UseCase::ALL {
-        let contenders: Vec<usize> = (0..roster.len())
-            .filter(|&index| roster.algorithms[index].takes_part(use_case))
-            .collect();
-        writeln!(output, "{} ({}):", use_case.heading(), use_case.time_unit()).unwrap();
-        writeln!(output).unwrap();
-
-        /*
-         * Header rows: one column per contender, or a solo and a duo column
-         * per contender in a duo run; wide names get a short form.
-         */
-        write!(output, "  {:<8}", use_case.column()).unwrap();
-        for &algorithm_index in &contenders {
-            let algorithm = roster.algorithms[algorithm_index];
-            if roster.solo {
-                write!(output, "  {:>27}", column_heading(algorithm)).unwrap();
-            } else {
-                write!(output, "  {:>13}", column_heading(algorithm)).unwrap();
-            }
-        }
-        writeln!(output).unwrap();
-        if roster.solo {
-            write!(output, "  {:<8}", "").unwrap();
-            for _ in &contenders {
-                write!(output, "  {:>13}{:>14}", "solo", "duo").unwrap();
-            }
-            writeln!(output).unwrap();
-        }
-
-        for point_index in use_case.points().filter(|&index| roster.measures(index)) {
-            write!(output, "  {:<8}", POINTS[point_index].label).unwrap();
-            for &algorithm_index in &contenders {
-                for statistics in columns(cell(results, algorithm_index, point_index)) {
-                    write!(output, "  {:>13}", format_ps(statistics.median)).unwrap();
-                }
-            }
-            writeln!(output).unwrap();
-
-            write!(output, "  {:<8}", "").unwrap();
-            for &algorithm_index in &contenders {
-                for statistics in columns(cell(results, algorithm_index, point_index)) {
-                    /* A trailing mark flags a wide spread; the legend below explains it. */
-                    let flag = if spread_permille(statistics) >= SPREAD_WIDE_PERMILLE { "!" } else { " " };
-                    write!(
-                        output,
-                        "  {:>12}{flag}",
-                        format!("{}–{}", format_ps(statistics.minimum), format_ps(statistics.maximum)),
-                    )
-                        .unwrap();
-                }
-            }
-            writeln!(output).unwrap();
-
-            /* Cells the time budget sampled less often say how many samples they took. */
-            let counts: Vec<usize> = contenders
-                .iter()
-                .flat_map(|&algorithm_index| columns(cell(results, algorithm_index, point_index)))
-                .map(|statistics| statistics.count)
-                .collect();
-            if counts.iter().any(|&count| count < roster.rounds) {
-                write!(output, "  {:<8}", "").unwrap();
-                for count in counts {
-                    write!(output, "  {:>13}", format!("[{count}]")).unwrap();
-                }
-                writeln!(output).unwrap();
-            }
-        }
-        writeln!(output).unwrap();
+    writeln!(output, "PROVENANCE").unwrap();
+    writeln!(output, "  bench-hashes {BENCH_VERSION}, {GIT_SOURCE}, commit {GIT_COMMIT} ({GIT_CLEAN_STATUS})").unwrap();
+    writeln!(output, "  contenders: {selection_note}").unwrap();
+    for algorithm in &roster.algorithms {
+        writeln!(output, "  {}: {}; {}", algorithm.name(), algorithm.source(), algorithm.mode()).unwrap();
     }
-
-    let all_statistics: Vec<Statistics> = results.iter().flatten().flatten().flat_map(|cell| columns(cell)).collect();
-    let wide_cells = all_statistics
-        .iter()
-        .filter(|statistics| spread_permille(**statistics) >= SPREAD_WIDE_PERMILLE)
-        .count();
-    writeln!(output).unwrap();
-    if wide_cells > 0 {
-        writeln!(
-            output,
-            "!  marks a cell whose 95% median interval is at least {}% of its median: {wide_cells} of {} cells; those medians are poorly determined.",
-            SPREAD_WIDE_PERMILLE / 10,
-            all_statistics.len(),
-        )
-            .unwrap();
-    } else {
-        writeln!(
-            output,
-            "Every cell's median is known to within {}% (95% bootstrap interval).",
-            SPREAD_WIDE_PERMILLE / 10,
-        )
-            .unwrap();
-    }
-    writeln!(output).unwrap();
+    writeln!(output, "  CPU: {}", machine.cpu_identity).unwrap();
+    writeln!(output, "  {RUSTC_VERSION}; target {BUILD_TARGET}; features {TARGET_FEATURES}").unwrap();
+    writeln!(output, "  clock: {}", sample_clock::NAME).unwrap();
+    writeln!(output, "  every contender matched golden digests on the timed inputs before timing began").unwrap();
 
     output
+}
+
+/// One results table: a row per point, a column per contender taking part.
+fn append_table(output: &mut String, roster: &Roster, results: &Results, scenario: Scenario, use_case: UseCase) {
+    let contenders: Vec<usize> = (0..roster.len()).filter(|&index| roster.algorithms[index].takes_part(use_case)).collect();
+    let points: Vec<usize> = use_case.points().filter(|&index| roster.measures(index)).collect();
+    if points.is_empty() {
+        return;
+    }
+    writeln!(output, "  {} ({})", use_case.heading(), use_case.time_unit()).unwrap();
+    write!(output, "  {:<8}", use_case.column()).unwrap();
+    for &algorithm_index in &contenders {
+        write!(output, "  {:>13}", column_heading(roster.algorithms[algorithm_index])).unwrap();
+    }
+    writeln!(output).unwrap();
+    for &point_index in &points {
+        write!(output, "  {:<8}", POINTS[point_index].label).unwrap();
+        for &algorithm_index in &contenders {
+            let statistics = cell(results, algorithm_index, point_index).get(scenario);
+            let mark = if spread_permille(statistics) >= SPREAD_WIDE_PERMILLE { "~" } else { " " };
+            write!(output, "  {:>12}{mark}", format_ps(statistics.median)).unwrap();
+        }
+        writeln!(output).unwrap();
+    }
+    writeln!(output).unwrap();
+}
+
+/*
+ * The checks a regression hunter would make by eye, for the servil
+ * contenders, each a comparison of two medians whose 95% intervals are
+ * apart and at least CHECK_GAP_PERMILLE different:
+ * - slower than another contender at the same point: BLAKE3 servil
+ *   against the single-threaded ones, BLAKE3 servil mt against all (BLAKE3
+ *   servil too: it could have run single-threaded);
+ * - slower per unit at a point N than at a smaller point M that divides
+ *   it (it could have done M's work N / M times).
+ * Consecutive points with the same finding share a line.
+ */
+const CHECK_GAP_PERMILLE: u64 = 50;
+
+fn checks(roster: &Roster, results: &Results) -> Vec<String> {
+    let slower = |slow: Statistics, fast: Statistics| {
+        slow.low > fast.high && slow.median * 1000 >= fast.median * (1000 + CHECK_GAP_PERMILLE)
+    };
+    /* A claim about one contender in one scenario; its worst case in figures. */
+    struct Claim {
+        contender: Algorithm,
+        scenario: Scenario,
+        text: String,
+        worst_permille: u64,
+        worst: String,
+    }
+    let mut claims: Vec<Claim> = Vec::new();
+    for (a, &algorithm) in roster.algorithms.iter().enumerate() {
+        if !matches!(algorithm, Algorithm::Blake3Servil | Algorithm::Blake3ServilMt) {
+            continue;
+        }
+        for scenario in Scenario::ALL {
+            for use_case in UseCase::ALL.into_iter().filter(|&use_case| algorithm.takes_part(use_case)) {
+                let points: Vec<usize> = use_case.points().filter(|&index| roster.measures(index)).collect();
+                let median = |algorithm_index: usize, point_index: usize| cell(results, algorithm_index, point_index).get(scenario).median;
+                let unit = use_case.time_unit();
+                let mut claim = |text: String, (slow, fast): (u64, u64), at: String| {
+                    claims.push(Claim {
+                        contender: algorithm,
+                        scenario,
+                        text,
+                        worst_permille: slow * 1000 / fast,
+                        worst: format!("{at}, {} against {} {unit}", format_ps(slow), format_ps(fast)),
+                    });
+                };
+                let span = |run: &[usize]| match (run, use_case) {
+                    ([one], _) => POINTS[*one].name(),
+                    ([first, .., last], UseCase::ManyMessages) => format!("{} to {} messages", POINTS[*first].label, POINTS[*last].label),
+                    ([first, .., last], UseCase::OneMessage) => format!("{} to {}", POINTS[*first].label, POINTS[*last].label),
+                    ([], _) => unreachable!("a run holds a point"),
+                };
+                /* Runs of consecutive points where this contender is slower than another. */
+                for (b, &other) in roster.algorithms.iter().enumerate() {
+                    /* A single-threaded contender answers to single-threaded ones alone. */
+                    if b == a || !other.takes_part(use_case) || (!algorithm.multithreaded() && other.multithreaded()) {
+                        continue;
+                    }
+                    let flags: Vec<bool> = points
+                        .iter()
+                        .map(|&index| slower(cell(results, a, index).get(scenario), cell(results, b, index).get(scenario)))
+                        .collect();
+                    let mut k = 0;
+                    while k < points.len() {
+                        if !flags[k] {
+                            k += 1;
+                            continue;
+                        }
+                        let start = k;
+                        while k < points.len() && flags[k] {
+                            k += 1;
+                        }
+                        let run = &points[start..k];
+                        let worst = *run.iter().max_by_key(|&&index| median(a, index) * 1000 / median(b, index)).unwrap();
+                        claim(format!("slower than {}: {}", other.name(), span(run)), (median(a, worst), median(b, worst)), POINTS[worst].name());
+                    }
+                }
+                /* Larger work slower per unit than a size that divides it, runs sharing that size. */
+                let size = |index: usize| match use_case {
+                    UseCase::OneMessage => POINTS[index].bytes,
+                    UseCase::ManyMessages => POINTS[index].messages,
+                };
+                let divisor_for: Vec<Option<usize>> = points
+                    .iter()
+                    .map(|&large| {
+                        points
+                            .iter()
+                            .copied()
+                            .filter(|&small| size(small) < size(large) && size(large) % size(small) == 0)
+                            .filter(|&small| slower(cell(results, a, large).get(scenario), cell(results, a, small).get(scenario)))
+                            .max_by_key(|&small| median(a, large) * 1000 / median(a, small))
+                    })
+                    .collect();
+                let mut k = 0;
+                while k < points.len() {
+                    let Some(small) = divisor_for[k] else {
+                        k += 1;
+                        continue;
+                    };
+                    let start = k;
+                    while k < points.len() && divisor_for[k] == Some(small) {
+                        k += 1;
+                    }
+                    let run = &points[start..k];
+                    let worst = *run.iter().max_by_key(|&&index| median(a, index) * 1000 / median(a, small)).unwrap();
+                    claim(
+                        format!("slower per unit at {} than at {}", span(run), POINTS[small].name()),
+                        (median(a, worst), median(a, small)),
+                        POINTS[worst].name(),
+                    );
+                }
+            }
+        }
+    }
+    /* Claims with the same text merge across contenders and scenarios; the worst case leads. */
+    let mut merged: Vec<(Vec<Algorithm>, Vec<Scenario>, String, u64, String)> = Vec::new();
+    for claim in claims {
+        match merged.iter_mut().find(|entry| entry.2 == claim.text) {
+            Some(entry) => {
+                if !entry.0.contains(&claim.contender) {
+                    entry.0.push(claim.contender);
+                }
+                if !entry.1.contains(&claim.scenario) {
+                    entry.1.push(claim.scenario);
+                }
+                if claim.worst_permille > entry.3 {
+                    entry.3 = claim.worst_permille;
+                    entry.4 = claim.worst;
+                }
+            }
+            None => merged.push((vec![claim.contender], vec![claim.scenario], claim.text, claim.worst_permille, claim.worst)),
+        }
+    }
+    merged.sort_by(|x, y| y.3.cmp(&x.3));
+    merged
+        .into_iter()
+        .map(|(contenders, scenarios, text, permille, worst)| {
+            let who: Vec<&str> = contenders.iter().map(|algorithm| algorithm.name()).collect();
+            let when: Vec<&str> = scenarios.iter().map(|scenario| scenario.key()).collect();
+            format!("x{}.{:02} {} ({}) {text}; most at {worst}", permille / 1000, permille % 1000 / 10, who.join(", "), when.join(", "))
+        })
+        .collect()
 }
 
 /// Column heading that fits the 13-character summary columns.
@@ -3111,15 +2975,13 @@ fn column_heading(algorithm: Algorithm) -> &'static str {
         Algorithm::Sha256CommonCrypto => "SHA-256 CC",
         Algorithm::Sha256Ring => "SHA-256 ring",
         Algorithm::Blake3ServilMt => "B3 servil mt",
-        Algorithm::Blake3ServilMt1 => "B3 servil mt·1",
         other => other.name(),
     }
 }
 
-/// A point's x position on its use case's axis, as a fraction of the
-/// axis width; both axes are logarithmic in bytes.
-fn x_fraction(point_index: usize) -> f64 {
-    let range = POINTS[point_index].use_case.points();
+/// A point's x position on an axis of the points in `range`, as a
+/// fraction of the axis width; both axes are logarithmic in bytes.
+fn x_fraction(point_index: usize, range: std::ops::Range<usize>) -> f64 {
     let smallest = (POINTS[range.start].bytes as f64).log2();
     let largest = (POINTS[range.end - 1].bytes as f64).log2();
     ((POINTS[point_index].bytes as f64).log2() - smallest) / (largest - smallest)
@@ -3332,8 +3194,8 @@ fn output_directory(machine: &MachineMetadata) -> std::path::PathBuf {
 const SVG_WIDTH: f64 = 1300.0;
 /// Canvas height: the provenance block ends where the lines end, with the
 /// bottom margin that follows.
-fn svg_height(provenance_lines: usize) -> f64 {
-    provenance_line_y(provenance_lines.saturating_sub(1)) + PROVENANCE_LINE_HEIGHT + 8.0
+fn svg_height(provenance_top: f64, provenance_lines: usize) -> f64 {
+    provenance_line_y(provenance_top, provenance_lines.saturating_sub(1)) + PROVENANCE_LINE_HEIGHT + 8.0
 }
 const PLOT_LEFT: f64 = 110.0;
 const PLOT_RIGHT: f64 = 1000.0;
@@ -3349,7 +3211,10 @@ const SERIES_LABEL_GAP: f64 = 44.0;
 /// Fixed shape slots before each right-hand name, so names align across
 /// contenders with different shape counts. Four covers every contender.
 const SWATCH_SLOTS: usize = 4;
-const PROVENANCE_TOP: f64 = PLOT_TOP + (UseCase::ALL.len() - 1) as f64 * PLOT_PITCH + PLOT_HEIGHT + 85.0;
+/// Where provenance starts, below the last of `plots` plots.
+fn provenance_top(plots: usize) -> f64 {
+    PLOT_TOP + (plots - 1) as f64 * PLOT_PITCH + PLOT_HEIGHT + 85.0
+}
 const PROVENANCE_LINE_HEIGHT: f64 = 14.0;
 
 fn plot_top(plot_index: usize) -> f64 {
@@ -3389,6 +3254,7 @@ fn log_axis_bounds(observed_min: f64, observed_max: f64) -> (f64, f64) {
  */
 struct Plot {
     index: usize,
+    scenario: Scenario,
     use_case: UseCase,
     points: std::ops::Range<usize>,
     /// Roster indices of the contenders measured in this use case.
@@ -3409,11 +3275,14 @@ struct Plot {
     label_y: Vec<Option<f64>>,
     /// Each contender's kernels in this use case; None for a non-participant.
     kernels: Vec<Option<Kernels>>,
+    /// Where the provenance block starts, below the last plot.
+    provenance_top: f64,
 }
 
 impl Plot {
-    fn new(index: usize, use_case: UseCase, roster: &Roster, results: &Results) -> Self {
-        let points = use_case.points();
+    fn new(index: usize, scenario: Scenario, use_case: UseCase, roster: &Roster, results: &Results) -> Self {
+        let measured: Vec<usize> = use_case.points().filter(|&index| roster.measures(index)).collect();
+        let points = measured[0]..measured[measured.len() - 1] + 1;
         let contenders: Vec<usize> = (0..roster.len())
             .filter(|&algorithm_index| roster.algorithms[algorithm_index].takes_part(use_case))
             .collect();
@@ -3425,14 +3294,8 @@ impl Plot {
          * never compared or reported. Everything above this point is integer.
          */
         let cells = || contenders.iter().flat_map(|&a| points.clone().map(move |s| (a, s))).map(|(a, s)| cell(results, a, s));
-        let observed_max = cells()
-            .map(|cell| cell.time.high.max(cell.duo.map_or(0, |duo| duo.high)))
-            .max()
-            .expect("there are results");
-        let observed_min = cells()
-            .map(|cell| cell.time.low.min(cell.duo.map_or(u64::MAX, |duo| duo.low)))
-            .min()
-            .expect("there are results");
+        let observed_max = cells().map(|cell| cell.get(scenario).high).max().expect("there are results");
+        let observed_min = cells().map(|cell| cell.get(scenario).low).min().expect("there are results");
 
         /*
          * The static render shows gigabytes per second, the default unit:
@@ -3447,7 +3310,7 @@ impl Plot {
 
         let x_positions: Vec<f64> = points
             .clone()
-            .map(|point_index| PLOT_LEFT + X_INSET + x_fraction(point_index) * (PLOT_RIGHT - PLOT_LEFT - 2.0 * X_INSET))
+            .map(|point_index| PLOT_LEFT + X_INSET + x_fraction(point_index, points.clone()) * (PLOT_RIGHT - PLOT_LEFT - 2.0 * X_INSET))
             .collect();
 
         let kernels: Vec<Option<Kernels>> = roster
@@ -3458,6 +3321,7 @@ impl Plot {
 
         let mut plot = Self {
             index,
+            scenario,
             use_case,
             points: points.clone(),
             contenders: contenders.clone(),
@@ -3471,6 +3335,7 @@ impl Plot {
             x_positions,
             label_y: vec![None; roster.len()],
             kernels,
+            provenance_top: 0.0,
         };
 
         /*
@@ -3484,7 +3349,7 @@ impl Plot {
         let last = points.end - 1;
         let mut label_slots: Vec<(usize, f64)> = contenders
             .iter()
-            .map(|&algorithm_index| (algorithm_index, plot.map_y(cell(results, algorithm_index, last).time.median)))
+            .map(|&algorithm_index| (algorithm_index, plot.map_y(plot.stats(results, algorithm_index, last).median)))
             .collect();
         label_slots.sort_by(|a, b| a.1.total_cmp(&b.1));
         for index in 1..label_slots.len() {
@@ -3517,6 +3382,11 @@ impl Plot {
         self.map_rate(self.scale / ps_to_ns(ps))
     }
 
+    /// A contender's statistics at a point, in this plot's scenario.
+    fn stats(&self, results: &Results, algorithm_index: usize, point_index: usize) -> Statistics {
+        cell(results, algorithm_index, point_index).get(self.scenario)
+    }
+
     fn kernels(&self, algorithm_index: usize) -> &Kernels {
         self.kernels[algorithm_index].as_ref().expect("the contender takes part in this plot")
     }
@@ -3532,17 +3402,24 @@ fn generate_svg(
     results: &Results,
     machine: &MachineMetadata,
     selection_note: &str,
-    basis: TimeBasis,
 ) -> String {
     assert!(roster.len() >= 2, "a graph compares at least two contenders");
 
-    let plots: Vec<Plot> = UseCase::ALL
-        .iter()
-        .enumerate()
-        .map(|(index, &use_case)| Plot::new(index, use_case, roster, results))
-        .collect();
+    /* Solo plots first, then shared: one per use case the run measured. */
+    let mut plots: Vec<Plot> = Vec::new();
+    for scenario in Scenario::ALL {
+        for use_case in UseCase::ALL {
+            if use_case.points().any(|index| roster.measures(index)) {
+                plots.push(Plot::new(plots.len(), scenario, use_case, roster, results));
+            }
+        }
+    }
+    let provenance_top = provenance_top(plots.len());
+    for plot in &mut plots {
+        plot.provenance_top = provenance_top;
+    }
 
-    let provenance_cats = shared_provenance_cats(machine, selection_note, basis);
+    let provenance_cats = shared_provenance_cats(machine, selection_note);
     let provenance_total = provenance_cats.len()
         + provenance_cats.iter().map(|cat| cat.lines.len()).sum::<usize>()
         + roster
@@ -3551,7 +3428,7 @@ fn generate_svg(
             .enumerate()
             .map(|(algorithm_index, &algorithm)| contender_provenance_lines(algorithm, plots[0].kernels(algorithm_index)).len())
             .sum::<usize>();
-    let svg_height = svg_height(provenance_total);
+    let svg_height = svg_height(provenance_top, provenance_total);
 
     let mut svg = String::new();
 
@@ -3641,31 +3518,22 @@ fn generate_svg(
     )
         .unwrap();
 
-    if roster.solo {
-        writeln!(
-            svg,
-            r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Solid line and dot: solo median of up to {} interleaved samples · dashed line: duo median (two copies at once, later finish) · shaded band: 95% confidence interval of that median; a deeper tint marks a median that is less certain</text>"##,
-            roster.rounds,
-        )
-        .unwrap();
-    } else {
-        writeln!(
-            svg,
-            r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Line and dot: median of up to {} interleaved duo samples (two copies at once, later finish) · shaded band: 95% confidence interval of that median; a deeper tint marks a median that is less certain</text>"##,
-            roster.rounds,
-        )
-        .unwrap();
-    }
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="88" class="method">Dot shape marks the code path a contender used at that point · hover or tap a dot to compare at that point · hover a name to highlight its contender · click a name at right to hide or show it in both plots</text>"##
+        r##"  <text x="{PLOT_LEFT:.0}" y="72" class="method">Line and dot: median of up to {} interleaved samples · shaded band: 95% confidence interval of that median; a deeper tint marks a median that is less certain</text>"##,
+        2 * roster.rounds,
+    )
+    .unwrap();
+    writeln!(
+        svg,
+        r##"  <text x="{PLOT_LEFT:.0}" y="88" class="method">Dot shape marks the code path a contender used at that point · hover or tap a dot to compare at that point · hover a name to highlight its contender · click a name at right to hide or show it in every plot</text>"##
     )
         .unwrap();
 
     /*
      * Unit switch, above the first y axis: a vertical track with a knob
      * that slides between GB/s (top) and ns/B (bottom). Clicking anywhere
-     * on the switch flips both plots. The knob's position is the state;
+     * on the switch flips every plot. The knob's position is the state;
      * the label beside it reads darker. Without script the graph stays in
      * GB/s and the switch is inert.
      */
@@ -3676,7 +3544,7 @@ fn generate_svg(
         PLOT_TOP - 50.0,
     )
         .unwrap();
-    writeln!(svg, r##"    <title>Switch both plots between rate (GB/s, million messages per second) and time (ns per byte, ns per message)</title>"##).unwrap();
+    writeln!(svg, r##"    <title>Switch every plot between rate (GB/s, million messages per second) and time (ns per byte, ns per message)</title>"##).unwrap();
     writeln!(svg, r##"    <rect class="unit-hit" x="-4" y="-4" width="60" height="42" fill="transparent"/>"##).unwrap();
     writeln!(svg, r##"    <rect class="unit-track" x="0" y="0" width="14" height="34" rx="7"/>"##).unwrap();
     writeln!(svg, r##"    <circle id="unit-knob" class="unit-knob" cx="7" cy="7" r="5"/>"##).unwrap();
@@ -3717,7 +3585,6 @@ fn generate_svg(
     /* Machine-readable provenance, complete and untruncated. */
     writeln!(svg, "  <metadata>").unwrap();
 
-    let basis_description = basis.describe();
     for (name, value) in [
         ("timestamp", machine.timestamp.as_str()),
         ("git source", GIT_SOURCE),
@@ -3731,7 +3598,6 @@ fn generate_svg(
         ("build target", BUILD_TARGET),
         ("target features", TARGET_FEATURES),
         ("sample clock", sample_clock::NAME),
-        ("reported time", basis_description.as_str()),
         ("BLAKE3 source", BLAKE3_SOURCE_INFO),
         ("SHA-256 source", SHA2_SOURCE_INFO),
         ("SHA-1DC source", SHA1_CHECKED_SOURCE_INFO),
@@ -3757,7 +3623,7 @@ fn generate_svg(
      */
     writeln!(
         svg,
-        r##"  <line x1="{PLOT_LEFT:.1}" y1="{PROVENANCE_TOP:.1}" x2="{:.1}" y2="{PROVENANCE_TOP:.1}" class="divider"/>"##,
+        r##"  <line x1="{PLOT_LEFT:.1}" y1="{provenance_top:.1}" x2="{:.1}" y2="{provenance_top:.1}" class="divider"/>"##,
         SVG_WIDTH - PLOT_LEFT,
     )
         .unwrap();
@@ -3765,7 +3631,7 @@ fn generate_svg(
     writeln!(
         svg,
         r##"  <text x="{PLOT_LEFT:.1}" y="{:.1}" class="prov-head">PROVENANCE</text>"##,
-        PROVENANCE_TOP + 20.0,
+        provenance_top + 20.0,
     )
         .unwrap();
 
@@ -3785,7 +3651,7 @@ fn generate_svg(
         writeln!(
             svg,
             r##"    <text class="prov-head" x="{PLOT_LEFT:.1}" y="{:.1}">▾ {} — {}</text>"##,
-            provenance_line_y(header_slot),
+            provenance_line_y(provenance_top, header_slot),
             xml_escape(cat.name),
             xml_escape(&cat.summary),
         )
@@ -3797,7 +3663,7 @@ fn generate_svg(
                 svg,
                 r##"  <text class="prov prov-shared" data-cat="{}" x="{PLOT_LEFT:.1}" y="{:.1}">{}</text>"##,
                 cat.key,
-                provenance_line_y(header_slot),
+                provenance_line_y(provenance_top, header_slot),
                 xml_escape(line),
             )
             .unwrap();
@@ -3828,17 +3694,15 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
     let top = plot.top;
     let bottom = plot.bottom;
 
-    let heading_note = match plot.use_case {
-        UseCase::OneMessage => "each call hashes one input of the size".to_owned(),
-        UseCase::ManyMessages => format!(
-            "each call hashes a batch of {MESSAGE_LEN}-byte messages: a call per message, or one call per batch where a crate offers it (ab-blake3, BLAKE3 servil, servil mt) · BLAKE3 mt sits out",
-        ),
-    };
+    let heading_note = format!("{} · {}", plot.scenario.subtitle(), match plot.use_case {
+        UseCase::OneMessage => "one input of the size per call",
+        UseCase::ManyMessages => "a call per message, or per batch where the crate offers one; BLAKE3 mt sits out",
+    });
     writeln!(
         svg,
         r##"  <text x="{PLOT_LEFT:.0}" y="{:.1}" class="plot-title">{}</text>"##,
         top - 26.0,
-        xml_escape(plot.use_case.heading()),
+        xml_escape(&format!("{} · {}", plot.scenario.heading(), plot.use_case.heading())),
     )
     .unwrap();
     writeln!(
@@ -3979,7 +3843,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
         let mut band = String::new();
         for k in 0..plot.len() {
             let x = plot.x_positions[k];
-            let y = plot.map_y(cell_at(k).time.high);
+            let y = plot.map_y(cell_at(k).get(plot.scenario).high);
             if k == 0 {
                 write!(band, "M {x:.2} {y:.2}").unwrap();
             } else {
@@ -3988,7 +3852,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
         }
         for k in (0..plot.len()).rev() {
             let x = plot.x_positions[k];
-            let y = plot.map_y(cell_at(k).time.low);
+            let y = plot.map_y(cell_at(k).get(plot.scenario).low);
             write!(band, " L {x:.2} {y:.2}").unwrap();
         }
         band.push_str(" Z");
@@ -4001,7 +3865,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
          * precision, and the plot stays quiet.
          */
         let worst_spread = (0..plot.len())
-            .map(|k| spread_permille(cell_at(k).time))
+            .map(|k| spread_permille(cell_at(k).get(plot.scenario)))
             .max()
             .expect("there is at least one point");
         let (opacity_hundredths, _) = band_style(worst_spread);
@@ -4015,7 +3879,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
         let mut path = String::new();
         for k in 0..plot.len() {
             let x = plot.x_positions[k];
-            let y = plot.map_y(cell_at(k).time.median);
+            let y = plot.map_y(cell_at(k).get(plot.scenario).median);
             if k == 0 {
                 write!(path, "M {x:.2} {y:.2}").unwrap();
             } else {
@@ -4031,43 +3895,9 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
 
         let mut dots = format!("  <g class=\"dots\" id=\"dots-{p}-{algorithm_index}\" data-on=\"true\">\n");
 
-        /*
-         * In a solo run the contender's duo medians draw as a dashed line
-         * of the same colour with hollow dots, inside the same group so
-         * the toggle hides both. Where duo and solo agree the dashed line
-         * lies on the solid one; where a contender pays for sharing the
-         * machine the dashed line rises above it, and the gap is the price.
-         */
-        if roster.solo {
-            let mut duo_path = String::new();
-            for k in 0..plot.len() {
-                let x = plot.x_positions[k];
-                let y = plot.map_y(cell_at(k).duo.expect("solo run has duo statistics").median);
-                if k == 0 {
-                    write!(duo_path, "M {x:.2} {y:.2}").unwrap();
-                } else {
-                    write!(duo_path, " L {x:.2} {y:.2}").unwrap();
-                }
-            }
-            writeln!(
-                svg,
-                r##"      <path class="median duo" d="{duo_path}" fill="none" stroke="{color}" stroke-width="2" stroke-dasharray="6,4" stroke-linejoin="round" stroke-linecap="round"/>"##
-            )
-                .unwrap();
-            for k in 0..plot.len() {
-                let x = plot.x_positions[k];
-                let y = plot.map_y(cell_at(k).duo.unwrap().median);
-                writeln!(
-                    dots,
-                    r##"    <g class="dot dot-duo" data-size="{k}" transform="translate({x:.2} {y:.2})" onpointerenter="hoverDot(event,{p},{algorithm_index},{k})" onpointerleave="leaveDot(event)" onclick="tapDot(event,{p},{algorithm_index},{k})"><circle r="4" fill="#fdfdfc" stroke="{color}" stroke-width="2"/></g>"##
-                )
-                    .unwrap();
-            }
-        }
-
         for k in 0..plot.len() {
             let x = plot.x_positions[k];
-            let statistics = cell_at(k).time;
+            let statistics = cell_at(k).get(plot.scenario);
             let median_y = plot.map_y(statistics.median);
 
             /*
@@ -4120,7 +3950,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
         dot_layers.push(dots);
 
         /* Clickable label at right: swatch, name, detail, hint. */
-        let statistics = last.time;
+        let statistics = last.get(plot.scenario);
         let label_x = PLOT_RIGHT + 14.0;
         let label_y = plot.label_y[algorithm_index].expect("a participant has a label slot");
 
@@ -4198,7 +4028,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
                 writeln!(
                     svg,
                     r##"    <text class="prov series-prov" x="{PLOT_LEFT:.1}" y="{:.1}">{}</text>"##,
-                    provenance_line_y(*provenance_slot),
+                    provenance_line_y(plot.provenance_top, *provenance_slot),
                     xml_escape(&line),
                 )
                     .unwrap();
@@ -4255,25 +4085,6 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
             .unwrap();
         x -= 18.0;
     }
-    /* In a solo run: the dashed line and hollow dot, on the left of the row. */
-    if roster.solo {
-        let x = PLOT_LEFT;
-        writeln!(
-            svg,
-            r##"  <path d="M {x:.1} {y:.1} L {:.1} {y:.1}" stroke="#8a8a8a" stroke-width="2" stroke-dasharray="6,4"/><circle cx="{:.1}" cy="{y:.1}" r="3" fill="#fdfdfc" stroke="#8a8a8a" stroke-width="1.5"/>"##,
-            x + 30.0,
-            x + 15.0,
-            y = legend_y - 3.5,
-        )
-            .unwrap();
-        writeln!(
-            svg,
-            r##"  <text x="{:.1}" y="{:.1}" class="legend">duo: two copies at once, later finish, per byte of one copy · solid line: solo</text>"##,
-            x + 38.0,
-            legend_y,
-        )
-            .unwrap();
-    }
 }
 
 /*
@@ -4325,13 +4136,13 @@ fn place_value_labels(plot: &Plot, results: &Results) -> Vec<Vec<f64>> {
         let point_index = plot.points.start + k;
         let mut order: Vec<usize> = plot.contenders.clone();
         order.sort_by(|&a, &b| {
-            cell(results, b, point_index).time.median.cmp(&cell(results, a, point_index).time.median)
+            plot.stats(results, b, point_index).median.cmp(&plot.stats(results, a, point_index).median)
         });
         /* Smallest y (fastest, highest on the plot) first. */
         order.reverse();
         let mut taken: Vec<f64> = Vec::new();
         for algorithm_index in order {
-            let dot_y = plot.map_y(cell(results, algorithm_index, point_index).time.median);
+            let dot_y = plot.map_y(plot.stats(results, algorithm_index, point_index).median);
             let clear = |y: f64, taken: &[f64]| taken.iter().all(|t| (t - y).abs() >= VALUE_LABEL_HEIGHT);
             let mut y = dot_y + VALUE_LABEL_ABOVE;
             if !clear(y, &taken) {
@@ -4387,8 +4198,8 @@ fn mark_shape(mark: Mark, color: &str, radius: f64) -> String {
     }
 }
 
-fn provenance_line_y(slot: usize) -> f64 {
-    PROVENANCE_TOP + 40.0 + slot as f64 * PROVENANCE_LINE_HEIGHT
+fn provenance_line_y(provenance_top: f64, slot: usize) -> f64 {
+    provenance_top + 40.0 + slot as f64 * PROVENANCE_LINE_HEIGHT
 }
 
 /* Provenance that describes the run as a whole. */
@@ -4400,7 +4211,7 @@ struct ProvCat {
     lines: Vec<String>,
 }
 
-fn shared_provenance_cats(machine: &MachineMetadata, selection_note: &str, basis: TimeBasis) -> Vec<ProvCat> {
+fn shared_provenance_cats(machine: &MachineMetadata, selection_note: &str) -> Vec<ProvCat> {
     vec![
         ProvCat {
             key: "run",
@@ -4426,7 +4237,6 @@ fn shared_provenance_cats(machine: &MachineMetadata, selection_note: &str, basis
                 ),
                 format!("Toolchain: {RUSTC_VERSION} · {BUILD_TARGET}"),
                 format!("Sample clock: {}", sample_clock::NAME),
-                format!("Reported time: {}", basis.describe()),
             ],
         },
         ProvCat {
@@ -4487,10 +4297,6 @@ fn contender_provenance_lines(
         Algorithm::Blake3ServilMt => vec![
             format!("{name}: {} · hash_multithreaded, hash_many_multithreaded for a batch", short_git_source(BLAKE3_SERVIL_SOURCE_INFO)),
             format!("{name}: multithreaded on the fork's own threads · platform {platform}"),
-        ],
-        Algorithm::Blake3ServilMt1 => vec![
-            format!("{name}: {} · hash_multithreaded_with_budget(_, 1)", short_git_source(BLAKE3_SERVIL_SOURCE_INFO)),
-            format!("{name}: capped at one thread · platform {platform}"),
         ],
         Algorithm::AbBlake3 => vec![format!(
             "{name}: {} · const_hash for one message, single_block_hash_many_exact::<N> for a batch · {}",
@@ -4595,31 +4401,18 @@ fn write_interaction_script(
                 write!(data, "],\"{key}\":[").unwrap();
                 for k in 0..plot.len() {
                     if k > 0 { data.push(','); }
-                    write!(data, "{}", format_ps(pick(cell_at(k).time))).unwrap();
-                }
-            }
-            if roster.solo {
-                for (key, pick) in [
-                    ("duoLow", (|t: Statistics| t.low) as fn(Statistics) -> u64),
-                    ("duoMed", |t| t.median),
-                    ("duoHigh", |t| t.high),
-                ] {
-                    write!(data, "],\"{key}\":[").unwrap();
-                    for k in 0..plot.len() {
-                        if k > 0 { data.push(','); }
-                        write!(data, "{}", format_ps(pick(cell_at(k).duo.unwrap()))).unwrap();
-                    }
+                    write!(data, "{}", format_ps(pick(cell_at(k).get(plot.scenario)))).unwrap();
                 }
             }
             data.push_str("],\"n\":[");
             for k in 0..plot.len() {
                 if k > 0 { data.push(','); }
-                write!(data, "{}", cell_at(k).time.count).unwrap();
+                write!(data, "{}", cell_at(k).get(plot.scenario).count).unwrap();
             }
             data.push_str("],\"modes\":[");
             for k in 0..plot.len() {
                 if k > 0 { data.push(','); }
-                match cell_at(k).time.modes {
+                match cell_at(k).get(plot.scenario).modes {
                     Some(m) => write!(
                         data,
                         "[{},{},{},{}]",
@@ -4635,8 +4428,9 @@ fn write_interaction_script(
     }
     write!(
         data,
-        "],\"sharedProv\":{shared_count},\"svgWidth\":{SVG_WIDTH:.0},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"labelGap\":{SERIES_LABEL_GAP},\"rounds\":{},\"labelAbove\":{VALUE_LABEL_ABOVE},\"labelBelow\":{VALUE_LABEL_BELOW},\"labelHeight\":{VALUE_LABEL_HEIGHT},\"spreadNoticeable\":0.{SPREAD_NOTICEABLE_PERMILLE:03},\"spreadWide\":0.{SPREAD_WIDE_PERMILLE:03},\"provTop\":{PROVENANCE_TOP},\"provLine\":{PROVENANCE_LINE_HEIGHT}}}",
+        "],\"sharedProv\":{shared_count},\"svgWidth\":{SVG_WIDTH:.0},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"labelGap\":{SERIES_LABEL_GAP},\"rounds\":{},\"labelAbove\":{VALUE_LABEL_ABOVE},\"labelBelow\":{VALUE_LABEL_BELOW},\"labelHeight\":{VALUE_LABEL_HEIGHT},\"spreadNoticeable\":0.{SPREAD_NOTICEABLE_PERMILLE:03},\"spreadWide\":0.{SPREAD_WIDE_PERMILLE:03},\"provTop\":{:.1},\"provLine\":{PROVENANCE_LINE_HEIGHT}}}",
         roster.rounds,
+        plots[0].provenance_top,
     )
         .unwrap();
 
@@ -4647,7 +4441,7 @@ fn write_interaction_script(
 }
 
 const INTERACTION_SCRIPT: &str = r##"
-/* One on/off state per contender, shared by both plots. */
+/* One on/off state per contender, shared by every plot. */
 const on = DATA.names.map(() => true);
 
 /*
@@ -4772,10 +4566,6 @@ function relayoutPlot(p) {
     const s = plot.series[i];
     lo = Math.min(lo, ...s.low);
     hi = Math.max(hi, ...s.high);
-    if (s.duoMed) {
-      lo = Math.min(lo, ...s.duoLow);
-      hi = Math.max(hi, ...s.duoHigh);
-    }
   }
   if (visible.length === 0) { lo = 0.1; hi = 1; }
   /*
@@ -4840,16 +4630,10 @@ function relayoutPlot(p) {
     g.querySelector(".band").setAttribute("d", band + " Z");
     let med = "";
     X.forEach((x, k) => { med += (k ? " L " : "M ") + x + " " + mapY(s.med[k]).toFixed(2); });
-    g.querySelector(".median:not(.duo)").setAttribute("d", med);
-    if (s.duoMed) {
-      let duo = "";
-      X.forEach((x, k) => { duo += (k ? " L " : "M ") + x + " " + mapY(s.duoMed[k]).toFixed(2); });
-      g.querySelector(".median.duo").setAttribute("d", duo);
-    }
+    g.querySelector(".median").setAttribute("d", med);
     dots.querySelectorAll(".dot").forEach(dot => {
       const k = +dot.getAttribute("data-size");
-      const series = dot.classList.contains("dot-duo") ? s.duoMed : s.med;
-      dot.setAttribute("transform", `translate(${X[k]} ${mapY(series[k]).toFixed(2)})`);
+      dot.setAttribute("transform", `translate(${X[k]} ${mapY(s.med[k]).toFixed(2)})`);
     });
   });
 
@@ -5028,17 +4812,6 @@ function showHover(p, focus, k) {
   if (spread >= DATA.spreadWide) rangeRow.setAttribute("fill", "#b45309");
   body.appendChild(rangeRow);
   y += 13;
-  if (f.duoMed) {
-    const [dLo, dHi] = asc(f.duoLow[k], f.duoHigh[k]);
-    const ratio = f.duoMed[k] / f.med[k];
-    const note = ratio > 1.05 ? ` · ${((ratio - 1) * 100).toFixed(0)}% slower beside a copy of itself`
-      : ratio < 0.95 ? ` · ${((1 - ratio) * 100).toFixed(0)}% faster beside a copy of itself` : " · unchanged beside a copy of itself";
-    const duoRow = textEl(PAD, y, "hover-sub",
-      `duo ${fmt(f.duoMed[k], p)} ${unitLabel(p)} (${fmtOther(f.duoMed[k], p)}) · 95% interval ${fmt(dLo, p)}–${fmt(dHi, p)}${note}`);
-    if (ratio > 1.05) duoRow.setAttribute("fill", "#b45309");
-    body.appendChild(duoRow);
-    y += 13;
-  }
   const modes = f.modes[k];
   if (modes) {
     const [mLo, mHi] = asc(modes[0], modes[2]);
@@ -5295,6 +5068,51 @@ fn xml_escape(input: &str) -> String {
 #[cfg(test)]
 mod correctness_tests {
     use super::*;
+
+    /// A cell whose every figure is `median` ± `half`, solo and shared alike.
+    fn synthetic(median: u64, half: u64) -> Option<Cell> {
+        let statistics = Statistics {
+            count: 24,
+            minimum: median - half,
+            low: median - half,
+            median,
+            high: median + half,
+            maximum: median + half,
+            modes: None,
+        };
+        Some(Cell { solo: statistics, shared: statistics })
+    }
+
+    fn point(label: &str, use_case: UseCase) -> usize {
+        POINTS.iter().position(|point| point.label == label && point.use_case == use_case).unwrap()
+    }
+
+    /// The checks flag what a regression hunter would, and only that: a
+    /// slower cell with apart intervals, larger work slower per unit than
+    /// a size that divides it; not 3 messages against 2, nor overlapping
+    /// intervals.
+    #[test]
+    fn checks_flag_slower_cells_and_divisible_work_only() {
+        let many = |label| point(label, UseCase::ManyMessages);
+        let points = vec![many("2"), many("3"), many("64"), many("128")];
+        let roster = Roster::new(vec![Algorithm::Blake3Servil, Algorithm::Sha256], true, Some(points.clone()), Some(1));
+        let mut results: Results = vec![vec![None; POINT_COUNT]; 2];
+        /* servil: 3 slower than 2 (no divisor), 128 slower than 64 (divisor). */
+        for (label, servil, sha) in [("2", 20_000, 30_000), ("3", 26_000, 30_000), ("64", 10_000, 30_000), ("128", 15_000, 30_000)] {
+            results[0][many(label)] = synthetic(servil, 100);
+            results[1][many(label)] = synthetic(sha, 100);
+        }
+        let findings = checks(&roster, &results);
+        assert_eq!(findings.len(), 1, "{findings:#?}");
+        assert!(findings[0].contains("slower per unit at 128 messages than at 64 messages"), "{findings:#?}");
+
+        /* servil slower than SHA-256 at 64, intervals apart; at 128 they overlap. */
+        results[0][many("64")] = synthetic(40_000, 100);
+        results[0][many("128")] = synthetic(31_000, 2_000);
+        let findings = checks(&roster, &results);
+        assert!(findings.iter().any(|f| f.contains("slower than SHA-256: 64 messages;")), "{findings:#?}");
+        assert!(!findings.iter().any(|f| f.contains("128 messages;")), "{findings:#?}");
+    }
 
     #[test]
     fn same_input_agrees_across_available_implementations() {
