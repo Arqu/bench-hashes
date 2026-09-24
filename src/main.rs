@@ -3605,6 +3605,13 @@ fn generate_svg(
     .tick-label { font-size: 11px; fill: #777777; }
     .size-label { font-size: 11px; font-weight: 600; fill: #333333; }
     .size-tick { stroke: #bbbbbb; stroke-width: 1; }
+    .zoom-word { font-size: 11px; fill: #777777; }
+    .zoom-label { font-size: 12px; font-weight: 600; fill: #333333; }
+    .zoom-btn { cursor: pointer; }
+    .zoom-btn rect { fill: #f1f1ee; stroke: #d2d2cd; stroke-width: 1; }
+    .zoom-btn text { font-size: 13px; font-weight: 600; fill: #333333; }
+    .zoom-btn:hover rect { fill: #e4e4de; }
+    .zoom-btn[data-off="true"] { opacity: 0.35; cursor: default; }
     .value-label { font-size: 10px; font-weight: 700; }
     .series-name { font-size: 13px; font-weight: 700; }
     .series-detail { font-size: 10px; fill: #777777; }
@@ -3697,6 +3704,40 @@ fn generate_svg(
     writeln!(svg, r##"    <circle id="unit-knob" class="unit-knob" cx="7" cy="7" r="5"/>"##).unwrap();
     writeln!(svg, r##"    <text class="unit-label unit-on" data-unit="gbps" x="20" y="11">rate</text>"##).unwrap();
     writeln!(svg, r##"    <text class="unit-label" data-unit="ns" x="20" y="31">time</text>"##).unwrap();
+    writeln!(svg, "  </g>").unwrap();
+
+    /*
+     * Zoom, beside the first plot's title: the inputs every plot shows, as
+     * a range of input sizes (a batch counts its messages' bytes). Arrows
+     * step the first or last point shown by one data point; minus and plus
+     * widen or narrow the range by about half; "all" shows every point.
+     * The script fills in the labels; without script the graph shows every
+     * point and the controls are inert.
+     */
+    let zoom_x = PLOT_RIGHT - 386.0;
+    let zoom_y = PLOT_TOP - 44.0;
+    writeln!(svg, r##"  <g id="zoom" transform="translate({zoom_x:.1} {zoom_y:.1})">"##).unwrap();
+    writeln!(svg, r##"    <text class="zoom-word" x="0" y="13">inputs</text>"##).unwrap();
+    let button = |svg: &mut String, id: &str, x: f64, width: f64, glyph: &str, action: &str, title: &str| {
+        writeln!(
+            svg,
+            r##"    <g class="zoom-btn" id="{id}" onclick="event.stopPropagation(); {action}"><title>{title}</title><rect x="{x:.1}" y="0" width="{width:.1}" height="18" rx="4"/><text x="{:.1}" y="13" text-anchor="middle">{glyph}</text></g>"##,
+            x + width / 2.0,
+        )
+        .unwrap();
+    };
+    button(&mut svg, "zoom-from-dec", 44.0, 16.0, "‹", "zoomStep('from', -1)", "Show one smaller input");
+    let smallest = plots.iter().map(|plot| POINTS[plot.points.start].bytes).min().expect("a graph has plots");
+    let largest = plots.iter().map(|plot| POINTS[plot.points.end - 1].bytes).max().expect("a graph has plots");
+    writeln!(svg, r##"    <text class="zoom-label" id="zoom-from" x="102" y="13" text-anchor="middle">{}</text>"##, format_bytes(smallest)).unwrap();
+    button(&mut svg, "zoom-from-inc", 144.0, 16.0, "›", "zoomStep('from', 1)", "Hide the smallest input shown");
+    writeln!(svg, r##"    <text class="zoom-word" x="173" y="13" text-anchor="middle">to</text>"##).unwrap();
+    button(&mut svg, "zoom-to-dec", 186.0, 16.0, "‹", "zoomStep('to', -1)", "Hide the largest input shown");
+    writeln!(svg, r##"    <text class="zoom-label" id="zoom-to" x="244" y="13" text-anchor="middle">{}</text>"##, format_bytes(largest)).unwrap();
+    button(&mut svg, "zoom-to-inc", 286.0, 16.0, "›", "zoomStep('to', 1)", "Show one larger input");
+    button(&mut svg, "zoom-out", 314.0, 18.0, "−", "zoomOut()", "Show about twice the range of inputs");
+    button(&mut svg, "zoom-in", 334.0, 18.0, "+", "zoomIn()", "Show about half the range of inputs");
+    button(&mut svg, "zoom-all", 356.0, 30.0, "all", "zoomAll()", "Show every input");
     writeln!(svg, "  </g>").unwrap();
 
     /*
@@ -3860,6 +3901,20 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
     )
     .unwrap();
 
+    /*
+     * The plot area, for marks and dots: nothing is drawn outside it, and
+     * when the zoom narrows the inputs shown, points beyond it slide out
+     * of view. Room above and below for value labels.
+     */
+    writeln!(
+        svg,
+        r##"  <clipPath id="plot-clip-{p}"><rect x="{PLOT_LEFT:.1}" y="{:.1}" width="{:.1}" height="{:.1}"/></clipPath>"##,
+        top - 40.0,
+        PLOT_RIGHT - PLOT_LEFT,
+        bottom - top + 60.0,
+    )
+    .unwrap();
+
     /* Horizontal grid and y-axis tick labels; the script rebuilds these. */
     writeln!(svg, r##"  <g id="y-axis-{p}">"##).unwrap();
     for value in log_ticks(plot.axis_min, plot.axis_max) {
@@ -3913,23 +3968,24 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
 
         writeln!(
             svg,
-            r##"  <line x1="{x:.2}" y1="{top:.1}" x2="{x:.2}" y2="{bottom:.1}" class="grid-x"/>"##
+            r##"  <line x1="{x:.2}" y1="{top:.1}" x2="{x:.2}" y2="{bottom:.1}" class="grid-x" data-plot="{p}" data-size="{k}"/>"##
         )
             .unwrap();
 
-        if row == 1 {
-            writeln!(
-                svg,
-                r##"  <line x1="{x:.2}" y1="{:.1}" x2="{x:.2}" y2="{:.1}" class="size-tick"/>"##,
-                bottom + 4.0,
-                label_y - 10.0,
-            )
-                .unwrap();
-        }
+        /* Every column has a tick for the second row; the zoom script shows
+           it wherever the label drops there. */
+        writeln!(
+            svg,
+            r##"  <line x1="{x:.2}" y1="{:.1}" x2="{x:.2}" y2="{:.1}" class="size-tick" data-plot="{p}" data-size="{k}"{}/>"##,
+            bottom + 4.0,
+            bottom + 24.0 + 13.0 - 10.0,
+            if row == 1 { "" } else { r#" display="none""# },
+        )
+            .unwrap();
 
         writeln!(
             svg,
-            r##"  <text x="{x:.2}" y="{label_y:.1}" class="size-label" text-anchor="middle">{}</text>"##,
+            r##"  <text x="{x:.2}" y="{label_y:.1}" class="size-label" text-anchor="middle" data-plot="{p}" data-size="{k}">{}</text>"##,
             xml_escape(POINTS[point_index].label),
         )
             .unwrap();
@@ -3985,7 +4041,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
         )
             .unwrap();
 
-        writeln!(svg, r##"    <g class="marks">"##).unwrap();
+        writeln!(svg, r##"    <g class="marks" clip-path="url(#plot-clip-{p})">"##).unwrap();
 
         /*
          * Two speeds, drawn alike: speed 0 is each point's faster speed,
@@ -4044,7 +4100,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
         )
             .unwrap();
 
-        let mut dots = format!("  <g class=\"dots\" id=\"dots-{p}-{algorithm_index}\" data-on=\"true\">\n");
+        let mut dots = format!("  <g class=\"dots\" id=\"dots-{p}-{algorithm_index}\" data-on=\"true\" clip-path=\"url(#plot-clip-{p})\">\n");
 
         for k in 0..plot.len() {
             let x = plot.x_positions[k];
@@ -4311,6 +4367,20 @@ fn place_value_labels(plot: &Plot, results: &Results) -> Vec<Vec<f64>> {
     placed
 }
 
+/// An input size for the zoom labels: "192 B", "1.5 KiB", "16 MiB". The
+/// script's fmtBytes writes the same.
+fn format_bytes(bytes: usize) -> String {
+    let (value, unit) = if bytes < 1024 {
+        (bytes as f64, "B")
+    } else if bytes < 1024 * 1024 {
+        (bytes as f64 / 1024.0, "KiB")
+    } else {
+        (bytes as f64 / (1024.0 * 1024.0), "MiB")
+    };
+    let text = if value.fract() == 0.0 { format!("{value:.0}") } else { format!("{value:.1}") };
+    format!("{text} {unit}")
+}
+
 fn json_string(text: &str) -> String {
     format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
 }
@@ -4506,6 +4576,11 @@ fn write_interaction_script(
             if index > 0 { data.push(','); }
             write!(data, "{x:.2}").unwrap();
         }
+        data.push_str("],\"bytes\":[");
+        for (index, point_index) in plot.points.clone().enumerate() {
+            if index > 0 { data.push(','); }
+            write!(data, "{}", POINTS[point_index].bytes).unwrap();
+        }
         data.push_str("],\"sizes\":[");
         for (index, point_index) in plot.points.clone().enumerate() {
             if index > 0 { data.push(','); }
@@ -4581,7 +4656,7 @@ fn write_interaction_script(
     }
     write!(
         data,
-        "],\"sharedProv\":{shared_count},\"svgWidth\":{SVG_WIDTH:.0},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"labelGap\":{SERIES_LABEL_GAP},\"rounds\":{},\"labelAbove\":{VALUE_LABEL_ABOVE},\"labelBelow\":{VALUE_LABEL_BELOW},\"labelHeight\":{VALUE_LABEL_HEIGHT},\"spreadNoticeable\":0.{SPREAD_NOTICEABLE_PERMILLE:03},\"spreadWide\":0.{SPREAD_WIDE_PERMILLE:03},\"provTop\":{:.1},\"provLine\":{PROVENANCE_LINE_HEIGHT}}}",
+        "],\"sharedProv\":{shared_count},\"svgWidth\":{SVG_WIDTH:.0},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"xInset\":{X_INSET},\"labelGap\":{SERIES_LABEL_GAP},\"rounds\":{},\"labelAbove\":{VALUE_LABEL_ABOVE},\"labelBelow\":{VALUE_LABEL_BELOW},\"labelHeight\":{VALUE_LABEL_HEIGHT},\"spreadNoticeable\":0.{SPREAD_NOTICEABLE_PERMILLE:03},\"spreadWide\":0.{SPREAD_WIDE_PERMILLE:03},\"provTop\":{:.1},\"provLine\":{PROVENANCE_LINE_HEIGHT}}}",
         roster.rounds,
         plots[0].provenance_top,
     )
@@ -4596,6 +4671,102 @@ fn write_interaction_script(
 const INTERACTION_SCRIPT: &str = r##"
 /* One on/off state per contender, shared by every plot. */
 const on = DATA.names.map(() => true);
+
+/*
+ * Zoom: the inputs every plot shows, as a range of input sizes, a batch
+ * counting its messages' bytes, so all four plots move in lock step. The
+ * range runs from one data point to another of ALLB, every input size the
+ * plots have. Each plot shows its points inside the range, or, when fewer
+ * than two fall inside, the two nearest it. A plot's x axis maps log2 of
+ * bytes across its window, as the static render maps its whole axis.
+ */
+const ALLB = [...new Set(DATA.plots.flatMap(pl => pl.bytes))].sort((a, b) => a - b);
+let zFrom = 0, zTo = ALLB.length - 1;
+function windowFor(p, lo, hi) {
+  const b = DATA.plots[p].bytes;
+  let ks = b.map((_, k) => k).filter(k => b[k] >= lo && b[k] <= hi);
+  if (ks.length < 2) {
+    const d = k => Math.max(0, Math.log2(lo) - Math.log2(b[k]), Math.log2(b[k]) - Math.log2(hi));
+    ks = b.map((_, k) => k).sort((x, y) => d(x) - d(y) || x - y).slice(0, 2).sort((x, y) => x - y);
+  }
+  const k0 = ks[0], k1 = ks[ks.length - 1];
+  return { k0, k1, w0: Math.log2(b[k0]), w1: Math.log2(b[k1]) };
+}
+/* The window each plot moves to, the one it moves from, and how far along (eased, 0 to 1). */
+let win = DATA.plots.map((_, p) => windowFor(p, ALLB[zFrom], ALLB[zTo]));
+let winFrom = win, zoomE = 1, zoomAnimation = null;
+/* Pixel x of each point, as last laid out. */
+const currentX = DATA.plots.map(() => null);
+function xsFor(p) {
+  const a = winFrom[p], c = win[p];
+  const w0 = (1 - zoomE) * a.w0 + zoomE * c.w0, w1 = (1 - zoomE) * a.w1 + zoomE * c.w1;
+  const left = DATA.plotLeft + DATA.xInset, width = DATA.plotRight - DATA.plotLeft - 2 * DATA.xInset;
+  return DATA.plots[p].bytes.map(v => left + (Math.log2(v) - w0) / (w1 - w0) * width);
+}
+/* "192 B", "1.5 KiB", "16 MiB", as the Rust side's format_bytes writes. */
+function fmtBytes(bytes) {
+  const [v, u] = bytes < 1024 ? [bytes, "B"] : bytes < 1048576 ? [bytes / 1024, "KiB"] : [bytes / 1048576, "MiB"];
+  return (Number.isInteger(v) ? v.toFixed(0) : v.toFixed(1)) + " " + u;
+}
+function setZoom(from, to) {
+  from = Math.max(0, from); to = Math.min(ALLB.length - 1, to);
+  if (to <= from || (from === zFrom && to === zTo)) return;
+  /* A click during a transition starts from where that one was headed. */
+  if (zoomAnimation) { cancelAnimationFrame(zoomAnimation); zoomAnimation = null; }
+  zFrom = from; zTo = to;
+  winFrom = win;
+  win = DATA.plots.map((_, p) => windowFor(p, ALLB[zFrom], ALLB[zTo]));
+  updateZoomControls();
+  const startTime = performance.now(), DURATION = 600;
+  const ease = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  const step = now => {
+    const raw = Math.min(1, (now - startTime) / DURATION);
+    zoomE = ease(raw);
+    relayout();
+    if (hovered) showHover(hovered[0], hovered[1], hovered[2]);
+    if (raw < 1) {
+      zoomAnimation = requestAnimationFrame(step);
+    } else {
+      winFrom = win;
+      zoomAnimation = null;
+    }
+  };
+  zoomE = 0;
+  zoomAnimation = requestAnimationFrame(step);
+}
+function zoomStep(end, delta) {
+  if (end === "from") setZoom(zFrom + delta, zTo); else setZoom(zFrom, zTo + delta);
+}
+/* About half the range: a quarter of the points off each end, one at least. */
+function zoomIn() {
+  const n = zTo - zFrom;
+  if (n <= 1) return;
+  const cut = Math.max(1, Math.floor(n / 4));
+  const from = zFrom + cut, to = Math.max(from + 1, zTo - cut);
+  setZoom(from, to);
+}
+/* About twice the range, spilling to the other end at an edge. */
+function zoomOut() {
+  const last = ALLB.length - 1, add = Math.max(1, Math.ceil((zTo - zFrom) / 2));
+  let from = zFrom - add, to = zTo + add;
+  if (from < 0) { to -= from; from = 0; }
+  if (to > last) { from = Math.max(0, from - (to - last)); to = last; }
+  setZoom(from, to);
+}
+function zoomAll() { setZoom(0, ALLB.length - 1); }
+function updateZoomControls() {
+  const last = ALLB.length - 1;
+  document.getElementById("zoom-from").textContent = fmtBytes(ALLB[zFrom]);
+  document.getElementById("zoom-to").textContent = fmtBytes(ALLB[zTo]);
+  const off = (id, disabled) => document.getElementById(id).setAttribute("data-off", disabled ? "true" : "false");
+  off("zoom-from-dec", zFrom === 0);
+  off("zoom-from-inc", zFrom + 1 >= zTo);
+  off("zoom-to-dec", zTo - 1 <= zFrom);
+  off("zoom-to-inc", zTo === last);
+  off("zoom-in", zTo - zFrom <= 1);
+  off("zoom-out", zFrom === 0 && zTo === last);
+  off("zoom-all", zFrom === 0 && zTo === last);
+}
 
 /*
  * Display unit. Data is stored as ns per unit (byte or message, by plot);
@@ -4687,8 +4858,11 @@ function niceAbove(v) {
   const n = v / mag;
   return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
 }
+/* Below 1, two significant digits, trailing zeros dropped (0.15, 0.2, 0.05); format_gbps_tick in Rust writes the same. */
 function fmtTick(v) {
-  return v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2);
+  if (v >= 10) return v.toFixed(0);
+  if (v >= 1) return v.toFixed(1);
+  return v.toFixed(Math.ceil(-Math.log10(v)) + 1).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function ticks(lo, hi) {
@@ -4720,23 +4894,37 @@ function speedsText(s, k, p, digits) {
 function relayoutPlot(p) {
   const plot = DATA.plots[p];
   const visible = plot.series.map((s, i) => i).filter(i => on[i] && plot.series[i]);
-  let lo = Infinity, hi = 0;
-  for (const i of visible) {
-    const s = plot.series[i];
-    lo = Math.min(lo, ...s.low, ...s.low2);
-    hi = Math.max(hi, ...s.high, ...s.high2);
-  }
-  if (visible.length === 0) { lo = 0.1; hi = 1; }
+  const X = xsFor(p);
+  currentX[p] = X;
+  const w = win[p];
+  /* The data's extent over a window's points. */
+  const rangeOf = wnd => {
+    let lo = Infinity, hi = 0;
+    for (const i of visible) {
+      const s = plot.series[i];
+      for (let k = wnd.k0; k <= wnd.k1; k++) {
+        lo = Math.min(lo, s.low[k], s.low2[k]);
+        hi = Math.max(hi, s.high[k], s.high2[k]);
+      }
+    }
+    return visible.length === 0 ? [0.1, 1] : [lo, hi];
+  };
   /*
-   * Axis bounds at both ends of the blend, then interpolated in log space
-   * alongside the data, so the axis and the points move together.
+   * Axis bounds at both ends of the unit blend, then interpolated in log
+   * space alongside the data, so the axis and the points move together;
+   * the same between the zoom's start and end windows.
    */
-  const boundsAt = b => {
+  const boundsAt = (b, lo, hi) => {
     const a = valAt(lo, b, plot.scale), c = valAt(hi, b, plot.scale);
     const dLo = Math.min(a, c), dHi = Math.max(a, c);
     return [Math.log(niceBelow(dLo * 0.92)), Math.log(niceAbove(dHi * 1.08))];
   };
-  const [n0, n1] = boundsAt(0), [g0, g1] = boundsAt(1);
+  const startRange = rangeOf(winFrom[p]), endRange = rangeOf(w);
+  const zoomed = b => {
+    const [a0, a1] = boundsAt(b, ...startRange), [c0, c1] = boundsAt(b, ...endRange);
+    return [(1 - zoomE) * a0 + zoomE * c0, (1 - zoomE) * a1 + zoomE * c1];
+  };
+  const [n0, n1] = zoomed(0), [g0, g1] = zoomed(1);
   const lMin = (1 - blend) * n0 + blend * g0, lMax = (1 - blend) * n1 + blend * g1;
   /* mapY takes ns per unit, as stored; the unit transform happens inside. */
   const mapY = ns => plot.bottom - (Math.log(val(ns, p)) - lMin) / (lMax - lMin) * (plot.bottom - plot.top);
@@ -4764,7 +4952,7 @@ function relayoutPlot(p) {
     t.setAttribute("x", (DATA.plotLeft - 10).toFixed(1)); t.setAttribute("y", (y + 3.5).toFixed(2));
     t.setAttribute("class", "tick-label"); t.setAttribute("text-anchor", "end");
     t.setAttribute("data-ns", tickToNs(v));
-    t.textContent = unit === "ns" ? fmtTick(v) : (v >= 10 ? v.toFixed(0) : v.toFixed(1));
+    t.textContent = fmtTick(v);
     axis.appendChild(t);
   }
   /* The outgoing axis, if one is fading, rides the same motion. */
@@ -4782,26 +4970,30 @@ function relayoutPlot(p) {
     g.setAttribute("data-on", on[i] ? "true" : "false");
     dots.setAttribute("data-on", on[i] ? "true" : "false");
     if (!on[i]) return;
-    const X = plot.x;
     /* One subpath per speed; they coincide wherever a point ran at one speed. */
     let band = "", med = "";
     for (const [m, lo, hi] of [[s.med, s.low, s.high], [s.med2, s.low2, s.high2]]) {
-      X.forEach((x, k) => { band += (k ? " L " : " M ") + x + " " + mapY(hi[k]).toFixed(2); });
-      for (let k = X.length - 1; k >= 0; k--) band += " L " + X[k] + " " + mapY(lo[k]).toFixed(2);
+      X.forEach((x, k) => { band += (k ? " L " : " M ") + x.toFixed(2) + " " + mapY(hi[k]).toFixed(2); });
+      for (let k = X.length - 1; k >= 0; k--) band += " L " + X[k].toFixed(2) + " " + mapY(lo[k]).toFixed(2);
       band += " Z";
-      X.forEach((x, k) => { med += (k ? " L " : " M ") + x + " " + mapY(m[k]).toFixed(2); });
+      X.forEach((x, k) => { med += (k ? " L " : " M ") + x.toFixed(2) + " " + mapY(m[k]).toFixed(2); });
     }
     g.querySelector(".band").setAttribute("d", band);
     g.querySelector(".median").setAttribute("d", med);
     dots.querySelectorAll(".dot").forEach(dot => {
       const k = +dot.getAttribute("data-size");
       const m = dot.getAttribute("data-speed") === "1" ? s.med2 : s.med;
-      dot.setAttribute("transform", `translate(${X[k]} ${mapY(m[k]).toFixed(2)})`);
+      dot.setAttribute("transform", `translate(${X[k].toFixed(2)} ${mapY(m[k]).toFixed(2)})`);
     });
   });
 
-  /* Value labels: above the dot unless that collides within the column. */
+  /*
+   * Value labels: above the dot unless that collides within the column.
+   * Shown at the window's first point and every fourth counted back from
+   * its last, as the static render labels the whole axis.
+   */
   for (let k = 0; k < plot.x.length; k++) {
+    const shown = k >= w.k0 && k <= w.k1 && (k === w.k0 || (w.k1 - k) % 4 === 0);
     const order = visible.slice().sort((a, b) => mapY(plot.series[a].med[k]) - mapY(plot.series[b].med[k]));
     const taken = [];
     const clear = y => taken.every(t => Math.abs(t - y) >= DATA.labelHeight);
@@ -4813,6 +5005,9 @@ function relayoutPlot(p) {
       document.getElementById("series-" + p + "-" + i).querySelectorAll(".value-label").forEach(t => {
         if (+t.getAttribute("data-size") === k) {
           t.setAttribute("y", y.toFixed(2));
+          t.setAttribute("x", (k === w.k0 ? X[k] + 9 : X[k]).toFixed(2));
+          t.setAttribute("text-anchor", k === w.k0 ? "start" : "middle");
+          t.setAttribute("display", shown ? "inline" : "none");
           t.textContent = speedsText(plot.series[i], k, p, 2);
         }
       });
@@ -4825,10 +5020,11 @@ function relayoutPlot(p) {
    * points toward where its data lies. Then push overlapping labels apart
    * and keep the stack inside the plot.
    */
-  const last = plot.x.length - 1;
+  /* The window's last point; mid-zoom the anchor moves between the two windows' last points. */
+  const last = w.k1, lastFrom = winFrom[p].k1;
   const clamp = y => Math.min(plot.bottom - 8, Math.max(plot.top + 8, y));
   const slots = plot.series
-    .map((s, i) => s ? [i, clamp(mapY(s.med[last]))] : null)
+    .map((s, i) => s ? [i, clamp((1 - zoomE) * mapY(s.med[lastFrom]) + zoomE * mapY(s.med[last]))] : null)
     .filter(slot => slot)
     .sort((a, b) => a[1] - b[1]);
   for (let k = 1; k < slots.length; k++) {
@@ -4844,7 +5040,56 @@ function relayoutPlot(p) {
       ? `${speedsText(s, last, p, 2)} ${unitLabel(p)} at ${plot.sizes[last]}`
       : `${fmt(s.med[last], p, 2)} ${unitLabel(p)} · ${fmtOther(s.med[last], p)} at ${plot.sizes[last]}`;
   }
+
+  /*
+   * The x axis: each column's guide and label follow its point, fading
+   * over 12 px past the plot's edges. A label that would run into its
+   * shown left neighbour drops to a second row with a tick to its column,
+   * the static render's rule.
+   */
+  const labelY = row => plot.bottom + 24 + 13 * row;
+  let prevX = -Infinity, prevWidth = 0, prevRow = 1;
+  for (let k = 0; k < X.length; k++) {
+    const x = X[k];
+    const opacity = Math.max(0, Math.min(1, (Math.min(x - DATA.plotLeft, DATA.plotRight - x) + 12) / 12));
+    const [grid, tick, label] = xAxis[p][k];
+    grid.setAttribute("x1", x.toFixed(2)); grid.setAttribute("x2", x.toFixed(2));
+    grid.setAttribute("opacity", opacity.toFixed(3));
+    const width = label.textContent.length * 7.2 + 6;
+    let row = 0;
+    if (opacity > 0) {
+      if (x - prevX < (prevWidth + width) / 2 && prevRow === 0) row = 1;
+      prevX = x; prevWidth = width; prevRow = row;
+    }
+    label.setAttribute("x", x.toFixed(2)); label.setAttribute("y", labelY(row).toFixed(1));
+    label.setAttribute("opacity", opacity.toFixed(3));
+    tick.setAttribute("x1", x.toFixed(2)); tick.setAttribute("x2", x.toFixed(2));
+    tick.setAttribute("opacity", opacity.toFixed(3));
+    tick.setAttribute("display", row === 1 && opacity > 0 ? "inline" : "none");
+  }
 }
+
+/* Each plot's x-axis elements by column: [guide, tick, label]. */
+const xAxis = DATA.plots.map((plot, p) => plot.x.map((_, k) => ["grid-x", "size-tick", "size-label"].map(cls =>
+  document.querySelector(`.${cls}[data-plot="${p}"][data-size="${k}"]`))));
+
+/*
+ * The static render labels values at a subset of columns; a zoomed window
+ * labels others, so every series gets a (hidden) label at every column.
+ */
+DATA.plots.forEach((plot, p) => plot.series.forEach((s, i) => {
+  if (!s) return;
+  const marks = document.getElementById("series-" + p + "-" + i).querySelector(".marks");
+  const have = new Set([...marks.querySelectorAll(".value-label")].map(t => +t.getAttribute("data-size")));
+  const color = marks.querySelector(".median").getAttribute("stroke");
+  plot.x.forEach((_, k) => {
+    if (have.has(k)) return;
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("class", "value-label"); t.setAttribute("data-size", k);
+    t.setAttribute("fill", color); t.setAttribute("display", "none");
+    marks.appendChild(t);
+  });
+}));
 
 const provOpen = {run: false, machine: false, sources: false};
 
@@ -5057,7 +5302,8 @@ function showHover(p, focus, k) {
   const H = y + PAD - 6;
 
   /* Place beside the column, flipping left near the right edge. */
-  const x = plot.x[k];
+  const x = currentX[p][k];
+  if (x < DATA.plotLeft || x > DATA.plotRight) { document.getElementById("hover").style.display = "none"; return; }
   const dotY = mapY(f.med[k]);
   let bx = x + 14;
   if (bx + W > DATA.plotRight + 10) bx = x - 14 - W;
@@ -5107,6 +5353,11 @@ window.tapAway = tapAway;
 window.hoverLabel = hoverLabel;
 window.setUnit = setUnit;
 window.flipUnit = flipUnit;
+window.zoomStep = zoomStep;
+window.zoomIn = zoomIn;
+window.zoomOut = zoomOut;
+window.zoomAll = zoomAll;
+updateZoomControls();
 relayout();
 "##;
 
@@ -5200,10 +5451,19 @@ fn format_gbps_tick(value: f64) -> String {
         "log-axis ticks must be positive"
     );
 
+    /*
+     * Below 1, two significant digits with trailing zeros dropped, so the
+     * ticks 0.15 and 0.2 (or 0.015 and 0.02) read apart; the script's
+     * fmtTick writes the same.
+     */
     if value >= 10.0 {
         format!("{value:.0}")
-    } else {
+    } else if value >= 1.0 {
         format!("{value:.1}")
+    } else {
+        let decimals = (-value.log10()).ceil() as usize + 1;
+        let text = format!("{value:.decimals$}");
+        text.trim_end_matches('0').trim_end_matches('.').to_owned()
     }
 }
 
@@ -5315,6 +5575,16 @@ mod correctness_tests {
         for &(len, seed, _) in test_vectors::VECTORS {
             check_input(&algorithms, &make_input_seeded(len, seed), 1, seed);
         }
+    }
+
+    /// Axis ticks below 1 keep two significant digits, so neighbouring
+    /// ticks read apart; zoom labels name sizes the way the script does.
+    #[test]
+    fn tick_and_size_labels() {
+        let ticks: Vec<String> = [70.0, 10.0, 7.0, 1.5, 1.0, 0.7, 0.2, 0.15, 0.1, 0.05, 0.015].iter().map(|&v| format_gbps_tick(v)).collect();
+        assert_eq!(ticks, ["70", "10", "7.0", "1.5", "1.0", "0.7", "0.2", "0.15", "0.1", "0.05", "0.015"]);
+        let sizes: Vec<String> = [64, 192, 1024, 1536, 3072, 1 << 20, 3 << 20, 16 << 20].iter().map(|&b| format_bytes(b)).collect();
+        assert_eq!(sizes, ["64 B", "192 B", "1 KiB", "1.5 KiB", "3 KiB", "1 MiB", "3 MiB", "16 MiB"]);
     }
 
     #[test]
