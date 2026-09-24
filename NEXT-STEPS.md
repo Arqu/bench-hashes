@@ -21,7 +21,9 @@ list".
 `refs/notes/perf`): k7 and k9 + k3 for seven and twelve chunks (faster on
 P, E, and the VM); arrays sized for sixteen chaining values in hash() at
 2-16 KiB (Mac 2-4 KiB 4-5% faster; 4 KiB solo now within 2% of SHA-256
-ring). Tools: the runner, `wait_for.py`, `losses.py`, the hook fixes (an
+ring); servil mt skips its length pass for batches of fewer than 1024
+one-block messages (512 messages: 12.40 -> 9.86 ns/msg, level with servil,
+off the list on both machines). Tools: the runner, `wait_for.py`, `losses.py`, the hook fixes (an
 empty commit, a227f6d, came from the hook overwriting the index).
 
 **Decisions waiting for the user** (each a candidate branch):
@@ -49,9 +51,10 @@ this hardware, against hardware SHA-256's 1.4-1.6; folding G's rotations
 into its xors was 7-13% slower (an xor with a rotated operand takes two
 cycles). 3 KiB (SHA-256 ring +11-17%) is bound by the NEON pair kernel; at
 zero overhead it would gain 4%. 4 KiB sits within 2-9% of SHA-256 ring
-depending on the run. servil mt at 512 messages (+25% against servil) is
-the length pass before the SME2 kernels; no pass is good on both machines
-(open, NOTES).
+depending on the run. On the VM the list is 42 cells: the same, plus
+servil mt against servil at 512 messages (fixed since) and in a few
+two-speed shared cells. Candidates 1-3 predate the last servil commits:
+rebase before any use.
 
 ## Where things stand (end of the September 23, 2026 session)
 
