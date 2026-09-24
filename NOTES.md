@@ -120,9 +120,10 @@ neither dominates on either machine: sha2 leads at 64 B (0.50 against
 0.65 ns/B) and 128 B and in every batch of 64-byte messages (30 against
 40 ns/msg), ring from 256 B (0.30 against 0.35 ns/B from 1 KiB). Whether
 ring leads on x86 is unmeasured (it has SHA-NI, AVX, and SSSE3 paths,
-sha2 SHA-NI and portable code). The graph opens showing servil mt, both
-SHA-256 crates, and crates.io BLAKE3 (`SHOWN_AT_FIRST`); a run without
-any of them shows everything.
+sha2 SHA-NI and portable code). The graph opens showing servil mt, SHA-256
+ring, and crates.io BLAKE3 (`SHOWN_AT_FIRST`; Zooko, September 25, 2026:
+fewer lines for the viewer, sha2 one click away); a run without any of
+them shows everything.
 
 **Load from other programs** (September 25, 2026, after a Mac record
 read 8-10% slow across every contender with dips in the batch plot, most

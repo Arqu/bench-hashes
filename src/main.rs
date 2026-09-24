@@ -854,12 +854,14 @@ const DEFAULT_CONTENDERS: [Algorithm; 4] =
 
 /*
  * The contenders the graph shows when it opens; a click on a name shows
- * any other. The fastest BLAKE3 at every size (servil mt matches servil
- * below its threading threshold), both SHA-256 crates (each the fastest
- * at some sizes), and the crates.io BLAKE3 most programs use. A run with
- * none of them opens with every contender shown.
+ * any other. Three lines, for a first view with little to untangle
+ * (Zooko, September 25, 2026): the fastest BLAKE3 at every size (servil
+ * mt matches servil below its threading threshold), SHA-256 ring (the
+ * faster SHA-256 from 256 B up; sha2, faster below and in 64-byte
+ * batches, is one click away), and the crates.io BLAKE3 most programs
+ * use. A run with none of them opens with every contender shown.
  */
-const SHOWN_AT_FIRST: [Algorithm; 4] = [Algorithm::Blake3ServilMt, Algorithm::Sha256, Algorithm::Sha256Ring, Algorithm::Blake3];
+const SHOWN_AT_FIRST: [Algorithm; 3] = [Algorithm::Blake3ServilMt, Algorithm::Sha256Ring, Algorithm::Blake3];
 
 /// How the user chose the contenders, for the report header.
 #[derive(Clone, Copy, PartialEq, Eq)]

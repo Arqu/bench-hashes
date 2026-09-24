@@ -18,7 +18,7 @@ before touching kernels or the pool); this repository's are in `NOTES.md`.
 - **bench-hashes runs from a plain clone**: `cargo run --release` builds
   the fork from git at the commit Cargo.lock pins, runs in full
   (`--quick` for seconds), and measures BLAKE3 servil, servil mt, sha2,
-  and ring. The graph opens on servil mt, both SHA-256 crates, and
+  and ring. The graph opens on servil mt, SHA-256 ring, and
   crates.io BLAKE3; its labels no longer overlap.
 - Fork `/workspace`, branch **`servil`** at 7dba117 (2a82c8c's kernels;
   builds without SME2 on older compilers), pushed with its gate note; no
