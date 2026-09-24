@@ -12,8 +12,11 @@ measurement is in the fork's `NOTES-servil.md` and this repo's `NOTES.md`.
 
 The night's objective, from the user: shrink the list of cells where a
 competitor beats servil or servil mt; `pypy3 tools/losses.py SAMPLES.tsv`
-in the fork prints it (score = cells lost by more than 3%; 37-38 on the
-Mac's thorough runs). Details and numbers: the fork's NOTES-servil.md,
+in the fork prints it (score = cells lost by more than 3%). Final servil
+(6aa2053): Mac 37 (job 082: SHA-256 at every one-message size to 4 KiB
+and a batch of one, plus one two-speed servil mt/servil coin toss; no
+BLAKE3 wins anywhere); VM 43 (SHA-256 alone: those, plus seven shared
+bulk cells that candidate 1 removes). Details and numbers: the fork's NOTES-servil.md,
 section "Session: kernels by core kind, the E-core trigger, the minimax
 list".
 
@@ -52,6 +55,14 @@ empty commit, a227f6d, came from the hook overwriting the index).
    0.27-0.30 with the turn; 64 MiB 0.241 against 0.172; batches, 90th
    percentile, 18.9-21.2 against 14.7-17.7. The turn trades the lucky
    mode's speed for a bounded worst case, and ends the E-core placement.
+   **On the VM it wins outright** (thorough runs servil / turn / turn /
+   servil, in the fork's tmp/vm-thorough-*): list 43, 36, 37, 43. There
+   the two SME2 copies nearly always share one unit: servil shared 64
+   KiB-8 MiB 0.311-0.316 ns/B, behind SHA-256 ring's 0.30 (7 lost cells);
+   with the turn, median 0.173-0.218, 90th percentile 0.263-0.288, and
+   those cells leave the list. Recommendation: take it (VM clearly better,
+   Mac worst cases better, Mac lucky mode worse; a native/VM split that
+   needs the user's decision on the record, per AGENTS).
 2. `candidate/neon-k4-pairs`: k4 as two NEON pairs. E-core 4 KiB -22%
    (beats upstream there), P-core 4 KiB +14%, which puts 4 KiB back on
    the list against SHA-256 ring. By the list: no.
