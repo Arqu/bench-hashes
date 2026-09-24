@@ -120,7 +120,11 @@ it, or at least predicted (AGENTS.md, "we own every slowdown").
    records of identical code differ by up to 60% in shared small batches
    on the VM. Predict or control.
 6. **NEON goes cold** after stretches without vector work (1000 one-block
-   messages cost 23% more per message than 1024 in a tight loop).
+   messages cost 23% more per message than 1024 in a tight loop). Probed
+   September 25 (fork NOTES, "SME2 remainders"): the remainder's order is
+   not the cause; the penalty follows machine state (the same size pays
+   25% in one run, nothing in the next); padding trades. Next: find what
+   state it follows (which core or cluster, the SME unit's clock).
 7. **SME2 batch rates with work between calls** (about 12 ns/msg, not the
    benchmark's 10): whether batches should use SME2 from 16 messages.
 8. **The E-core trigger's mechanism** (controlled by the turn; unexplained).
