@@ -409,9 +409,11 @@ hypervisor withheld from a virtual machine's CPUs for other work on the
 host. The OS counts both in 10 ms ticks, so the run sums them over
 windows of 5 seconds. The report, the samples file, and the graph's
 Provenance section give the run's average and its busiest window, in
-CPUs kept busy, and call the run busy when the busiest window reached
-half a CPU (other programs or steal). Measured in a quiet 16-CPU Linux
-VM: 0.02 CPUs on average; with two busy loops beside the run: 2.04.
+CPUs kept busy, and call the run busy when the busiest window reached a
+whole CPU (other programs or steal). Measured in a quiet 16-CPU Linux
+VM: 0.02 CPUs on average; with two busy loops beside the run: 2.04. An
+Apple M4 Max desktop running a Linux VM keeps 0.40-0.56 CPUs busy, and
+its results then match a quieter run's to about 1%.
 
 Hypervisors that report no steal time (Apple's Virtualization framework,
 for one) keep a VM's guest from seeing load on the host, so a VM can

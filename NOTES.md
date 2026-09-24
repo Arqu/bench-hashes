@@ -125,8 +125,9 @@ likely from the user's own work on the Mac): at round boundaries the run
 reads the machine's busy CPU time (`/proc/stat`, macOS
 `host_statistics(HOST_CPU_LOAD_INFO)`) and its own process CPU time; the
 difference over 5 s windows (10 ms ticks make shorter ones noisy) is other
-programs' load, in milli-CPUs. Busy: the busiest window at 0.5 CPU or
-more. Provenance, text report, and samples (`# load:`, `# other load by
+programs' load, in milli-CPUs. Busy: the busiest window at one CPU or
+more (first 0.5; the Mac's steady desktop-plus-VM background of 0.40-0.56
+CPUs, job 114, flagged a run whose medians matched e16e836's to 1%). Provenance, text report, and samples (`# load:`, `# other load by
 5 s window`, `# steal by 5 s window`) carry it. VM quiet 0.02 CPUs
 average, 0.07 worst; two `yes` loops read 2.04. **Open**: this VM's
 hypervisor reports no steal (0 since boot through Mac jobs), so host load

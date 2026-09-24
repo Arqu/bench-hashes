@@ -2135,9 +2135,11 @@ mod sample_clock {
  */
 const LOAD_WINDOW_NS: u64 = 5_000_000_000;
 /// A run whose busiest window had other programs (or the hypervisor)
-/// keep half a CPU or more busy is reported as busy: enough to slow the
-/// shared scenario and the multithreaded contenders, which use every CPU.
-const LOAD_BUSY_MILLI_CPUS: u64 = 500;
+/// keep a whole CPU or more busy is reported as busy: a core taken from
+/// the shared scenario and the multithreaded contenders, which use every
+/// CPU. An M4 Max desktop running a Linux VM beside the benchmark keeps
+/// 0.40-0.56 CPUs busy, with results level with a quieter run's.
+const LOAD_BUSY_MILLI_CPUS: u64 = 1000;
 
 mod cpu_times {
     /// The machine's CPU time since boot, all CPUs summed: busy (not idle,
