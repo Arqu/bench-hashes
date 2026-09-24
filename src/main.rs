@@ -4054,10 +4054,13 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
              */
             let (label_x, anchor) = if k == 0 { (x + 9.0, "start") } else { (x, "middle") };
 
+            let (label_y, display) = match value_label_y[algorithm_index][k] {
+                Some(y) => (y, ""),
+                None => (0.0, r#" display="none""#),
+            };
             writeln!(
                 svg,
-                r##"      <text class="value-label" data-size="{k}" x="{label_x:.2}" y="{:.2}" fill="{color}" text-anchor="{anchor}">{}</text>"##,
-                value_label_y[algorithm_index][k],
+                r##"      <text class="value-label" data-size="{k}" x="{label_x:.2}" y="{label_y:.2}" fill="{color}" text-anchor="{anchor}"{display}>{}</text>"##,
                 speeds.iter().map(|speed| format_rate_value(speed.median, plot.use_case)).collect::<Vec<_>>().join(" | "),
             )
                 .unwrap();
@@ -4206,7 +4209,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
 
 /*
  * X-axis labels in two rows. About 7.2 px per character at the bold label
- * font, plus a gutter. The powers of two go first, then the sizes between
+ * font, plus a 12 px gutter. The powers of two go first, then the sizes between
  * them, each pass left to right. A label takes the first row if it
  * overlaps no label there and covers no second-row tick, else the second
  * row if it overlaps no label there and its tick crosses no first-row
@@ -4215,7 +4218,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
  * the same rule. Returns each column's row, None for hidden.
  */
 fn place_size_labels(x: &[f64], labels: &[&str], primary: &[bool]) -> Vec<Option<u8>> {
-    let half = |k: usize| (labels[k].chars().count() as f64 * 7.2 + 6.0) / 2.0;
+    let half = |k: usize| (labels[k].chars().count() as f64 * 7.2 + 12.0) / 2.0;
     let mut rows: Vec<Option<u8>> = vec![None; x.len()];
     for pass in [true, false] {
         for k in (0..x.len()).filter(|&k| primary[k] == pass) {
@@ -4303,21 +4306,27 @@ fn band_style(worst_spread_permille: u64) -> (u64, bool) {
  * Value labels sit above their dot by default. Within a column, labels
  * are processed top to bottom; one that would land within a label height
  * of a label already placed, or on a dot of the column, moves below its
- * dot instead, and if that also collides it steps down until clear. A
- * label's baseline at y clears a dot at d when y <= d - 6 or y >= d + 14
- * (the text spans y - 9 to y + 1, the dot d - 5 to d + 5). The script
- * repeats this rule.
+ * dot instead, and if that also collides it steps down once more; a
+ * label with no clear place within VALUE_LABEL_REACH below its dot stays
+ * hidden (hovering the dot shows the value). A label's baseline at y
+ * clears a dot at d when y <= d - 6 or y >= d + 14 (the text spans y - 9
+ * to y + 1, the dot d - 5 to d + 5), and the plot's edges when it lies
+ * within [top + 10, bottom - 3]. The script repeats this rule.
  */
 const VALUE_LABEL_ABOVE: f64 = -11.0;
 const VALUE_LABEL_BELOW: f64 = 17.0;
 const VALUE_LABEL_HEIGHT: f64 = 11.0;
+const VALUE_LABEL_REACH: f64 = VALUE_LABEL_BELOW + VALUE_LABEL_HEIGHT;
 
-fn value_label_clear(y: f64, labels: &[f64], dots: &[f64]) -> bool {
-    labels.iter().all(|t| (t - y).abs() >= VALUE_LABEL_HEIGHT) && dots.iter().all(|&d| y <= d - 6.0 || y >= d + 14.0)
+fn value_label_clear(y: f64, labels: &[f64], dots: &[f64], plot: &Plot) -> bool {
+    y >= plot.top + 10.0
+        && y <= plot.bottom - 3.0
+        && labels.iter().all(|t| (t - y).abs() >= VALUE_LABEL_HEIGHT)
+        && dots.iter().all(|&d| y <= d - 6.0 || y >= d + 14.0)
 }
 
-fn place_value_labels(plot: &Plot, results: &Results, shown: &[bool]) -> Vec<Vec<f64>> {
-    let mut placed = vec![vec![0.0_f64; plot.len()]; results.len()];
+fn place_value_labels(plot: &Plot, results: &Results, shown: &[bool]) -> Vec<Vec<Option<f64>>> {
+    let mut placed = vec![vec![None; plot.len()]; results.len()];
     for k in 0..plot.len() {
         let point_index = plot.points.start + k;
         let mut order: Vec<usize> = plot.contenders.iter().copied().filter(|&a| shown[a]).collect();
@@ -4330,14 +4339,13 @@ fn place_value_labels(plot: &Plot, results: &Results, shown: &[bool]) -> Vec<Vec
         let mut taken: Vec<f64> = Vec::new();
         for algorithm_index in order {
             let dot_y = plot.map_y(plot.stats(results, algorithm_index, point_index).median);
-            let mut y = dot_y + VALUE_LABEL_ABOVE;
-            if !value_label_clear(y, &taken, &dots) {
-                y = dot_y + VALUE_LABEL_BELOW;
-                while !value_label_clear(y, &taken, &dots) {
-                    y += VALUE_LABEL_HEIGHT;
-                }
+            let y = [VALUE_LABEL_ABOVE, VALUE_LABEL_BELOW, VALUE_LABEL_REACH]
+                .into_iter()
+                .map(|offset| dot_y + offset)
+                .find(|&y| value_label_clear(y, &taken, &dots, plot));
+            if let Some(y) = y {
+                taken.push(y);
             }
-            taken.push(y);
             placed[algorithm_index][k] = y;
         }
     }
@@ -5023,18 +5031,18 @@ function relayoutPlot(p) {
     const shown = columns[k];
     const order = visible.slice().sort((a, b) => mapY(plot.series[a].med[k]) - mapY(plot.series[b].med[k]));
     const taken = [], dotYs = order.map(i => mapY(plot.series[i].med[k]));
-    const clear = y => taken.every(t => Math.abs(t - y) >= DATA.labelHeight) && dotYs.every(d => y <= d - 6 || y >= d + 14);
+    const clear = y => y >= plot.top + 10 && y <= plot.bottom - 3
+      && taken.every(t => Math.abs(t - y) >= DATA.labelHeight) && dotYs.every(d => y <= d - 6 || y >= d + 14);
     for (const i of order) {
       const dotY = mapY(plot.series[i].med[k]);
-      let y = dotY + DATA.labelAbove;
-      if (!clear(y)) { y = dotY + DATA.labelBelow; while (!clear(y)) y += DATA.labelHeight; }
-      taken.push(y);
+      const y = [DATA.labelAbove, DATA.labelBelow, DATA.labelBelow + DATA.labelHeight].map(o => dotY + o).find(clear);
+      if (y !== undefined) taken.push(y);
       document.getElementById("series-" + p + "-" + i).querySelectorAll(".value-label").forEach(t => {
         if (+t.getAttribute("data-size") === k) {
-          t.setAttribute("y", y.toFixed(2));
+          t.setAttribute("y", (y === undefined ? 0 : y).toFixed(2));
           t.setAttribute("x", (k === w.k0 ? X[k] + 9 : X[k]).toFixed(2));
           t.setAttribute("text-anchor", k === w.k0 ? "start" : "middle");
-          t.setAttribute("display", shown ? "inline" : "none");
+          t.setAttribute("display", shown && y !== undefined ? "inline" : "none");
           t.textContent = speedsText(plot.series[i], k, p, 2);
         }
       });
@@ -5098,7 +5106,7 @@ function relayoutPlot(p) {
  * first-row label, else it hides (-1). Columns outside the plot hide.
  */
 function placeSizeLabels(X, sizes, bytes, opacities) {
-  const half = k => (sizes[k].length * 7.2 + 6) / 2;
+  const half = k => (sizes[k].length * 7.2 + 12) / 2;
   const rows = X.map(() => -1);
   const isPow2 = b => Number.isInteger(Math.log2(b));
   for (const pass of [true, false]) {

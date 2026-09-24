@@ -36,7 +36,7 @@ function checkLayout(tag) {
     // neither row beside the labels shown.
     const cols = x.map((_, k) => {
       const label = w.document.querySelector(`.size-label[data-plot="${p}"][data-size="${k}"]`);
-      return { half: (label.textContent.length * 7.2 + 6) / 2, shown: +label.getAttribute("opacity") > 0,
+      return { half: (label.textContent.length * 7.2 + 12) / 2, shown: +label.getAttribute("opacity") > 0,
                row: Math.round((+label.getAttribute("y") - plot.bottom - 24) / 13) };
     });
     const overlaps = (k, row) => cols.some((c, j) => j !== k && c.shown && c.row === row && Math.abs(x[j] - x[k]) < c.half + cols[k].half - 0.01);
@@ -56,7 +56,7 @@ function checkLayout(tag) {
       const labels = [...w.document.getElementById(`series-${p}-${i}`).querySelectorAll(".value-label")];
       check(labels.length === x.length, `${tag}: plot ${p} series ${i} has ${labels.length} value labels`);
       const shown = labels.filter(t => t.getAttribute("display") !== "none").map(t => +t.getAttribute("data-size")).sort((a, b) => a - b);
-      check(shown[0] === wd.k0 && shown[shown.length - 1] === wd.k1, `${tag}: plot ${p} series ${i} labels at ${shown}`);
+      check(shown.every(k => k >= wd.k0 && k <= wd.k1), `${tag}: plot ${p} series ${i} labels at ${shown}`);
       const detail = w.document.getElementById(`series-${p}-${i}`).querySelector(".series-detail").textContent;
       check(detail.endsWith("at " + plot.sizes[wd.k1]), `${tag}: plot ${p} series ${i} detail "${detail}"`);
     });
