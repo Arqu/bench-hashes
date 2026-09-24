@@ -89,41 +89,49 @@ measurement is in the fork's `NOTES-servil.md` and this repo's `NOTES.md`.
   account; the exchange folder lives inside `/workspace` (no second VM
   mount).
 
-## Next: the Mac benchmark runner (designed, not yet written)
+## The Mac benchmark runner (working since September 24, 2026)
 
-- Account `benchrunner` (hidden, standard, own home 700, own rustup with
-  the Mac's nightly `rustc 1.98.0-nightly 2026-06-19`). Created with
-  `sudo sysadminctl -addUser benchrunner -fullName "Bench Runner"
-  -password -` and `sudo dscl . create /Users/benchrunner IsHidden 1`.
-- Code **only from GitHub** (public repos), never from the user's
-  checkout (it holds `ghtokenclassic.txt`); jobs name pushed commits.
-- Exchange folder inside the checkout, e.g. `/workspace/runner/`
-  (`~/piplayground/blake3-servil/runner/` on the Mac), excluded from git
-  via `.git/info/exclude`: `jobs/` written by us, read-only to the runner
-  (it records done jobs in its own home); `results/` owned by
-  `benchrunner`, readable by all. `benchrunner` needs traverse-only access
-  on `~`, `~/piplayground`, and the checkout (an ACL granting `search`),
-  and every secret there must be mode 600 (check `ghtokenclassic.txt`,
-  `ls -ld ~`).
-- Runner program: Python 3, reviewed by the user, copied by the user to
-  a path the user owns and `benchrunner` can only read (e.g.
-  `/Users/Shared/bench-runner/runner.py`, 644, directory the user's); run
-  with `sudo -u benchrunner -H /usr/bin/python3 .../runner.py`; Ctrl-C
-  stops it. It sets its own PATH to its rustup toolchain.
-- Jobs: JSON, an allow-list only, arguments passed as lists (no shell),
-  commits as hex, a time limit each: the benchmark with known flags
-  (`--all`, `--thorough`, `--contenders` from known keys, `--points`,
-  `--rounds`, `--trace-clocks` into its results folder); `perf_regress
-  compare OLD NEW`; examples `scaling` and `host_lab`, optionally
-  `--features no_sme2`. Each result folder: log, report, graph, samples,
-  trace, and a verdict file for compares.
-- Later: `tools/promote.py candidate/<topic>` checks the gate, records
-  verdicts as git notes (`refs/notes/perf`, machine, base, result),
+Jobs run on the Mac as the hidden standard account `benchrunner` (login
+shell `/usr/bin/false`, random password nobody holds, home 700), with code
+cloned from GitHub alone at the commits a job names; the user's checkout
+(and `ghtokenclassic.txt`, mode 600) stays out of its reach.
+
+- **Files**, in the fork's `runner/` (kept out of git by
+  `.git/info/exclude`, so they live on the mount only): `runner.py` (the
+  job format is its docstring), `setup-mac.sh`, `README.md`; the exchange
+  folders `jobs/` (ours, readable) and `results/` (the runner's, readable).
+- **Start** on the Mac, as the user: `sh
+  ~/piplayground/blake3-servil/runner/setup-mac.sh`. It checks and
+  repeats the setup (skipping what is done), copies `runner.py` to
+  `/Users/Shared/bench-runner/` (the user's, read-only to the runner), and
+  starts it under PyPy; Ctrl-C stops it after the current job. The runner
+  prints a line as each job starts and ends.
+- **Jobs**: write `jobs/NNN-name.json` from the VM (full hex commits, both
+  pushed); the runner takes new files in name order and records each in
+  `~benchrunner/.benchrunner_done`, so a rerun needs a new name. Types:
+  `benchmark` (flags `--all`, `--thorough`; `contenders`, `points`,
+  `rounds`, `trace_clocks`), `perf_regress` (`old_commit`, `new_commit`,
+  `bench_commit`), `example` (`scaling`, `host_lab`; `features`). Each
+  result folder holds `runner.log` (every command and its output),
+  `verdict.json`, and the job's files.
+- **Compiler**: the runner's toolchain is pinned by `setup-mac.sh` to the
+  user's own rustc, matched by commit hash (rustc 1.98.0-nightly
+  f428d123a 2026-06-19). A channel name would install the newest nightly:
+  job 001 got 1.100.0 that way and was set aside.
+- **Runner against Terminal** (job 002 and the same `--all --thorough`
+  run from the user's Terminal, fork b931309, bench 709f17f; data and
+  `compare.py` in the fork's `tmp/mac-terminal-vs-runner-b931309/`): 704
+  cells, terminal/runner median of cell medians 1.001, of 5th percentiles
+  1.000; slow-sample shares solo 5.3% / 5.8%, shared 8.7% / 8.5%. One cell
+  differs by 10% or more, servil shared 64 MiB (0.89), a known two-speed
+  SME2 cell (50% / 63% slow). The E-core cells (solo, 256 B-8 KiB) are
+  alike under both accounts. The runner's results stand in for
+  Terminal runs.
+- **Later**: `tools/promote.py candidate/<topic>` checks the gate, records
+  verdicts as git notes (`refs/notes/perf`: machine, base, result),
   fast-forwards `servil`, pushes; a pre-push hook refuses a `servil` tip
-  without both machines' passing notes. Until the runner exists the Mac
-  verdict is relayed by the user and recorded as such.
-- First runner job: the same thorough run launched from the user's
-  Terminal and from the runner, to compare scheduling.
+  without both machines' passing notes. Until then the Mac verdict is a
+  runner `perf_regress` job's `verdict.json`, cited in the merge message.
 
 ## Next priorities
 
@@ -131,8 +139,9 @@ Open problems stay open until they reach one of the outcomes in AGENTS
 ("we own every slowdown a user could meet"): controlled, explained to
 users with how to control it, or at least predicted.
 
-1. **Native benchmark runner on the Mac**: write it and its setup
-   commands for the user's review (design above).
+1. **Use the runner**: the Mac half of the gate to `servil` (a
+   `perf_regress` job per candidate), and the Mac-only probes below
+   (problems 3-6) as jobs.
 2. **Benchmarks that stay useful on hardware they can neither see nor
    steer.** In the VM (and anywhere else without per-core counters or
    affinity) the host runs vCPUs on P- or E-cores at will, so timings come
