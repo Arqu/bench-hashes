@@ -1,65 +1,129 @@
 # Next steps
 
-Read this file first. The work is optimizing the servil fork for the duo
-benchmark on the VM, native Mac, and other platforms; VMs are
-first-class targets. Prefer improvements that make the implementation
-simpler and faster together. Shared principles and environment commands
-are in both repositories' `AGENTS.md` files; the fork's
-`NOTES-servil.md` has every measurement behind the design.
+Read this file first. The work: make the servil fork the fastest BLAKE3
+in every situation a user meets (minimax: judge by the worst plausible
+case), on the Mac natively and in the VM (both first-class), measured by
+this benchmark. Prefer changes that are simpler and faster together.
+Principles are in both repos' `AGENTS.md` (read them: minimax, "we own
+every slowdown a user could meet", presentation costs, branches); every
+measurement is in the fork's `NOTES-servil.md` and this repo's `NOTES.md`.
 
-## Where this session stopped
+## Where things stand (end of the September 23, 2026 session)
 
-- Fork: `/workspace`, main branch `servil` (renamed from `sme2-bench`),
-  clean, pushed; work goes on `candidate/<topic>` branches (AGENTS). Tag
-  `experiment/sme-only-workers` (commit 100afbc) keeps `sme2::subtree_cv`,
-  a subtree on SME2 and scalar code alone, free of the first-NEON wait.
-- Benchmark: `/workspace/bench-hashes`, branch `main`, pushed. Records:
-  the VM's thorough one (fork 90172ae) and the Mac's quick one (fork
-  90172ae); thorough Mac runs waiting on open problems are in `tmp/`. No
-  release tag since 0.6.0; the fork has none of its own.
-- VM record: fork 737929b, bench 40247da, both clean.
-- Mac record (`benchmark-results/AppleM4Max.darwin25/`): fork c1ec71f,
-  bench 04dc84f; predates this session's pool change.
-- Raw data and probes from this session: the fork's `tmp/mac-trace/`,
-  `tmp/mac-trace2/` (per-copy duo trace), `tmp/mac-neon/` (no_sme2 run),
-  `tmp/sme2-session/` (probes, the one-thread patch).
+- **Fork** `/workspace`: main branch **`servil`** (renamed from
+  `sme2-bench`; the old branch is deleted), clean, pushed. New work goes
+  on **`candidate/<topic>`** branches; the gate to `servil` is in the
+  fork's AGENTS.md ("Branches"): fast-forward, all suites, and
+  `perf_regress compare servil candidate/<topic>` passing on the VM **and**
+  natively on the Mac. Never promote on the VM verdict alone.
+  Tag `experiment/sme-only-workers` (100afbc) keeps `sme2::subtree_cv`.
+- **Benchmark** `/workspace/bench-hashes`, branch `main`, clean, pushed.
+  Records: VM thorough (fork 90172ae, bench 8e0be9f era); Mac quick
+  (fork 90172ae, bench d4afe72). No new thorough Mac record: it would
+  show the open two-speed problems (below); runs kept in `tmp/`:
+  `mac-thorough-90172ae/`, `mac-thorough-30f6776/`, `mac-trace-1683ebb/`
+  (with `trace-ecore.csv`). The fork's `tmp/sme2-session/` has the A/B
+  data (`mac-ab/`) and the probes.
+- **Node 18** was installed in the VM (apt, lost on restart) to check the
+  graph's script: `node --check` on the extracted script, and a stub-DOM
+  run (see "Checking the graph script" below).
 
 ## What this session did
 
-1. **Minimax strategy** in both AGENTS.md: judge a design by its worst
-   plausible case; mt slower than st, or a bigger task more than
-   proportionally slower, is a defect.
-2. **The Mac's two-speed batch cells, solved.** `--trace-clocks` now
-   records each duo copy's P/E counts (bench 5cfba2f; 40247da makes the
-   provenance follow a commit made right after a hooked build). In every
-   slow sample both copies ran on P-cores at full clock, each taking twice
-   the cycles: the two threads shared one P-cluster's SME unit. E-cores
-   refuted. Rounds without Rayon or the pool let macOS consolidate the
-   process onto one cluster.
-3. **mt slower than st at 512 messages; st slower at 1024+ than at
-   512.** Both are one hardware effect: core work between SME2 calls (any
-   kind: a scan, an ALU loop) makes the calls ~25% slower; NEON is
-   immune. mt's one pass over the lengths and the benchmark's per-sample
-   allocations are that work. Code identical; no cheap fix (NOTES).
-4. **The pool runs on NEON alone** (bf12b5e): SME2 permits, the unit
-   count, and the 40 ms Linux measurement gone; `initialize()` 0.5 ms.
-   VM: mt 256 KiB -16 to -20%, 1 MiB -10%, 4096 messages -11 to -16%.
-   Mac duo evidence from the no_sme2 run; Mac solo unmeasured.
-5. **Serial SME2 by case.** Case 1 (quiet) and case 2 (other work on
-   other cores, measured: 0.185-0.22 beside 15 busy threads vs 0.170
-   alone) favour SME2 over NEON (0.25). Case 3 (another thread on the
-   same unit) is 2-5x worse than NEON (`examples/scaling.rs`, n=16:
-   0.87-0.94 ns/B per thread, slowest 1.2-1.35; NEON 0.31-0.33).
-   Tried: one SME2 thread per process (loses duo), two permits (slowest
-   0.84 at n=16), pacing against NEON (0c206a3, reverted in 737929b: it
-   fixed the scaling probe but locked both duo copies of the full
-   benchmark into a mode slower than NEON in 3 of 4 runs). The benchmark's
-   duo on the VM is itself case 3: in a full run ~60% of serial cells from
-   64 KiB sit at 0.31 (unit shared), the rest at 0.17.
-6. **History review:** no optimisation lost (NOTES lists what was
-   checked).
-7. **Set aside with numbers:** two scalar chunks for 2 KiB (0.587 vs
-   0.455), a 32 KiB split with NEON pieces, 64/256 KiB longest pieces.
+1. **Principles** added to both AGENTS.md: minimax; presentation (every
+   item costs the reader; maintainer information stays out of user
+   views); "we own every slowdown a user could meet" (control it, tell
+   users how to control it, or at least predict it; until then it stays
+   open and blocks a no-regression claim); the candidate-branch gate.
+2. **Fork: the pool runs on NEON alone** (bf12b5e): permits, SME-unit
+   count, and the 40 ms Linux measurement gone. mt faster on the VM and
+   the Mac (Mac shared 1 MiB .057 -> .050, 4096 messages 5.9 -> 5.4).
+   Pacing SME2 against NEON was tried and reverted (737929b): it locked
+   duo copies into a mode slower than NEON. `examples/scaling.rs` added.
+3. **Benchmark revamp** (8e0be9f onward): every run measures **solo**
+   and **shared** (two copies at once, each copy's own time a sample);
+   wall time only (cycle normalisation hid SME2 slowdowns); quick run by
+   default (below 1 MiB and 10,000 messages, 24 rounds, SHA-1DC only when
+   named, ~12 s), `--thorough` (every point, 96 rounds, ~150 s); the
+   `mt·1` contender and `--solo` removed; outputs `bench-hashes.*` (the
+   text report is the maintainer report, the SVG the user report, the
+   samples TSV v2 has a scenario column); the report leads with one table
+   per scenario and use case, then CHECKS, TWO SPEEDS, KERNELS (keep
+   them), PROVENANCE.
+4. **Two-speed cells** (30f6776): a cell whose samples split (gap >= 4%,
+   >= 10% each side, medians >= 1.25x apart) reports both speeds with
+   equal weight: `a|b` in tables, a TWO SPEEDS section for servil, a
+   forked line (two equal lines, dots, bands, `a | b` labels) and both
+   speeds in the graph's hover.
+5. **CHECKS compare round by round** (1683ebb): each sample records its
+   round; a check pairs two cells' samples of the same round (copy with
+   copy when shared) and judges the worse ratio where the ratios split,
+   5% or more with the interval above 1. Covers servil slower than a
+   competitor (st against st contenders; mt against all and against st),
+   and slower per unit at N than at a divisor M of N.
+6. **`perf_regress`** reads the new samples file (both scenarios) and
+   caches each build by fork commit **and** benchmark-source hash
+   (da92669: stale cached binaries had broken an A/B). `build.rs` watches
+   the reflog so provenance follows commits made after a hooked build.
+7. **Findings on the Mac** (all confirmed with per-thread P/E counters):
+   - Two SME2 threads of one process share one P-cluster's SME unit in
+     28-70% of rounds (run-dependent): shared SME2 cells run at full or
+     half speed. The NEON-only pool shows no detectable effect on this
+     (A/B old/new/new/old, NOTES-servil).
+   - A tenth of the benchmark's **solo** samples at one-message 256 B -
+     8 KiB run on **E-cores**, every contender alike, none for batches of
+     the same bytes; cause unknown (suspect Rayon's idle threads). servil
+     loses 3.3x there against SHA-256's 1.65x.
+8. **Branch renamed** to `servil`; notes file `NOTES-servil.md`.
+
+## Decisions made (don't re-ask)
+
+- Contenders: at most two settings (single-threaded, multithreaded
+  uncapped); two scenarios (solo, shared = a copy of itself); separate
+  tables per scenario; wall time for everyone; no concurrent solo runs.
+- Text report keeps KERNELS. User views omit maintainer detail.
+- Branch naming `candidate/<topic>`; no promotion without the perf check
+  on both machines.
+- The Mac benchmark runner is launched **manually** by the user (no
+  system service, no root-owned files) as a separate hidden standard
+  account; the exchange folder lives inside `/workspace` (no second VM
+  mount).
+
+## Next: the Mac benchmark runner (designed, not yet written)
+
+- Account `benchrunner` (hidden, standard, own home 700, own rustup with
+  the Mac's nightly `rustc 1.98.0-nightly 2026-06-19`). Created with
+  `sudo sysadminctl -addUser benchrunner -fullName "Bench Runner"
+  -password -` and `sudo dscl . create /Users/benchrunner IsHidden 1`.
+- Code **only from GitHub** (public repos), never from the user's
+  checkout (it holds `ghtokenclassic.txt`); jobs name pushed commits.
+- Exchange folder inside the checkout, e.g. `/workspace/runner/`
+  (`~/piplayground/blake3-servil/runner/` on the Mac), excluded from git
+  via `.git/info/exclude`: `jobs/` written by us, read-only to the runner
+  (it records done jobs in its own home); `results/` owned by
+  `benchrunner`, readable by all. `benchrunner` needs traverse-only access
+  on `~`, `~/piplayground`, and the checkout (an ACL granting `search`),
+  and every secret there must be mode 600 (check `ghtokenclassic.txt`,
+  `ls -ld ~`).
+- Runner program: Python 3, reviewed by the user, copied by the user to
+  a path the user owns and `benchrunner` can only read (e.g.
+  `/Users/Shared/bench-runner/runner.py`, 644, directory the user's); run
+  with `sudo -u benchrunner -H /usr/bin/python3 .../runner.py`; Ctrl-C
+  stops it. It sets its own PATH to its rustup toolchain.
+- Jobs: JSON, an allow-list only, arguments passed as lists (no shell),
+  commits as hex, a time limit each: the benchmark with known flags
+  (`--all`, `--thorough`, `--contenders` from known keys, `--points`,
+  `--rounds`, `--trace-clocks` into its results folder); `perf_regress
+  compare OLD NEW`; examples `scaling` and `host_lab`, optionally
+  `--features no_sme2`. Each result folder: log, report, graph, samples,
+  trace, and a verdict file for compares.
+- Later: `tools/promote.py candidate/<topic>` checks the gate, records
+  verdicts as git notes (`refs/notes/perf`, machine, base, result),
+  fast-forwards `servil`, pushes; a pre-push hook refuses a `servil` tip
+  without both machines' passing notes. Until the runner exists the Mac
+  verdict is relayed by the user and recorded as such.
+- First runner job: the same thorough run launched from the user's
+  Terminal and from the runner, to compare scheduling.
 
 ## Next priorities
 
@@ -67,12 +131,8 @@ Open problems stay open until they reach one of the outcomes in AGENTS
 ("we own every slowdown a user could meet"): controlled, explained to
 users with how to control it, or at least predicted.
 
-1. **Native benchmark runner on the Mac** (in design): a hidden standard
-   account `benchrunner`, code from GitHub only, an exchange folder
-   `/Users/Shared/bench-exchange/` (`jobs/` the user's, `results/` the
-   runner's, `jobs/ENABLED` the user's switch), an allow-list of jobs, a
-   root-installed runner under launchd (`ProcessType` Interactive).
-   Waiting on: can the VM mount the exchange folder?
+1. **Native benchmark runner on the Mac**: write it and its setup
+   commands for the user's review (design above).
 2. **Benchmarks that stay useful on hardware they can neither see nor
    steer.** In the VM (and anywhere else without per-core counters or
    affinity) the host runs vCPUs on P- or E-cores at will, so timings come
@@ -138,11 +198,28 @@ the repository:
 
 `cd /workspace/bench-hashes && HOME=/workspace/vm/home CARGO_TARGET_DIR=/tmp/target CC=clang-19 TMPDIR=/tmp cargo run --release -- --all`
 
-On the Mac, from `bench-hashes`: `cargo run --release -- --all` (add
-`--thorough` for narrower bands). Results overwrite that machine's files.
-Commit before publishing so the provenance reads `clean`, and measure on
-one machine at a time: the VM shares the Mac's cores, so a run on one
-slows the other (seen: the control x1.56 slower while the host was busy).
+On the Mac, from `bench-hashes`: `git checkout -- benchmark-results &&
+cargo run --release -- --all --thorough` for a record (quick runs omit
+the MiB inputs and big batches). Results overwrite that machine's files;
+keep the results folder free of extra files so the provenance reads
+`clean`. Commit a record only when it shows no regression against the
+previous one (compare cell medians, servil and servil mt, both
+scenarios); otherwise save it to `tmp/` and restore. Measure on one
+machine at a time: the VM shares the Mac's cores.
+
+Native A/B of two fork commits on the Mac (from the fork's root): build
+with `python3 -c "import sys; sys.path.insert(0, 'tools'); import
+perf_regress as p; print(p.commit_bench('OLD')[0]); print(p.commit_bench('NEW')[0])"`
+(binaries land in `bench-hashes/target/perf-ab/<commit12>-<benchhash>/`),
+then run each with `--all --thorough` from its own `tmp/ab-*` folder in
+the order old, new, new, old; compare per-run shares of each speed, not
+single medians (the split varies run to run).
+
+Checking the graph script (VM): `apt-get install -y nodejs`, extract the
+`<script>` CDATA from a generated SVG, `node --check` it, and run it
+against a stub DOM (a recursive Proxy standing in for `document`) calling
+`relayoutPlot`, `flipUnit`, and `showHover` on every point; render the
+SVG with `rsvg-convert` to look at it.
 
 Release: `python3 tools/gen-ver.py X.Y.Z` from a clean tree makes two
 version commits and a lightweight tag `vX.Y.Z+<commit>`; push with
@@ -150,7 +227,7 @@ version commits and a lightweight tag `vX.Y.Z+<commit>`; push with
 lightweight tags).
 
 Expected suites: fork 63 library + 19 doc tests (`no_sme2` 62 + 19,
-`pure` 53 + 19); official vectors 2; benchmark 5. Before any fork code
+`pure` 53 + 19); official vectors 2; benchmark 6. Before any fork code
 commit: `pypy3 tools/perf_regress.py check` (the hook runs it; exit 1
 aborts, see the fork's AGENTS.md). Two commits side by side:
 `pypy3 tools/perf_regress.py compare OLD NEW`. The platform facts behind
