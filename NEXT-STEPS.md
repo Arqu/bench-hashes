@@ -16,17 +16,19 @@ before touching kernels or the pool); this repository's are in `NOTES.md`.
   repositories for other developer teams; AGENTS, NEXT-STEPS, NOTES for
   us.
 - **bench-hashes runs from a plain clone**: `cargo run --release` builds
-  the fork from git at the commit Cargo.lock pins (bff617e), runs in full
+  the fork from git at the commit Cargo.lock pins, runs in full
   (`--quick` for seconds), and measures BLAKE3 servil, servil mt, sha2,
   and ring. The graph opens on servil mt, both SHA-256 crates, and
   crates.io BLAKE3; its labels no longer overlap.
-- Fork `/workspace`, branch **`servil`** at bff617e (docs and tools on
-  2a82c8c's code), pushed; no candidates pending.
-- Benchmark branch `main`, pushed. The VM record is fork bff617e on bench
-  e0d8b7e. **The Mac record is still fork 2a82c8c, drawn by the old graph
-  code** (the published page): job 112 re-records it once the runner runs.
+- Fork `/workspace`, branch **`servil`** at 7dba117 (2a82c8c's kernels;
+  builds without SME2 on older compilers), pushed with its gate note; no
+  candidates pending. bench-hashes pins it.
+- Benchmark branch `main`, pushed. Records for both machines: fork
+  7dba117, bench 795e9bb, full `--all` runs (the Mac's runner job 115),
+  both quiet by the new load line (Mac 0.47 CPUs of steady background,
+  VM 0.01).
 - **The minimax list** (`pypy3 tools/losses.py <samples.tsv>` in the fork):
-  49 cells on the VM, every one lost to SHA-256 or SHA-256 ring: one
+  48 cells on the VM and 49 on the Mac, every one lost to SHA-256 or SHA-256 ring: one
   message to 4 KiB (solo and shared, servil and servil mt), 2304, 3839,
   4470 B, and a batch of one message. Servil solo against SHA-256 ring on
   the Mac (e16e836): 2 KiB 1.53x slower, 3 KiB 1.11x, 4 KiB 1.06x, 2304 B
