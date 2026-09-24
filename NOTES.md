@@ -92,8 +92,13 @@ unevenly two copies are served rather than what each user gets.
 
 **Two speeds.** A cell whose samples split at a gap of 4% of the median
 or more, a tenth or more on each side, with the sides' medians 1.25× or
-more apart, has two speeds; every report shows both with equal weight
-(text `a|b`, a forked line in the graph).
+more apart, has two speeds; every report shows both (text `a|b`). The graph
+(September 25, 2026, Zooko: readers were mystified by lines splitting
+and merging) draws each point's common speed as the line and the rare one
+as dots and segments dimmed by its share (rare over common samples, floor
+0.15); the hover says "Two speeds observed. See footnote [*]." and the
+footnote under the plots names performance and efficiency cores as one
+cause.
 The 1.25× floor: on the VM the machine's own noise puts a tenth to a
 third of many cells' samples 10–14% slow for every contender alike, which
 drew a second line nearly everywhere at 4% alone; SME2 unit sharing splits

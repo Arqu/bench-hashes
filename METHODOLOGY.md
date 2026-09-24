@@ -348,10 +348,15 @@ median would land on either speed by chance. A cell has two speeds when
 its sorted samples split at a gap of 4% or more, with a tenth or more of
 the samples on each side and the two sides' medians 1.25× or more apart.
 The text tables print such a cell as `a|b`, and the TWO SPEEDS section
-lists the servil cells that did. In the graph the contender's line forks into two equal lines
-through the two speeds, with a dot, a band, and a value (`a | b`) for
-each, and the hover panel gives each speed's median, interval, and share
-of samples.
+lists the servil cells that did. In the graph the contender's line
+follows each point's common speed (the one with more samples); where a
+point ran at two, the rare speed adds its own dot and line segments,
+drawn fainter in proportion to its share (its samples over the common
+speed's, at least 0.15 opacity). The value label gives both (`a | b`),
+the hover panel says "Two speeds observed" with each speed's median,
+interval, and share of samples, and a footnote under the plots names
+common causes: performance and efficiency cores, two copies sharing one
+unit of the chip, a VM's host moving it between cores.
 
 The band's appearance reports the interval's width relative to the
 median: under 2% a faint tint; 2–5% a deeper tint; 5% and over a

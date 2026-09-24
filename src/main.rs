@@ -3478,9 +3478,22 @@ const SERIES_LABEL_GAP: f64 = 34.0;
 /// contenders with different shape counts. Four covers every contender.
 const SWATCH_SLOTS: usize = 4;
 /// Where provenance starts, below the last of `plots` plots.
-fn provenance_top(plots: usize) -> f64 {
-    PLOT_TOP + (plots - 1) as f64 * PLOT_PITCH + PLOT_HEIGHT + 85.0
+/// Where provenance starts, below the last of `plots` plots and the
+/// footnote's `footnote_lines`.
+fn provenance_top(plots: usize, footnote_lines: usize) -> f64 {
+    PLOT_TOP + (plots - 1) as f64 * PLOT_PITCH + PLOT_HEIGHT + 85.0 + footnote_lines as f64 * FOOTNOTE_LINE_HEIGHT
 }
+const FOOTNOTE_LINE_HEIGHT: f64 = 15.0;
+
+/*
+ * The footnote the hover panel of a two-speed point refers to, under the
+ * last plot; a graph with no two-speed point has none.
+ */
+const TWO_SPEEDS_FOOTNOTE: [&str; 3] = [
+    "[*] Two speeds: at some points the samples ran at two clearly different speeds, so the line splits in two there. The rarer speed is drawn fainter,",
+    "in proportion to how rarely it occurred. A common cause is a chip with performance cores and slower efficiency cores: the operating system runs the work",
+    "on either kind. Two copies sharing one unit of the chip, and a virtual machine whose host moves it between cores, split speeds too.",
+];
 const PROVENANCE_LINE_HEIGHT: f64 = 14.0;
 
 fn plot_top(plot_index: usize) -> f64 {
@@ -3684,7 +3697,11 @@ fn generate_svg(
             }
         }
     }
-    let provenance_top = provenance_top(plots.len());
+    let two_speeds = plots.iter().any(|plot| {
+        plot.contenders.iter().any(|&a| plot.points.clone().any(|point_index| plot.stats(results, a, point_index).two_speeds.is_some()))
+    });
+    let footnote: &[&str] = if two_speeds { &TWO_SPEEDS_FOOTNOTE } else { &[] };
+    let provenance_top = provenance_top(plots.len(), footnote.len());
     for plot in &mut plots {
         plot.provenance_top = provenance_top;
     }
@@ -3877,6 +3894,17 @@ fn generate_svg(
 
     for plot in &plots {
         write_plot(&mut svg, plot, roster, results, &mut provenance_slot);
+    }
+
+    let footnote_top = plot_bottom(plots.len() - 1) + 92.0;
+    for (line_index, line) in footnote.iter().enumerate() {
+        writeln!(
+            svg,
+            r##"  <text x="{PLOT_LEFT:.0}" y="{:.1}" class="method">{}</text>"##,
+            footnote_top + line_index as f64 * FOOTNOTE_LINE_HEIGHT,
+            xml_escape(line),
+        )
+        .unwrap();
     }
 
     /*
@@ -4166,28 +4194,32 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
         writeln!(svg, r##"    <g class="marks" clip-path="url(#plot-clip-{p})">"##).unwrap();
 
         /*
-         * Two speeds, drawn alike: speed 0 is each point's faster speed,
-         * speed 1 its slower, the same speed at a point that ran at one.
-         * Band and line each carry one subpath per speed, so where every
-         * point ran at one speed the two coincide into one, and where a
-         * point ran at two the line forks into two equal lines.
+         * Two speeds: at each point the common speed (the one with more
+         * samples) carries the line and band at full strength. A point
+         * that ran at two speeds adds its rare speed as segments to its
+         * neighbours, line and band dimmed in proportion to the rare
+         * speed's share (rare_opacity_hundredths). The script redraws the
+         * same elements.
          */
-        let speed_at = |k: usize, speed: usize| {
-            let speeds = cell_at(k).get(plot.scenario).speeds();
-            speeds[speed.min(speeds.len() - 1)]
+        let speeds_at = |k: usize| cell_at(k).get(plot.scenario).speeds();
+        let common_at = |k: usize| speeds_at(k)[common_speed(&speeds_at(k))];
+        let rare_at = |k: usize| {
+            let speeds = speeds_at(k);
+            speeds[(1 - common_speed(&speeds)).min(speeds.len() - 1)]
         };
+        let rare_strength = |k: usize| rare_opacity_hundredths(&speeds_at(k)).unwrap_or(0);
+        let point = |k: usize, value: u64| (plot.x_positions[k], plot.map_y(value));
+
         let mut band = String::new();
-        for speed in 0..2 {
-            for k in 0..plot.len() {
-                let (x, y) = (plot.x_positions[k], plot.map_y(speed_at(k, speed).high));
-                write!(band, "{} {x:.2} {y:.2}", if k == 0 { "M" } else { " L" }).unwrap();
-            }
-            for k in (0..plot.len()).rev() {
-                let (x, y) = (plot.x_positions[k], plot.map_y(speed_at(k, speed).low));
-                write!(band, " L {x:.2} {y:.2}").unwrap();
-            }
-            band.push_str(" Z ");
+        for k in 0..plot.len() {
+            let (x, y) = point(k, common_at(k).high);
+            write!(band, "{} {x:.2} {y:.2}", if k == 0 { "M" } else { " L" }).unwrap();
         }
+        for k in (0..plot.len()).rev() {
+            let (x, y) = point(k, common_at(k).low);
+            write!(band, " L {x:.2} {y:.2}").unwrap();
+        }
+        band.push_str(" Z");
 
         /*
          * The band's tint reports the run's precision for this contender.
@@ -4209,11 +4241,9 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
             .unwrap();
 
         let mut path = String::new();
-        for speed in 0..2 {
-            for k in 0..plot.len() {
-                let (x, y) = (plot.x_positions[k], plot.map_y(speed_at(k, speed).median));
-                write!(path, "{} {x:.2} {y:.2}", if k == 0 { " M" } else { " L" }).unwrap();
-            }
+        for k in 0..plot.len() {
+            let (x, y) = point(k, common_at(k).median);
+            write!(path, "{} {x:.2} {y:.2}", if k == 0 { "M" } else { " L" }).unwrap();
         }
 
         writeln!(
@@ -4221,6 +4251,29 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
             r##"      <path class="median" d="{path}" fill="none" stroke="{color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>"##
         )
             .unwrap();
+
+        /* Rare-speed segments, each as strong as the rarer of its ends allows. */
+        for k in 0..plot.len().saturating_sub(1) {
+            let strength = rare_strength(k).max(rare_strength(k + 1));
+            if strength == 0 {
+                continue;
+            }
+            let ((x0, h0), (x1, h1)) = (point(k, rare_at(k).high), point(k + 1, rare_at(k + 1).high));
+            let ((_, l0), (_, l1)) = (point(k, rare_at(k).low), point(k + 1, rare_at(k + 1).low));
+            let ((_, m0), (_, m1)) = (point(k, rare_at(k).median), point(k + 1, rare_at(k + 1).median));
+            writeln!(
+                svg,
+                r##"      <path class="band-rare" data-k="{k}" d="M {x0:.2} {h0:.2} L {x1:.2} {h1:.2} L {x1:.2} {l1:.2} L {x0:.2} {l0:.2} Z" fill="{color}" fill-opacity="{:.4}" stroke="none"/>"##,
+                opacity_hundredths as f64 * strength as f64 / 10_000.0,
+            )
+            .unwrap();
+            writeln!(
+                svg,
+                r##"      <path class="median-rare" data-k="{k}" d="M {x0:.2} {m0:.2} L {x1:.2} {m1:.2}" fill="none" stroke="{color}" stroke-opacity="{:.2}" stroke-width="2.5" stroke-linecap="round"/>"##,
+                strength as f64 / 100.0,
+            )
+            .unwrap();
+        }
 
         let mut dots = format!("  <g class=\"dots\" id=\"dots-{p}-{algorithm_index}\" data-on=\"{shown}\" clip-path=\"url(#plot-clip-{p})\">\n");
 
@@ -4235,11 +4288,16 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
              * size with no ring. Hovering shows the path's explanation.
              */
             let kernel = &kernels.kernels[kernels.kernel_index_for(POINTS[plot.points.start + k].bytes)];
+            let common = common_speed(&speeds);
             for (speed_index, speed) in speeds.iter().enumerate() {
                 let median_y = plot.map_y(speed.median);
+                let dim = match rare_opacity_hundredths(&speeds) {
+                    Some(hundredths) if speed_index != common => format!(r#" opacity="{:.2}""#, hundredths as f64 / 100.0),
+                    _ => String::new(),
+                };
                 writeln!(
                     dots,
-                    r##"    <g class="dot" data-size="{k}" data-speed="{speed_index}" transform="translate({x:.2} {median_y:.2})" onpointerenter="hoverDot(event,{p},{algorithm_index},{k})" onpointerleave="leaveDot(event)" onclick="tapDot(event,{p},{algorithm_index},{k})">"##,
+                    r##"    <g class="dot" data-size="{k}" data-speed="{speed_index}"{dim} transform="translate({x:.2} {median_y:.2})" onpointerenter="hoverDot(event,{p},{algorithm_index},{k})" onpointerleave="leaveDot(event)" onclick="tapDot(event,{p},{algorithm_index},{k})">"##,
                 )
                     .unwrap();
                 writeln!(dots, "      {}", mark_shape(kernel.mark, color, 5.0)).unwrap();
@@ -4473,6 +4531,24 @@ fn value_label_columns(x: &[f64]) -> Vec<bool> {
         }
     }
     labeled
+}
+
+/// Which of a point's speeds has more samples (the faster on a tie).
+fn common_speed(speeds: &[Speed]) -> usize {
+    usize::from(speeds.len() == 2 && speeds[1].count > speeds[0].count)
+}
+
+/// How strongly a two-speed point's rare speed is drawn, in hundredths:
+/// its samples over the common speed's (an even split draws both alike),
+/// at least RARE_MIN_HUNDREDTHS so it stays findable. None for one speed.
+const RARE_MIN_HUNDREDTHS: u64 = 15;
+
+fn rare_opacity_hundredths(speeds: &[Speed]) -> Option<u64> {
+    (speeds.len() == 2).then(|| {
+        let common = common_speed(speeds);
+        let (rare, most) = (speeds[1 - common].count as u64, speeds[common].count as u64);
+        ((100 * rare + most / 2) / most).max(RARE_MIN_HUNDREDTHS)
+    })
 }
 
 /*
@@ -5225,16 +5301,27 @@ function relayoutPlot(p) {
     g.setAttribute("data-on", on[i] ? "true" : "false");
     dots.setAttribute("data-on", on[i] ? "true" : "false");
     if (!on[i]) return;
-    /* One subpath per speed; they coincide wherever a point ran at one speed. */
+    /* The common speed carries line and band; the rare speed's segments keep their static strength. */
+    const speed = (k, which) => which === 0 ? [s.med[k], s.low[k], s.high[k]] : [s.med2[k], s.low2[k], s.high2[k]];
+    const commonIndex = k => s.two[k] && s.cnt2[k] > s.cnt[k] ? 1 : 0;
+    const common = k => speed(k, commonIndex(k));
+    const rare = k => speed(k, s.two[k] ? 1 - commonIndex(k) : 0);
+    const pt = (k, v) => X[k].toFixed(2) + " " + mapY(v).toFixed(2);
     let band = "", med = "";
-    for (const [m, lo, hi] of [[s.med, s.low, s.high], [s.med2, s.low2, s.high2]]) {
-      X.forEach((x, k) => { band += (k ? " L " : " M ") + x.toFixed(2) + " " + mapY(hi[k]).toFixed(2); });
-      for (let k = X.length - 1; k >= 0; k--) band += " L " + X[k].toFixed(2) + " " + mapY(lo[k]).toFixed(2);
-      band += " Z";
-      X.forEach((x, k) => { med += (k ? " L " : " M ") + x.toFixed(2) + " " + mapY(m[k]).toFixed(2); });
-    }
+    X.forEach((x, k) => { band += (k ? " L " : "M ") + pt(k, common(k)[2]); });
+    for (let k = X.length - 1; k >= 0; k--) band += " L " + pt(k, common(k)[1]);
+    band += " Z";
+    X.forEach((x, k) => { med += (k ? " L " : "M ") + pt(k, common(k)[0]); });
     g.querySelector(".band").setAttribute("d", band);
     g.querySelector(".median").setAttribute("d", med);
+    g.querySelectorAll(".median-rare").forEach(el => {
+      const k = +el.getAttribute("data-k");
+      el.setAttribute("d", `M ${pt(k, rare(k)[0])} L ${pt(k + 1, rare(k + 1)[0])}`);
+    });
+    g.querySelectorAll(".band-rare").forEach(el => {
+      const k = +el.getAttribute("data-k");
+      el.setAttribute("d", `M ${pt(k, rare(k)[2])} L ${pt(k + 1, rare(k + 1)[2])} L ${pt(k + 1, rare(k + 1)[1])} L ${pt(k, rare(k)[1])} Z`);
+    });
     dots.querySelectorAll(".dot").forEach(dot => {
       const k = +dot.getAttribute("data-size");
       const m = dot.getAttribute("data-speed") === "1" ? s.med2 : s.med;
@@ -5520,7 +5607,7 @@ function showHover(p, focus, k) {
   };
   if (f.two[k]) {
     const total = f.cnt[k] + f.cnt2[k];
-    body.appendChild(textEl(PAD, y, "hover-sub", `two speeds, the samples split between them`));
+    body.appendChild(note(textEl(PAD, y, "hover-sub", "Two speeds observed. See footnote [*].", { "font-weight": "700" })));
     y += 13;
     speedRow("median", f.med[k], f.low[k], f.high[k], ` · ${Math.round(f.cnt[k] * 100 / total)}% of samples`);
     speedRow("median", f.med2[k], f.low2[k], f.high2[k], ` · ${Math.round(f.cnt2[k] * 100 / total)}% of samples`);
