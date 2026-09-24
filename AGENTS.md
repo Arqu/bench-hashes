@@ -128,5 +128,5 @@ The fork's `tools/perf_regress.py` builds this benchmark twice, against the fork
 - Sample timing uses `std::time::Instant` (a hardware counter: `CLOCK_UPTIME_RAW` on Darwin, `CLOCK_MONOTONIC` on Linux). A run under thread CPU time once showed a 12% floor shared by three contenders; two experiments cleared the clock and pointed at a ~12 ms core-frequency boost. `--trace-clocks PATH` records wall, thread-CPU, mach ticks, and (Apple) per-core-kind cycles per sample; `tools/analyze-clock-trace.py` reads it. github.com/johnservil/measure-clocks3 (needs `cargo +nightly`; clone it under `/workspace/tmp` if needed again) has `--pitfall` and `CPU-TIME-CLOCKS-AND-FREQUENCY.md`.
 - `rsvg-convert` (librsvg2-bin, reinstall after a restart) renders an SVG to PNG to eyeball it: `rsvg-convert -w 1200 file.svg -o out.png`.
 - Commands for the user go on one line, with no `\` continuations.
-- Never `sleep` in commands. When a network call fails, report it and stop; the user decides about retries.
+- Never `sleep` in commands.
 - Run long commands (builds, benchmark runs, package installs) without a timeout and let their output stream, so the user can watch progress and interrupt when they choose.

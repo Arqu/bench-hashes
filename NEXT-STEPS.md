@@ -321,6 +321,5 @@ aborts, see the fork's AGENTS.md). Two commits side by side:
 the pool: `cargo run --release --example host_lab` in the fork.
 
 Use no timeout for long commands; let progress stream. Never sleep in
-commands. If a network operation fails, report it and stop; the user
-chooses retries. Never print the credential token. Only `/workspace`
+commands. Never print the credential token. Only `/workspace`
 survives VM restarts.
