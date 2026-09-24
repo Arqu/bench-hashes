@@ -33,7 +33,9 @@ empty commit, a227f6d, came from the hook overwriting the index).
 
 **Decisions waiting for the user** (each a candidate branch):
 
-1. `candidate/one-sme2-call`: one SME2 call at a time per process; a
+1. **Decided and landed** (30c599b, the user's decision on September 24;
+   the flag became a plain load and store, since the swap cost solo
+   batches of 24 messages 3-9%). Was `candidate/one-sme2-call`: one SME2 call at a time per process; a
    concurrent call runs NEON. Controls open problem 4: solo samples on
    E-cores 3.7% -> 0.0% (every contender). Solo cells unchanged. Shared
    cells lose the lucky mode (both copies on their own SME unit: 1 MiB
