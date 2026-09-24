@@ -8,21 +8,31 @@ principles are in both repositories' `AGENTS.md`; the fork's hardware
 facts, design, and rejected ideas are in its `NOTES-servil.md` (read it
 before touching kernels or the pool); this repository's are in `NOTES.md`.
 
-## Where things stand (September 24, 2026)
+## Where things stand (September 25, 2026)
 
-- Fork `/workspace`, branch **`servil`** (2a82c8c and later docs), clean,
-  pushed; no candidate branches pending. Gate verdicts of every promotion:
-  `git notes --ref perf show <commit>`.
-- Benchmark `/workspace/bench-hashes`, branch `main`, clean, pushed.
-  Records for both machines (e16e836): thorough `--all` runs of fork
-  2a82c8c, the Mac's through the runner.
+- **Three audiences, three sets of documents** (fork AGENTS.md,
+  "Audiences"): bench-hashes' README.md (run, read, share; the Pages home
+  page) and METHODOLOGY.md for people who run it; CONTRIBUTING.md in both
+  repositories for other developer teams; AGENTS, NEXT-STEPS, NOTES for
+  us.
+- **bench-hashes runs from a plain clone**: `cargo run --release` builds
+  the fork from git at the commit Cargo.lock pins (bff617e), runs in full
+  (`--quick` for seconds), and measures BLAKE3 servil, servil mt, sha2,
+  and ring. The graph opens on servil mt, both SHA-256 crates, and
+  crates.io BLAKE3; its labels no longer overlap.
+- Fork `/workspace`, branch **`servil`** at bff617e (docs and tools on
+  2a82c8c's code), pushed; no candidates pending.
+- Benchmark branch `main`, pushed. The VM record is fork bff617e on bench
+  e0d8b7e. **The Mac record is still fork 2a82c8c, drawn by the old graph
+  code** (the published page): job 112 re-records it once the runner runs.
 - **The minimax list** (`pypy3 tools/losses.py <samples.tsv>` in the fork):
-  50 cells on each machine, every one lost to SHA-256 or SHA-256 ring: one
+  49 cells on the VM, every one lost to SHA-256 or SHA-256 ring: one
   message to 4 KiB (solo and shared, servil and servil mt), 2304, 3839,
   4470 B, and a batch of one message. Servil solo against SHA-256 ring on
-  the Mac: 2 KiB 1.53x slower, 3 KiB 1.11x, 4 KiB 1.06x, 2304 B 1.47x,
-  3839 B 1.11x, 4470 B 1.18x; 7935 B 0.89x and 8 KiB 0.86x (faster). Up to
-  2 KiB this is structural (NOTES: a chunk's dependency chain).
+  the Mac (e16e836): 2 KiB 1.53x slower, 3 KiB 1.11x, 4 KiB 1.06x, 2304 B
+  1.47x, 3839 B 1.11x, 4470 B 1.18x; 7935 B 0.89x and 8 KiB 0.86x
+  (faster). Up to 2 KiB this is structural (NOTES: a chunk's dependency
+  chain).
 
 ## How to work
 
@@ -45,9 +55,11 @@ before touching kernels or the pool); this repository's are in `NOTES.md`.
   `runner/results/`. Keep the VM idle while a Mac job runs. Mac-only
   measurements (cycles by core kind, QoS) go in a `probe/<topic>` branch
   that replaces `examples/host_lab.rs` (fork NOTES, "Probes on the Mac").
-- **Records**: the VM's from this directory with
-  `cargo run --release -- --all --thorough` (writes `benchmark-results/`
-  here); the Mac's as a runner job, its files copied into
+- **Records** measure the pinned fork commit: after a promotion,
+  `cargo update -p blake3-servil` here and commit the lock; the VM's with
+  `cargo run --release -- --all` from this directory (unpatched; writes
+  `benchmark-results/` here); the Mac's as a runner job naming that fork
+  commit, flags `["--all"]`, its files copied into
   `benchmark-results/AppleM4Max.darwin25/`. Before committing, run the
   graph check on both graphs and the list script on both samples files.
 - **The graph's script**: `tools/graph-check/README.md` (jsdom harness,
@@ -68,6 +80,17 @@ before touching kernels or the pool); this repository's are in `NOTES.md`.
   taken. k4 as two pairs and the "minimax" plans: rejected.
 - Branch naming `candidate/<topic>`; no promotion without the Mac verdict.
 - The Mac runner is launched manually by the user; code from GitHub only.
+
+## Waiting on Zooko
+
+- Start the Mac runner (`sh ~/piplayground/blake3-servil/tools/runner/setup-mac.sh`;
+  it also installs the runner that builds through the patch) so job 112
+  re-records the Mac for the published page.
+- Decisions asked on September 25: SHA-256 (sha2) shown when the graph
+  opens beside ring (sha2 leads at 64-128 B and in every batch); the
+  fork's build failing on AArch64 Linux with GCC < 14 or Clang < 17
+  (Debian 12, Raspberry Pi OS) where it could build without SME2;
+  whether README invites results as pull requests.
 
 ## Open problems
 
