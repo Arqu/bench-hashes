@@ -96,12 +96,13 @@ shell `/usr/bin/false`, random password nobody holds, home 700), with code
 cloned from GitHub alone at the commits a job names; the user's checkout
 (and `ghtokenclassic.txt`, mode 600) stays out of its reach.
 
-- **Files**, in the fork's `runner/` (kept out of git by
-  `.git/info/exclude`, so they live on the mount only): `runner.py` (the
-  job format is its docstring), `setup-mac.sh`, `README.md`; the exchange
-  folders `jobs/` (ours, readable) and `results/` (the runner's, readable).
+- **Files**: the code in the fork's `tools/runner/` (`runner.py`, whose
+  docstring is the job format; `setup-mac.sh`; `README.md`); the
+  exchange folders in the fork's `runner/` (kept out of git by
+  `.git/info/exclude`): `jobs/` (ours, readable) and `results/` (the
+  runner's, readable).
 - **Start** on the Mac, as the user: `sh
-  ~/piplayground/blake3-servil/runner/setup-mac.sh`. It checks and
+  ~/piplayground/blake3-servil/tools/runner/setup-mac.sh`. It checks and
   repeats the setup (skipping what is done), copies `runner.py` to
   `/Users/Shared/bench-runner/` (the user's, read-only to the runner), and
   starts it under PyPy; Ctrl-C stops it after the current job. The runner
