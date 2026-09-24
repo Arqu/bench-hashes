@@ -122,9 +122,14 @@ it, or at least predicted (AGENTS.md, "we own every slowdown").
 6. **NEON goes cold** after stretches without vector work (1000 one-block
    messages cost 23% more per message than 1024 in a tight loop). Probed
    September 25 (fork NOTES, "SME2 remainders"): the remainder's order is
-   not the cause; the penalty follows machine state (the same size pays
-   25% in one run, nothing in the next); padding trades. Next: find what
-   state it follows (which core or cluster, the SME unit's clock).
+   not the cause. The SME unit has a slow state (cycles per ns 3.2
+   against 3.93) entered after idle time of about a quarter microsecond;
+   what else enters it is open (fork NOTES, "SME2 remainders"). The
+   overlap group (candidate/overlap-group) trades and waits unpromoted.
+   Next: measure the state machine directly (SME2 work, then X ns of
+   other work, then SME2 work: speed against X and against the first
+   stretch's length, and against the number of streaming sessions), then
+   an overlap group inside one streaming session (a kernel entry).
 7. **SME2 batch rates with work between calls** (about 12 ns/msg, not the
    benchmark's 10): whether batches should use SME2 from 16 messages.
 8. **The E-core trigger's mechanism** (controlled by the turn; unexplained).
