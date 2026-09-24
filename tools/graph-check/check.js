@@ -31,18 +31,24 @@ function checkLayout(tag) {
       check(Math.abs(+label.getAttribute("x") - x[k]) < 0.05, `${tag}: plot ${p} label ${k} x`);
       if (!(x[k] >= D.plotLeft - 12 && x[k] <= D.plotRight + 12)) check(+label.getAttribute("opacity") === 0, `${tag}: plot ${p} label ${k} outside the plot is hidden`);
     }
-    // Shown labels never overlap within a row; a hidden label inside the
-    // plot fits on neither row beside the labels shown before it.
-    const ends = [-Infinity, -Infinity];
-    for (let k = 0; k < x.length; k++) {
+    // Shown labels never overlap within a row, and no second-row tick
+    // crosses a first-row label; a hidden label inside the plot fits on
+    // neither row beside the labels shown.
+    const cols = x.map((_, k) => {
       const label = w.document.querySelector(`.size-label[data-plot="${p}"][data-size="${k}"]`);
-      const half = (label.textContent.length * 7.2 + 6) / 2, shown = +label.getAttribute("opacity") > 0;
-      const row = Math.round((+label.getAttribute("y") - plot.bottom - 24) / 13);
-      if (shown) {
-        check(x[k] - half >= ends[row] - 0.01, `${tag}: plot ${p} label ${k} overlaps row ${row}`);
-        ends[row] = x[k] + half;
+      return { half: (label.textContent.length * 7.2 + 6) / 2, shown: +label.getAttribute("opacity") > 0,
+               row: Math.round((+label.getAttribute("y") - plot.bottom - 24) / 13) };
+    });
+    const overlaps = (k, row) => cols.some((c, j) => j !== k && c.shown && c.row === row && Math.abs(x[j] - x[k]) < c.half + cols[k].half - 0.01);
+    const coversTick = k => cols.some((c, j) => j !== k && c.shown && c.row === 1 && Math.abs(x[j] - x[k]) < cols[k].half - 0.01);
+    const tickCrosses = k => cols.some((c, j) => j !== k && c.shown && c.row === 0 && Math.abs(x[j] - x[k]) < c.half - 0.01);
+    for (let k = 0; k < x.length; k++) {
+      const c = cols[k];
+      if (c.shown) {
+        check(!overlaps(k, c.row), `${tag}: plot ${p} label ${k} overlaps row ${c.row}`);
+        check(c.row === 0 ? !coversTick(k) : !tickCrosses(k), `${tag}: plot ${p} label ${k} meets a tick`);
       } else if (x[k] >= D.plotLeft && x[k] <= D.plotRight) {
-        check(ends.every(e => x[k] - half < e), `${tag}: plot ${p} label ${k} hidden though a row has room`);
+        check((overlaps(k, 0) || coversTick(k)) && (overlaps(k, 1) || tickCrosses(k)), `${tag}: plot ${p} label ${k} hidden though a row has room`);
       }
     }
     plot.series.forEach((s, i) => {
@@ -126,9 +132,10 @@ function checkLayout(tag) {
   w.toggleSeries(0); await sleep(50); checkLayout("toggle");
   const ev = { pointerType: "mouse", stopPropagation() {} };
   const wd = T.win()[0];
-  w.hoverDot(ev, 0, 1, wd.k1);
+  const vis = D.names.findIndex((_, i) => w.__on[i] && D.plots[0].series[i]);
+  w.hoverDot(ev, 0, vis, wd.k1);
   check(w.document.getElementById("hover").style.display === "", "hover on a shown point shows the panel");
-  w.hoverDot(ev, 0, 1, 0);
+  w.hoverDot(ev, 0, vis, 0);
   check(wd.k0 === 0 || w.document.getElementById("hover").style.display === "none", "hover on a point outside the window hides the panel");
   w.zoomAll(); await sleep(700); checkLayout("all again");
   w.toggleSeries(0); await sleep(50); checkLayout("shown again");

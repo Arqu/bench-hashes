@@ -30,11 +30,14 @@ default-features = false
 version = "0.17"
 default-features = false
 
-# BLAKE3 with the SME2 kernels (Apple M4 and later), from the enclosing
-# checkout of the fork's servil branch (this repository lives inside
-# it). Edits there take effect on the next build.
+# BLAKE3 servil: the fork's servil branch, at the commit Cargo.lock pins.
+# To build against a local checkout of the fork instead, with this
+# repository inside it, add
+#   --config 'patch."https://github.com/johnservil/BLAKE3".blake3-servil.path=".."'
+# to the cargo command (CONTRIBUTING.md).
 [dependencies.blake3-servil]
-path = ".."
+git = "https://github.com/johnservil/BLAKE3"
+branch = "servil"
 default-features = false
 features = ["std"]
 

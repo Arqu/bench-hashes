@@ -39,7 +39,7 @@ scale (1 GB/s per ns/B; 1000 Mmsg/s per ns/msg) differ per plot. Its
 golden anchors are the SHA-256 of a batch's digests concatenated, one
 line per (batch size, seed).
 
-**Round counts** are a plain 96 (288 with `--thorough`). They used to
+**Round counts** are a plain 96 (24 with `--quick`). They used to
 be the least multiple of the point count and the order count at or above
 a target, so every order and starting point recurred equally often; that
 made removing one point cost several times the run (47 points and 8
@@ -100,16 +100,38 @@ drew a second line nearly everywhere at 4% alone; SME2 unit sharing splits
 1.7–2.0×. Open: `perf_regress` judges a cell by its 5th percentile, the
 faster speed alone; a regression confined to the slower speed passes it.
 
-**Quick and thorough.** A quick run (the default) stops below 1 MiB and
-10,000 messages, 24 rounds, SHA-1DC only when named: about 12 s on the
-VM for the default roster, and it may misread a cell. `--thorough`:
-every point, 96 rounds, the long-cell budget, SHA-1DC in the rosters:
-about 140 s on the VM for `--all`.
+**Full by default, `--quick` on request** (September 2026, for people
+who run it once and publish what they get). A full run: every point, 96
+rounds, the long-cell budget, SHA-1DC in `--all`: 60 s on the VM for the
+default roster, about 140 s for `--all`. `--quick` stops below 1 MiB
+and 10,000 messages, 24 rounds, SHA-1DC only when named: about 12 s, and
+it may misread a cell.
+
+**The default roster is fixed** (September 2026): BLAKE3 servil, servil
+mt, sha2, and ring. It replaced a run that measured every contender and
+kept the Pareto-best per family, which cost `--all`'s time and printed
+whatever the measurement chose. SHA-256 keeps two crates because
+neither dominates on either machine: sha2 leads at 64 B (0.50 against
+0.65 ns/B) and 128 B and in every batch of 64-byte messages (30 against
+40 ns/msg), ring from 256 B (0.30 against 0.35 ns/B from 1 KiB). Whether
+ring leads on x86 is unmeasured (it has SHA-NI, AVX, and SSSE3 paths,
+sha2 SHA-NI and portable code). The graph opens showing servil mt, both
+SHA-256 crates, and crates.io BLAKE3 (`SHOWN_AT_FIRST`); a run without
+any of them shows everything.
+
+**Graph labels** (September 2026, after overlaps in the published
+graph): right-hand names stack 34 px apart, so eight fit inside a plot;
+x labels place the powers of two first, then the sizes between, on two
+rows, a second-row tick never crossing a first-row label; value labels
+go on columns at least 110 px apart with 32 px free on each side (none
+in the crowded 2-8 KiB stretch until the zoom spreads it), and step
+clear of every shown dot in their column. The static render uses the
+contenders shown at first for its axes and labels, as the script does.
 
 **Checks compare round by round.** Judging each cell by its slower speed
 (30f6776) compared unlike moments: on the Mac a tenth of the solo samples
 from 256 B to 8 KiB ran 1.65-3.3x slow for every contender (every fourth
-round, when the thorough run's long all-core cells are sampled; likely an
+round, when the full run's long all-core cells are sampled; likely an
 efficiency core), and a cell that happened to split was compared at its
 slow speed with a neighbour that had not: servil "x4.70 slower than SHA-256
 ring" at 256 B. Every comparison now pairs the samples of one round (each
@@ -220,9 +242,6 @@ automatically.
   way to cap threads. The fork reads no `BLAKE3_*` variables now, so the
   report has nothing to record there.
 
-- **Best per family.** A member must be at least as fast at every point
-  in both scenarios to be named best.
-
 ## Open questions and next steps
 
 - **More than two copies.** Duo catches whole-machine pools but a
@@ -247,8 +266,8 @@ automatically.
 
 ## Running it
 
-    cargo run --release -- --all --thorough
     cargo run --release -- --all
+    cargo run --release -- --quick --all
     cargo run --release -- --contenders blake3,blake3-servil-mt
 
 Results are `benchmark-results/{CPU}.{OS}/bench-hashes.result.txt`,
@@ -256,6 +275,8 @@ Results are `benchmark-results/{CPU}.{OS}/bench-hashes.result.txt`,
 `HOME=/workspace/vm/home CC=clang-19 TMPDIR=/tmp CARGO_TARGET_DIR=/tmp/target`.
 On macOS these environment overrides are unnecessary.
 
-The fork is the path dependency `..`. Its provenance records the commit
-and working-tree fingerprint. Keep that provenance with each measurement;
-changing the fork rebuilds the benchmark against the new code.
+The fork is a git dependency at the commit `Cargo.lock` pins; with
+`--config 'patch."https://github.com/johnservil/BLAKE3".blake3-servil.path=".."'`
+it is the enclosing checkout, and its provenance records that
+checkout's commit and working-tree fingerprint. Keep that provenance
+with each measurement.

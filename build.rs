@@ -60,12 +60,7 @@ fn main() {
         &lock,
         "ab-blake3",
     );
-    emit_path_package(
-        "BLAKE3_SERVIL_SOURCE_INFO",
-        &manifest_dir,
-        "blake3-servil",
-        BLAKE3_SME2_PATH,
-    );
+    emit_servil_package(&manifest_dir, &lock);
 
     emit_git_metadata(&manifest_dir);
 
@@ -146,10 +141,13 @@ fn git_text_allow_failure(
     )
 }
 
-/// Where Cargo.toml points the `blake3-servil` path dependency, relative to
-/// this crate's manifest directory: the enclosing fork checkout. Cargo.toml
-/// and this constant agree.
-const BLAKE3_SME2_PATH: &str = "..";
+/// Where a local checkout of the fork sits, relative to this crate's
+/// manifest directory, when a `--config` patch replaces the git
+/// dependency: the enclosing checkout, the one layout the tools use.
+const SERVIL_CHECKOUT: &str = "..";
+
+/// The fork's repository, as Cargo.toml names it and Cargo.lock records it.
+const SERVIL_GIT: &str = "https://github.com/johnservil/BLAKE3";
 
 /// What `git` reports about a checkout: its origin URL, HEAD commit,
 /// nearest release tag, current branch, and whether the tree is clean.
@@ -224,9 +222,11 @@ fn watch_repository(repository: &Path) {
     }
 }
 
-/// Reads the git state of `repository`. A dirty tree is fingerprinted by
-/// hashing its status, its diff against HEAD, and every untracked file.
-fn git_state(repository: &Path) -> GitState {
+/// Reads the git state of `repository`, leaving out the path `skip` (the
+/// results directory, or this repository nested inside the fork's
+/// checkout, where it is an untracked directory). A dirty tree is fingerprinted by hashing its status, its
+/// diff against HEAD, and every untracked file.
+fn git_state(repository: &Path, skip: Option<&str>) -> GitState {
     let source = normalize_git_source(&git_text(
         repository,
         &["remote", "get-url", "origin"],
@@ -270,17 +270,14 @@ fn git_state(repository: &Path) -> GitState {
         None => "(no reachable release tag)".to_owned(),
     };
 
+    let exclude = skip.map(|path| format!(":(exclude){path}"));
+    let pathspec: Vec<&str> = ["--", "."].into_iter().chain(exclude.as_deref()).collect();
     let status = git_bytes(
         repository,
-        &[
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--untracked-files=all",
-        ],
+        &[&["status", "--porcelain=v1", "-z", "--untracked-files=all"][..], &pathspec].concat(),
     );
 
-    let clean_status = if status.is_empty() {
+    let clean_status = if status.is_empty() || only_servil_patched(repository, &status) {
         "clean".to_owned()
     } else {
         /*
@@ -290,17 +287,12 @@ fn git_state(repository: &Path) -> GitState {
          */
         let diff = git_bytes(
             repository,
-            &["diff", "--binary", "HEAD", "--"],
+            &[&["diff", "--binary", "HEAD"][..], &pathspec].concat(),
         );
 
         let untracked = git_bytes(
             repository,
-            &[
-                "ls-files",
-                "--others",
-                "--exclude-standard",
-                "-z",
-            ],
+            &[&["ls-files", "--others", "--exclude-standard", "-z"][..], &pathspec].concat(),
         );
 
         let mut hasher = Hasher::new();
@@ -357,10 +349,34 @@ fn git_state(repository: &Path) -> GitState {
     }
 }
 
+/*
+ * A `--config` patch that points blake3-servil at a local checkout makes
+ * Cargo drop that package's `source` line from Cargo.lock. The fork's own
+ * provenance line then names the checkout and its state, so a tree whose
+ * only change is that line (or another pinned fork commit there) counts
+ * as clean.
+ */
+fn only_servil_patched(repository: &Path, status: &[u8]) -> bool {
+    if status != b" M Cargo.lock\0" {
+        return false;
+    }
+    let without_servil_source = |lock: &str| -> String {
+        lock.lines()
+            .filter(|line| !line.starts_with(&format!("source = \"git+{SERVIL_GIT}")))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let committed = git_text(repository, &["show", "HEAD:Cargo.lock"]);
+    let current = fs::read_to_string(repository.join("Cargo.lock"))
+        .expect("Cargo.lock must be valid UTF-8");
+    without_servil_source(&committed) == without_servil_source(current.trim())
+}
+
 fn emit_git_metadata(repository: &Path) {
     watch_repository(repository);
 
-    let state = git_state(repository);
+    /* The run's own results are output, not source. */
+    let state = git_state(repository, Some("benchmark-results"));
 
     emit_env("BENCH_GIT_SOURCE", &state.source);
     emit_env("BENCH_GIT_COMMIT", &state.commit);
@@ -399,37 +415,50 @@ fn git_output(repository: &Path, arguments: &[&str]) -> Output {
 }
 
 /*
- * A path dependency has no registry checksum and no Cargo.lock source;
- * the checkout's own git state identifies it: origin URL, branch, exact
- * commit, and a clean flag or a hash of the uncommitted changes. Emit
- * those in the same shape this repository uses to identify itself. The
- * checkout must be a git repository with an `origin` remote.
+ * blake3-servil comes from the fork's repository at the commit Cargo.lock
+ * pins, with a line such as
+ *   source = "git+https://github.com/johnservil/BLAKE3?branch=servil#COMMIT"
+ * A `--config` patch replaces it with the enclosing checkout at `..`, and
+ * Cargo.lock then records no source; the checkout's own git state
+ * identifies the code: origin URL, branch, exact commit, and a clean flag
+ * or a hash of the uncommitted changes. Both emit the same fields.
  */
-fn emit_path_package(
-    environment_variable: &str,
-    manifest_dir: &Path,
-    package_name: &str,
-    relative_path: &str,
-) {
-    let repository = manifest_dir.join(relative_path);
+fn emit_servil_package(manifest_dir: &Path, lock: &str) {
+    let block = package_block(lock, "blake3-servil")
+        .expect("blake3-servil must be present in Cargo.lock");
+    let version = quoted_field(block, "version")
+        .expect("Cargo.lock package must have a version");
 
-    assert!(
-        repository.join("Cargo.toml").is_file(),
-        "{package_name} must be checked out at {} (this repository lives inside that checkout); clone github.com/johnservil/BLAKE3 there and check out its servil branch",
-        repository.display()
-    );
-
-    watch_repository(&repository);
-
-    let state = git_state(&repository);
-
-    emit_env(
-        environment_variable,
-        &format!(
-            "{package_name} (path dependency {relative_path}); source {}; branch {}; commit {}; {}",
-            state.source, state.branch, state.commit, state.clean_status
-        ),
-    );
+    let description = match quoted_field(block, "source") {
+        Some(source) => {
+            let pinned = source
+                .strip_prefix(&format!("git+{SERVIL_GIT}?branch="))
+                .unwrap_or_else(|| panic!("blake3-servil must come from {SERVIL_GIT} or a local patch; Cargo.lock says {source}"));
+            let (branch, commit) = pinned
+                .split_once('#')
+                .expect("a git source in Cargo.lock names its commit after '#'");
+            format!("blake3-servil {version}; source {SERVIL_GIT}; branch {branch}; commit {commit}; clean")
+        }
+        None => {
+            let repository = manifest_dir.join(SERVIL_CHECKOUT);
+            assert!(
+                repository.join("Cargo.toml").is_file(),
+                "blake3-servil is patched to a local checkout, which must be the enclosing one at {} (this repository inside it)",
+                repository.display()
+            );
+            watch_repository(&repository);
+            let own_name = manifest_dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("the manifest directory has a UTF-8 name");
+            let state = git_state(&repository, Some(own_name));
+            format!(
+                "blake3-servil {version} (local checkout {SERVIL_CHECKOUT}); source {}; branch {}; commit {}; {}",
+                state.source, state.branch, state.commit, state.clean_status
+            )
+        }
+    };
+    emit_env("BLAKE3_SERVIL_SOURCE_INFO", &description);
 }
 
 fn emit_required_package(
@@ -447,40 +476,35 @@ fn emit_required_package(
     emit_env(environment_variable, &description);
 }
 
+/// The `[[package]]` block of `name` in Cargo.lock.
+fn package_block<'a>(lock: &'a str, name: &str) -> Option<&'a str> {
+    lock.split("[[package]]")
+        .skip(1)
+        .find(|package| quoted_field(package, "name").as_deref() == Some(name))
+}
+
 fn package_description(
     lock: &str,
-    requested_name: &str,
+    name: &str,
 ) -> Option<String> {
-    for package in lock.split("[[package]]").skip(1) {
-        let Some(name) = quoted_field(package, "name") else {
-            continue;
-        };
+    let package = package_block(lock, name)?;
 
-        if name != requested_name {
-            continue;
-        }
+    let version = quoted_field(package, "version")
+        .expect("Cargo.lock package must have a version");
 
-        let version = quoted_field(package, "version")
-            .expect("Cargo.lock package must have a version");
+    let mut result = format!("{name} {version}");
 
-        let mut result = format!("{name} {version}");
-
-        if let Some(checksum) =
-            quoted_field(package, "checksum")
-        {
-            result.push_str("; crate archive SHA-256 ");
-            result.push_str(&checksum);
-        }
-
-        if let Some(source) = quoted_field(package, "source") {
-            result.push_str("; source ");
-            result.push_str(&source);
-        }
-
-        return Some(result);
+    if let Some(checksum) = quoted_field(package, "checksum") {
+        result.push_str("; crate archive SHA-256 ");
+        result.push_str(&checksum);
     }
 
-    None
+    if let Some(source) = quoted_field(package, "source") {
+        result.push_str("; source ");
+        result.push_str(&source);
+    }
+
+    Some(result)
 }
 
 fn quoted_field(block: &str, key: &str) -> Option<String> {

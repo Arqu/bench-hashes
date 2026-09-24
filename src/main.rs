@@ -32,9 +32,10 @@ compile_error!("bench-hashes currently supports native targets only");
  * than others; that imbalance is a fraction of a sample per cell, far
  * below the difference between two runs, so any count serves.
  */
-const THOROUGH_ROUNDS: usize = 96;
-/// A quick run: seconds, not minutes, for a first look; `--thorough`
-/// confirms. Its axes stop below QUICK_BYTES and QUICK_MESSAGES.
+const FULL_ROUNDS: usize = 96;
+/// A quick run (`--quick`): seconds, not minutes, for a first look while
+/// developing; a full run, the default, confirms. Its axes stop below
+/// QUICK_BYTES and QUICK_MESSAGES.
 const QUICK_ROUNDS: usize = 24;
 const QUICK_BYTES: usize = 1 << 20;
 const QUICK_MESSAGES: usize = 10_000;
@@ -364,7 +365,7 @@ impl Point {
  * runs at each input size is chosen at run time and reported by
  * detect_kernels. Adding a contender means a variant here, an entry in
  * ALL, a key, a name, a color, a provenance string, a kernel description,
- * and an arm in run_batch; the harness handles selection, interleaving,
+ * and an arm in hash_batch; the harness handles selection, interleaving,
  * and reporting for any count.
  */
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -392,8 +393,7 @@ enum Algorithm {
     AbBlake3,
 }
 
-/// The hash function a contender implements; "best available" is chosen
-/// within a family.
+/// The hash function a contender implements, which names its golden digests.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Family {
     Blake3,
@@ -754,11 +754,11 @@ struct Roster {
 impl Roster {
     /*
      * `points` restricts the run to those POINTS indices; without it a
-     * thorough run measures every point and a quick run the points below
+     * full run measures every point and a quick run the points below
      * QUICK_BYTES and QUICK_MESSAGES. `rounds` fixes the round count
-     * (positive), else THOROUGH_ROUNDS or QUICK_ROUNDS.
+     * (positive), else FULL_ROUNDS or QUICK_ROUNDS.
      */
-    fn new(algorithms: Vec<Algorithm>, thorough: bool, points: Option<Vec<usize>>, rounds: Option<usize>) -> Self {
+    fn new(algorithms: Vec<Algorithm>, quick: bool, points: Option<Vec<usize>>, rounds: Option<usize>) -> Self {
         assert!(
             (2..=8).contains(&algorithms.len()),
             "a run compares two to eight contenders; {} were selected",
@@ -775,9 +775,9 @@ impl Roster {
             }
         }
         let orders = williams_orders(algorithms.len());
-        let points = points.unwrap_or_else(|| (0..POINT_COUNT).filter(|&index| thorough || POINTS[index].quick()).collect());
+        let points = points.unwrap_or_else(|| (0..POINT_COUNT).filter(|&index| !quick || POINTS[index].quick()).collect());
         assert!(!points.is_empty() && points.windows(2).all(|w| w[0] < w[1]), "points ascend, without repeats");
-        let rounds = rounds.unwrap_or(if thorough { THOROUGH_ROUNDS } else { QUICK_ROUNDS });
+        let rounds = rounds.unwrap_or(if quick { QUICK_ROUNDS } else { FULL_ROUNDS });
         assert!(rounds > 0, "--rounds must be positive");
         Self { algorithms, orders, points, rounds }
     }
@@ -839,11 +839,30 @@ fn williams_orders(n: usize) -> Vec<Vec<usize>> {
     rows
 }
 
+/*
+ * The default contenders: the fastest implementations of BLAKE3 and
+ * SHA-256 on the machines this benchmark has measured. For BLAKE3 that is
+ * the servil fork, single-threaded and multithreaded. For SHA-256 neither
+ * crate wins everywhere: sha2 is faster for one and two blocks (and so for
+ * every batch of 64-byte messages), ring from 256 B up, so both run.
+ */
+const DEFAULT_CONTENDERS: [Algorithm; 4] =
+    [Algorithm::Blake3Servil, Algorithm::Blake3ServilMt, Algorithm::Sha256, Algorithm::Sha256Ring];
+
+/*
+ * The contenders the graph shows when it opens; a click on a name shows
+ * any other. The fastest BLAKE3 at every size (servil mt matches servil
+ * below its threading threshold), both SHA-256 crates (each the fastest
+ * at some sizes), and the crates.io BLAKE3 most programs use. A run with
+ * none of them opens with every contender shown.
+ */
+const SHOWN_AT_FIRST: [Algorithm; 4] = [Algorithm::Blake3ServilMt, Algorithm::Sha256, Algorithm::Sha256Ring, Algorithm::Blake3];
+
 /// How the user chose the contenders, for the report header.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Selection {
-    /// Default: SHA-1DC and the best available member of each other family.
-    Best,
+    /// DEFAULT_CONTENDERS.
+    Default,
     /// `--all`: every contender that can run here.
     All,
     /// `--contenders a,b,c`.
@@ -854,26 +873,24 @@ const USAGE: &str = "\
 bench-hashes: hash speed by input size and by messages per batch, alone and
 shared with a second copy of the same contender
 
-  bench-hashes                     the best available BLAKE3 and SHA-256 on
-                                   this machine (best = Pareto-better at every
-                                   point; the run says so if none is)
+  bench-hashes                     BLAKE3 servil (single- and multithreaded)
+                                   and SHA-256 (sha2 and ring)
   bench-hashes --all               every contender this machine can run,
                                    apart from those marked on-request in --list
   bench-hashes --contenders K,...  exactly these, in this column order
   bench-hashes --list              contenders and their availability here
 
-Keys: blake3, ab-blake3, blake3-servil, sha256, sha256-ring, sha1dc; sha256-cc on
-      request; blake3-mt and blake3-servil-mt (multithreaded) in --all and
-      default runs, or when named; sha1dc in --thorough runs, or when named
+Keys: blake3, blake3-mt, ab-blake3, blake3-servil, blake3-servil-mt, sha256,
+      sha256-ring, sha1dc; sha256-cc on request
 
-A run takes seconds: inputs from 64 B to 512 KiB and batches of 1 to 8192
-64-byte messages, 24 rounds. It can misread now and then; --thorough confirms.
+A run takes a few minutes: every point, to 128 MiB inputs and batches of
+262144 messages, 96 rounds, the longest cells sampled until their medians
+are known to 2%.
 
-  --thorough                       minutes: every point, to 128 MiB inputs and
-                                   batches of 262144 messages, 96 rounds, the
-                                   longest cells sampled until their medians
-                                   are known to 2%; adds SHA-1DC to the default
-                                   and --all rosters
+  --quick                          seconds: inputs to 512 KiB and batches to
+                                   8192 messages, 24 rounds; may misread a
+                                   cell now and then; leaves SHA-1DC out of
+                                   --all
   --points LABEL,...               measure only these points (labels as in the
                                    report: \"64 B\", \"8 MiB\", \"1024\" messages);
                                    with --contenders only
@@ -891,13 +908,13 @@ struct Options {
     points: Option<Vec<usize>>,
     rounds: Option<usize>,
     trace_path: Option<std::path::PathBuf>,
-    thorough: bool,
+    quick: bool,
 }
 
 fn parse_arguments() -> Options {
     let mut arguments: Vec<String> = std::env::args().skip(1).collect();
 
-    /* --thorough may accompany any selection. */
+    /* --quick may accompany any selection. */
     let mut take_flag = |flag: &str| {
         arguments
             .iter()
@@ -907,7 +924,7 @@ fn parse_arguments() -> Options {
             })
             .is_some()
     };
-    let thorough = take_flag("--thorough");
+    let quick = take_flag("--quick");
 
     /* --trace-clocks PATH may accompany any selection. */
     let trace_path = arguments
@@ -950,12 +967,12 @@ fn parse_arguments() -> Options {
         (points.is_none() && rounds.is_none()) || selection == Selection::Explicit,
         "--points and --rounds narrow a --contenders run\n\n{USAGE}"
     );
-    Options { selection, explicit, points, rounds, trace_path, thorough }
+    Options { selection, explicit, points, rounds, trace_path, quick }
 }
 
 fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
     match arguments {
-        [] => (Selection::Best, Vec::new()),
+        [] => (Selection::Default, Vec::new()),
         [flag] if flag == "--all" => (Selection::All, Vec::new()),
         [flag] if flag == "--list" => {
             for algorithm in Algorithm::ALL {
@@ -995,54 +1012,28 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
 }
 
 fn main() {
-    let Options { selection, explicit, points, rounds, trace_path, thorough } = parse_arguments();
+    let Options { selection, explicit, points, rounds, trace_path, quick } = parse_arguments();
     let mut trace = trace_path.map(ClockTrace::new);
-    /* SHA-1DC, the slowest by far, runs in quick runs only when named. */
-    let available: Vec<Algorithm> = Algorithm::ALL
-        .into_iter()
-        .filter(|algorithm| algorithm.availability().is_ok() && !algorithm.on_request_only())
-        .filter(|&algorithm| thorough || algorithm != Algorithm::Sha1Dc)
-        .collect();
-
     let machine = machine_metadata();
 
-    /*
-     * The default run picks the best available member of each family. That
-     * needs measurements, so it measures every available contender, then
-     * keeps the Pareto-best per family and reports on those alone. Timing
-     * cost is the same as --all; only the report narrows.
-     */
-    let (roster, results, samples, selection_note) = match selection {
+    let (algorithms, selection_note) = match selection {
+        Selection::Default => (DEFAULT_CONTENDERS.to_vec(), String::from("the default contenders")),
+        Selection::All => (
+            /* SHA-1DC, the slowest by far, runs in quick runs only when named. */
+            Algorithm::ALL
+                .into_iter()
+                .filter(|algorithm| algorithm.availability().is_ok() && !algorithm.on_request_only())
+                .filter(|&algorithm| !quick || algorithm != Algorithm::Sha1Dc)
+                .collect(),
+            String::from("every contender available on this machine"),
+        ),
         Selection::Explicit => {
             let keys = explicit.iter().map(|algorithm| algorithm.key()).collect::<Vec<_>>().join(",");
-            let roster = Roster::new(explicit, thorough, points, rounds);
-            let (results, samples) = measure_all(&roster, trace.as_mut());
-            (roster, results, samples, format!("--contenders {keys}"))
-        }
-        Selection::All => {
-            let roster = Roster::new(available, thorough, None, None);
-            let (results, samples) = measure_all(&roster, trace.as_mut());
-            (roster, results, samples, String::from("every contender available on this machine"))
-        }
-        Selection::Best => {
-            let full = Roster::new(available, thorough, None, None);
-            let (full_results, full_samples) = measure_all(&full, trace.as_mut());
-            let (keep, note) = choose_best_per_family(&full, &full_results);
-            let roster = Roster::new(keep.iter().map(|&index| full.algorithms[index]).collect(), thorough, None, None);
-            let results: Results = full_results
-                .iter()
-                .enumerate()
-                .filter(|(index, _)| keep.contains(index))
-                .map(|(_, row)| row.clone())
-                .collect();
-            let kept = |rows: Samples| -> Samples {
-                rows.into_iter().enumerate().filter(|(index, _)| keep.contains(index)).map(|(_, row)| row).collect()
-            };
-            let rounds = full_samples.rounds.into_iter().enumerate().filter(|(index, _)| keep.contains(index)).map(|(_, row)| row).collect();
-            let samples = RunSamples { solo: kept(full_samples.solo), shared: kept(full_samples.shared), rounds };
-            (roster, results, samples, note)
+            (explicit, format!("--contenders {keys}"))
         }
     };
+    let roster = Roster::new(algorithms, quick, points, rounds);
+    let (results, samples) = measure_all(&roster, trace.as_mut());
 
     if let Some(trace) = &trace {
         trace.write();
@@ -1131,90 +1122,6 @@ fn assert_orders_balanced(rows: &[Vec<usize>], n: usize) {
             );
         }
     }
-}
-
-/*
- * For each family with more than one available contender, the member that
- * is at least as fast (by median) at every point both take part in, and
- * strictly faster at one, is the best. Without such a member the family
- * has no best: both are kept and the note says so. Returns the kept
- * indices in roster order.
- */
-fn choose_best_per_family(roster: &Roster, results: &Results) -> (Vec<usize>, String) {
-    let mut keep: Vec<usize> = Vec::new();
-    let mut notes: Vec<String> = Vec::new();
-
-    for family in [Family::Blake3, Family::Sha256, Family::Sha1Dc] {
-        let members: Vec<usize> = (0..roster.len())
-            .filter(|&index| roster.algorithms[index].family() == family)
-            .collect();
-        if members.len() <= 1 {
-            keep.extend(&members);
-            continue;
-        }
-        let dominates = |a: usize, b: usize| {
-            let mut strictly = false;
-            for point_index in 0..POINT_COUNT {
-                let (Some(ca), Some(cb)) = (results[a][point_index], results[b][point_index]) else {
-                    continue;
-                };
-                for scenario in Scenario::ALL {
-                    let (ma, mb) = (ca.get(scenario).median, cb.get(scenario).median);
-                    if ma > mb {
-                        return false;
-                    }
-                    if ma < mb {
-                        strictly = true;
-                    }
-                }
-            }
-            strictly
-        };
-        let best: Vec<usize> = members
-            .iter()
-            .copied()
-            .filter(|&a| members.iter().all(|&b| a == b || dominates(a, b)))
-            .collect();
-        match best.as_slice() {
-            [winner] => {
-                keep.push(*winner);
-                let others: Vec<&str> = members
-                    .iter()
-                    .filter(|&&index| index != *winner)
-                    .map(|&index| roster.algorithms[index].name())
-                    .collect();
-                notes.push(format!(
-                    "{} is the best {} here (faster than {} at every size)",
-                    roster.algorithms[*winner].name(),
-                    family.name(),
-                    others.join(" and "),
-                ));
-            }
-            _ => {
-                keep.extend(&members);
-                let names: Vec<&str> = members.iter().map(|&index| roster.algorithms[index].name()).collect();
-                let crossover = first_crossover(results, members[0], members[1]);
-                notes.push(format!(
-                    "no best {} here: {} each win at some points{}; all are shown",
-                    family.name(),
-                    names.join(" and "),
-                    crossover.map(|label| format!(" (lead changes at {label})")).unwrap_or_default(),
-                ));
-            }
-        }
-    }
-    keep.sort_unstable();
-    (keep, notes.join("; "))
-}
-
-/// The first one-message size at which the faster of two contenders changes.
-fn first_crossover(results: &Results, a: usize, b: usize) -> Option<&'static str> {
-    let measured: Vec<usize> = (0..INPUT_COUNT).filter(|&index| results[a][index].is_some() && results[b][index].is_some()).collect();
-    let leader = |size_index: usize| cell(results, a, size_index).solo.median < cell(results, b, size_index).solo.median;
-    measured
-        .windows(2)
-        .find(|pair| leader(pair[1]) != leader(pair[0]))
-        .map(|pair| POINTS[pair[1]].label)
 }
 
 /// The measured cell of a contender that takes part at this point.
@@ -2824,9 +2731,9 @@ fn generate_text(roster: &Roster, results: &Results, samples: &RunSamples, machi
     writeln!(
         output,
         "{} run: {} rounds{}. Each cell is the median time per unit, lower is better; a|b: the cell ran at two speeds, both medians given, faster first; ~ marks a median known only to within {}%.",
-        if roster.points.iter().all(|&index| POINTS[index].quick()) { "Quick" } else { "Thorough" },
+        if roster.points.iter().all(|&index| POINTS[index].quick()) { "Quick" } else { "Full" },
         roster.rounds,
-        if roster.points.iter().all(|&index| POINTS[index].quick()) { "; --thorough confirms and adds the largest inputs and batches" } else { "" },
+        if roster.points.iter().all(|&index| POINTS[index].quick()) { "; a full run confirms and adds the largest inputs and batches" } else { "" },
         SPREAD_WIDE_PERMILLE / 10,
     )
     .unwrap();
@@ -3358,7 +3265,9 @@ const PLOT_HEIGHT: f64 = 340.0;
 /// above the next for its heading.
 const PLOT_PITCH: f64 = 470.0;
 const X_INSET: f64 = 40.0;
-const SERIES_LABEL_GAP: f64 = 44.0;
+/// Vertical room per right-hand label (name and detail line). Eight
+/// contenders, the most a run takes, stack in 7 × 34 px, inside a plot.
+const SERIES_LABEL_GAP: f64 = 34.0;
 /// Fixed shape slots before each right-hand name, so names align across
 /// contenders with different shape counts. Four covers every contender.
 const SWATCH_SLOTS: usize = 4;
@@ -3444,7 +3353,11 @@ impl Plot {
          * is where floating point earns its place: the values are drawn,
          * never compared or reported. Everything above this point is integer.
          */
-        let cells = || contenders.iter().flat_map(|&a| points.clone().map(move |s| (a, s))).map(|(a, s)| cell(results, a, s));
+        /* The axis spans the contenders shown when the graph opens, as the script's does. */
+        let shown = shown_at_first(roster);
+        let visible: Vec<usize> = contenders.iter().copied().filter(|&a| shown[a]).collect();
+        assert!(!visible.is_empty(), "every contender shown at first takes part in every use case");
+        let cells = || visible.iter().flat_map(|&a| points.clone().map(move |s| (a, s))).map(|(a, s)| cell(results, a, s));
         let observed_max = cells().map(|cell| cell.get(scenario).high).max().expect("there are results");
         let observed_min = cells().map(|cell| cell.get(scenario).low).min().expect("there are results");
 
@@ -3683,7 +3596,7 @@ fn generate_svg(
     .unwrap();
     writeln!(
         svg,
-        r##"  <text x="{PLOT_LEFT:.0}" y="88" class="method">Dot shape marks the code path a contender used at that point · hover or tap a dot to compare at that point · hover a name to highlight its contender · click a name at right to hide or show it in every plot</text>"##
+        r##"  <text x="{PLOT_LEFT:.0}" y="88" class="method">Dot shape: the code path a contender used at that point · hover or tap a dot to compare there · click a name at right to show or hide it</text>"##
     )
         .unwrap();
 
@@ -3953,28 +3866,13 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
         .unwrap();
 
     /*
-     * Vertical guides and x-axis labels at each tested point. Where a label
-     * would run into its left neighbour (3 KiB sits 24 px from 4 KiB on the
-     * log axis), it drops to a second row with a short tick joining it to
-     * its column.
+     * Vertical guides and x-axis labels at each tested point, placed by
+     * place_size_labels: two rows, a short tick joining a second-row
+     * label to its column.
      */
-    /*
-     * About 7.2 px per character at the bold label font, plus a gutter.
-     * Left to right, a label takes the first row if it clears the last
-     * label there, else the second, else it stays hidden (points a few
-     * percent apart, such as 7935 B and 8 KiB, show their labels once the
-     * zoom spreads them). The script applies the same rule.
-     */
-    let label_width = |k: usize| POINTS[plot.points.start + k].label.chars().count() as f64 * 7.2 + 6.0;
-    let mut label_rows = vec![None; plot.len()];
-    let mut row_ends = [f64::NEG_INFINITY; 2];
-    for k in 0..plot.len() {
-        let left = plot.x_positions[k] - label_width(k) / 2.0;
-        if let Some(row) = (0..2).find(|&row| left >= row_ends[row]) {
-            label_rows[k] = Some(row as u8);
-            row_ends[row] = plot.x_positions[k] + label_width(k) / 2.0;
-        }
-    }
+    let labels: Vec<&str> = plot.points.clone().map(|point_index| POINTS[point_index].label).collect();
+    let primary: Vec<bool> = plot.points.clone().map(|point_index| POINTS[point_index].bytes.is_power_of_two()).collect();
+    let label_rows = place_size_labels(&plot.x_positions, &labels, &primary);
     for (k, point_index) in plot.points.clone().enumerate() {
         let x = plot.x_positions[k];
         let row = label_rows[k].unwrap_or(0);
@@ -4028,7 +3926,8 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
     )
         .unwrap();
 
-    let value_label_y = place_value_labels(plot, results);
+    let value_label_y = place_value_labels(plot, results, &shown_at_first(roster));
+    let value_columns = value_label_columns(&plot.x_positions);
 
     /*
      * Dots are collected here and emitted after every series' band and
@@ -4051,9 +3950,10 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
         let cell_at = |k: usize| cell(results, algorithm_index, plot.points.start + k);
         let last = cell_at(plot.len() - 1);
 
+        let shown = shown_at_first(roster)[algorithm_index];
         writeln!(
             svg,
-            r##"  <g class="series" id="series-{p}-{algorithm_index}" data-on="true">"##
+            r##"  <g class="series" id="series-{p}-{algorithm_index}" data-on="{shown}">"##
         )
             .unwrap();
 
@@ -4116,7 +4016,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
         )
             .unwrap();
 
-        let mut dots = format!("  <g class=\"dots\" id=\"dots-{p}-{algorithm_index}\" data-on=\"true\" clip-path=\"url(#plot-clip-{p})\">\n");
+        let mut dots = format!("  <g class=\"dots\" id=\"dots-{p}-{algorithm_index}\" data-on=\"{shown}\" clip-path=\"url(#plot-clip-{p})\">\n");
 
         for k in 0..plot.len() {
             let x = plot.x_positions[k];
@@ -4140,15 +4040,8 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
                 dots.push_str("    </g>\n");
             }
 
-            /*
-             * With two dozen columns, a value at every dot would overprint.
-             * Label the ends and every fourth point counted from the last,
-             * so the axis's far end and the points four apart below it
-             * carry values; hovering a dot shows the rest.
-             */
-            let labeled = k == 0 || (plot.len() - 1 - k) % 4 == 0;
-
-            if !labeled {
+            /* With two dozen columns, a value at every dot would overprint. */
+            if !value_columns[k] {
                 continue;
             }
 
@@ -4312,6 +4205,68 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
 }
 
 /*
+ * X-axis labels in two rows. About 7.2 px per character at the bold label
+ * font, plus a gutter. The powers of two go first, then the sizes between
+ * them, each pass left to right. A label takes the first row if it
+ * overlaps no label there and covers no second-row tick, else the second
+ * row if it overlaps no label there and its tick crosses no first-row
+ * label, else it stays hidden (2304 B beside 2 KiB, 7935 B beside 8 KiB)
+ * until the zoom spreads the points. The script's placeSizeLabels applies
+ * the same rule. Returns each column's row, None for hidden.
+ */
+fn place_size_labels(x: &[f64], labels: &[&str], primary: &[bool]) -> Vec<Option<u8>> {
+    let half = |k: usize| (labels[k].chars().count() as f64 * 7.2 + 6.0) / 2.0;
+    let mut rows: Vec<Option<u8>> = vec![None; x.len()];
+    for pass in [true, false] {
+        for k in (0..x.len()).filter(|&k| primary[k] == pass) {
+            let overlaps = |row: u8| {
+                (0..x.len()).any(|j| rows[j] == Some(row) && (x[j] - x[k]).abs() < half(j) + half(k))
+            };
+            let covers_tick = (0..x.len()).any(|j| rows[j] == Some(1) && (x[j] - x[k]).abs() < half(k));
+            let tick_crosses = (0..x.len()).any(|j| rows[j] == Some(0) && (x[j] - x[k]).abs() < half(j));
+            rows[k] = if !overlaps(0) && !covers_tick {
+                Some(0)
+            } else if !overlaps(1) && !tick_crosses {
+                Some(1)
+            } else {
+                None
+            };
+        }
+    }
+    rows
+}
+
+/*
+ * The columns that carry value labels: the first and the last, and,
+ * walking left from the last, each column at least VALUE_COLUMN_SPACING
+ * from the one labelled before and from the first, with both neighbours
+ * at least VALUE_COLUMN_ROOM away. Crowded stretches (2-8 KiB) carry no
+ * values until the zoom spreads them; hovering a dot shows every value.
+ * The script's valueColumns applies the same rule to its window.
+ */
+const VALUE_COLUMN_SPACING: f64 = 110.0;
+const VALUE_COLUMN_ROOM: f64 = 32.0;
+
+fn value_label_columns(x: &[f64]) -> Vec<bool> {
+    let n = x.len();
+    let mut labeled = vec![false; n];
+    labeled[0] = true;
+    labeled[n - 1] = true;
+    let mut previous = x[n - 1];
+    for k in (1..n - 1).rev() {
+        if previous - x[k] >= VALUE_COLUMN_SPACING
+            && x[k] - x[0] >= VALUE_COLUMN_SPACING
+            && x[k] - x[k - 1] >= VALUE_COLUMN_ROOM
+            && x[k + 1] - x[k] >= VALUE_COLUMN_ROOM
+        {
+            labeled[k] = true;
+            previous = x[k];
+        }
+    }
+    labeled
+}
+
+/*
  * Relative width of one cell's median interval in permille: 1000 × (high −
  * low) / median, rounded. Zero when every resample agrees on the median;
  * 20 means the median is known to within 2%.
@@ -4347,31 +4302,38 @@ fn band_style(worst_spread_permille: u64) -> (u64, bool) {
 /*
  * Value labels sit above their dot by default. Within a column, labels
  * are processed top to bottom; one that would land within a label height
- * of the previous label moves below its dot instead, and if that also
- * collides it steps down until clear. The script repeats this rule.
+ * of a label already placed, or on a dot of the column, moves below its
+ * dot instead, and if that also collides it steps down until clear. A
+ * label's baseline at y clears a dot at d when y <= d - 6 or y >= d + 14
+ * (the text spans y - 9 to y + 1, the dot d - 5 to d + 5). The script
+ * repeats this rule.
  */
 const VALUE_LABEL_ABOVE: f64 = -11.0;
 const VALUE_LABEL_BELOW: f64 = 17.0;
 const VALUE_LABEL_HEIGHT: f64 = 11.0;
 
-fn place_value_labels(plot: &Plot, results: &Results) -> Vec<Vec<f64>> {
+fn value_label_clear(y: f64, labels: &[f64], dots: &[f64]) -> bool {
+    labels.iter().all(|t| (t - y).abs() >= VALUE_LABEL_HEIGHT) && dots.iter().all(|&d| y <= d - 6.0 || y >= d + 14.0)
+}
+
+fn place_value_labels(plot: &Plot, results: &Results, shown: &[bool]) -> Vec<Vec<f64>> {
     let mut placed = vec![vec![0.0_f64; plot.len()]; results.len()];
     for k in 0..plot.len() {
         let point_index = plot.points.start + k;
-        let mut order: Vec<usize> = plot.contenders.clone();
+        let mut order: Vec<usize> = plot.contenders.iter().copied().filter(|&a| shown[a]).collect();
         order.sort_by(|&a, &b| {
             plot.stats(results, b, point_index).median.cmp(&plot.stats(results, a, point_index).median)
         });
         /* Smallest y (fastest, highest on the plot) first. */
         order.reverse();
+        let dots: Vec<f64> = order.iter().map(|&a| plot.map_y(plot.stats(results, a, point_index).median)).collect();
         let mut taken: Vec<f64> = Vec::new();
         for algorithm_index in order {
             let dot_y = plot.map_y(plot.stats(results, algorithm_index, point_index).median);
-            let clear = |y: f64, taken: &[f64]| taken.iter().all(|t| (t - y).abs() >= VALUE_LABEL_HEIGHT);
             let mut y = dot_y + VALUE_LABEL_ABOVE;
-            if !clear(y, &taken) {
+            if !value_label_clear(y, &taken, &dots) {
                 y = dot_y + VALUE_LABEL_BELOW;
-                while !clear(y, &taken) {
+                while !value_label_clear(y, &taken, &dots) {
                     y += VALUE_LABEL_HEIGHT;
                 }
             }
@@ -4598,6 +4560,13 @@ fn contender_provenance_lines(
  * lockstep. Each plot carries its own points, series, and units; the
  * contender names, colours, and on/off state are shared.
  */
+/// Which contenders the graph shows when it opens: those in SHOWN_AT_FIRST,
+/// or every contender when the run has none of them.
+fn shown_at_first(roster: &Roster) -> Vec<bool> {
+    let shown: Vec<bool> = roster.algorithms.iter().map(|algorithm| SHOWN_AT_FIRST.contains(algorithm)).collect();
+    if shown.contains(&true) { shown } else { vec![true; roster.len()] }
+}
+
 fn write_interaction_script(
     svg: &mut String,
     roster: &Roster,
@@ -4609,6 +4578,11 @@ fn write_interaction_script(
     for (index, algorithm) in roster.algorithms.iter().enumerate() {
         if index > 0 { data.push(','); }
         data.push_str(&json_string(algorithm.name()));
+    }
+    data.push_str("],\"shown\":[");
+    for (index, shown) in shown_at_first(roster).iter().enumerate() {
+        if index > 0 { data.push(','); }
+        data.push_str(if *shown { "true" } else { "false" });
     }
     data.push_str("],\"colors\":[");
     for (index, algorithm) in roster.algorithms.iter().enumerate() {
@@ -4716,7 +4690,7 @@ fn write_interaction_script(
     }
     write!(
         data,
-        "],\"sharedProv\":{shared_count},\"svgWidth\":{SVG_WIDTH:.0},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"xInset\":{X_INSET},\"labelGap\":{SERIES_LABEL_GAP},\"rounds\":{},\"labelAbove\":{VALUE_LABEL_ABOVE},\"labelBelow\":{VALUE_LABEL_BELOW},\"labelHeight\":{VALUE_LABEL_HEIGHT},\"spreadNoticeable\":0.{SPREAD_NOTICEABLE_PERMILLE:03},\"spreadWide\":0.{SPREAD_WIDE_PERMILLE:03},\"provTop\":{:.1},\"provLine\":{PROVENANCE_LINE_HEIGHT}}}",
+        "],\"sharedProv\":{shared_count},\"svgWidth\":{SVG_WIDTH:.0},\"plotLeft\":{PLOT_LEFT},\"plotRight\":{PLOT_RIGHT},\"xInset\":{X_INSET},\"labelGap\":{SERIES_LABEL_GAP},\"rounds\":{},\"labelAbove\":{VALUE_LABEL_ABOVE},\"labelBelow\":{VALUE_LABEL_BELOW},\"labelHeight\":{VALUE_LABEL_HEIGHT},\"valueSpacing\":{VALUE_COLUMN_SPACING},\"valueRoom\":{VALUE_COLUMN_ROOM},\"spreadNoticeable\":0.{SPREAD_NOTICEABLE_PERMILLE:03},\"spreadWide\":0.{SPREAD_WIDE_PERMILLE:03},\"provTop\":{:.1},\"provLine\":{PROVENANCE_LINE_HEIGHT}}}",
         roster.rounds,
         plots[0].provenance_top,
     )
@@ -4730,7 +4704,7 @@ fn write_interaction_script(
 
 const INTERACTION_SCRIPT: &str = r##"
 /* One on/off state per contender, shared by every plot. */
-const on = DATA.names.map(() => true);
+const on = DATA.shown.slice();
 
 /*
  * Zoom: the inputs every plot shows, as a range of input sizes, a batch
@@ -5041,15 +5015,15 @@ function relayoutPlot(p) {
   });
 
   /*
-   * Value labels: above the dot unless that collides within the column.
-   * Shown at the window's first point and every fourth counted back from
-   * its last, as the static render labels the whole axis.
+   * Value labels: above the dot unless that collides within the column,
+   * at the columns valueColumns picks in the window.
    */
+  const columns = valueColumns(X, w.k0, w.k1);
   for (let k = 0; k < plot.x.length; k++) {
-    const shown = k >= w.k0 && k <= w.k1 && (k === w.k0 || (w.k1 - k) % 4 === 0);
+    const shown = columns[k];
     const order = visible.slice().sort((a, b) => mapY(plot.series[a].med[k]) - mapY(plot.series[b].med[k]));
-    const taken = [];
-    const clear = y => taken.every(t => Math.abs(t - y) >= DATA.labelHeight);
+    const taken = [], dotYs = order.map(i => mapY(plot.series[i].med[k]));
+    const clear = y => taken.every(t => Math.abs(t - y) >= DATA.labelHeight) && dotYs.every(d => y <= d - 6 || y >= d + 14);
     for (const i of order) {
       const dotY = mapY(plot.series[i].med[k]);
       let y = dotY + DATA.labelAbove;
@@ -5101,26 +5075,61 @@ function relayoutPlot(p) {
    * the static render's rule.
    */
   const labelY = row => plot.bottom + 24 + 13 * row;
-  const rowEnds = [-Infinity, -Infinity];
+  const opacities = X.map(x => Math.max(0, Math.min(1, (Math.min(x - DATA.plotLeft, DATA.plotRight - x) + 12) / 12)));
+  const rows = placeSizeLabels(X, plot.sizes, plot.bytes, opacities);
   for (let k = 0; k < X.length; k++) {
-    const x = X[k];
-    const opacity = Math.max(0, Math.min(1, (Math.min(x - DATA.plotLeft, DATA.plotRight - x) + 12) / 12));
+    const x = X[k], opacity = opacities[k], row = rows[k];
     const [grid, tick, label] = xAxis[p][k];
     grid.setAttribute("x1", x.toFixed(2)); grid.setAttribute("x2", x.toFixed(2));
     grid.setAttribute("opacity", opacity.toFixed(3));
-    /* The static render's rule: the first row that clears, else hidden. */
-    const width = label.textContent.length * 7.2 + 6;
-    let row = -1;
-    if (opacity > 0) {
-      row = rowEnds.findIndex(end => x - width / 2 >= end);
-      if (row >= 0) rowEnds[row] = x + width / 2;
-    }
     label.setAttribute("x", x.toFixed(2)); label.setAttribute("y", labelY(Math.max(row, 0)).toFixed(1));
     label.setAttribute("opacity", (row >= 0 ? opacity : 0).toFixed(3));
     tick.setAttribute("x1", x.toFixed(2)); tick.setAttribute("x2", x.toFixed(2));
     tick.setAttribute("opacity", opacity.toFixed(3));
     tick.setAttribute("display", row === 1 ? "inline" : "none");
   }
+}
+
+/*
+ * X-axis label rows, the static render's place_size_labels: powers of two
+ * first, then the sizes between, each left to right; a label takes the
+ * first row if it overlaps no label there and covers no second-row tick,
+ * else the second if it overlaps none there and its tick crosses no
+ * first-row label, else it hides (-1). Columns outside the plot hide.
+ */
+function placeSizeLabels(X, sizes, bytes, opacities) {
+  const half = k => (sizes[k].length * 7.2 + 6) / 2;
+  const rows = X.map(() => -1);
+  const isPow2 = b => Number.isInteger(Math.log2(b));
+  for (const pass of [true, false]) {
+    for (let k = 0; k < X.length; k++) {
+      if (isPow2(bytes[k]) !== pass || opacities[k] <= 0) continue;
+      const overlaps = row => rows.some((r, j) => r === row && Math.abs(X[j] - X[k]) < half(j) + half(k));
+      const coversTick = rows.some((r, j) => r === 1 && Math.abs(X[j] - X[k]) < half(k));
+      const tickCrosses = rows.some((r, j) => r === 0 && Math.abs(X[j] - X[k]) < half(j));
+      rows[k] = !overlaps(0) && !coversTick ? 0 : !overlaps(1) && !tickCrosses ? 1 : -1;
+    }
+  }
+  return rows;
+}
+
+/*
+ * Columns that carry value labels, the static render's value_label_columns
+ * over the window k0..k1: its ends, and walking left from its last, each
+ * column far enough from the one labelled before and from the first, with
+ * room on both sides.
+ */
+function valueColumns(X, k0, k1) {
+  const labeled = X.map((_, k) => k === k0 || k === k1);
+  let previous = X[k1];
+  for (let k = k1 - 1; k > k0; k--) {
+    if (previous - X[k] >= DATA.valueSpacing && X[k] - X[k0] >= DATA.valueSpacing
+        && X[k] - X[k - 1] >= DATA.valueRoom && X[k + 1] - X[k] >= DATA.valueRoom) {
+      labeled[k] = true;
+      previous = X[k];
+    }
+  }
+  return labeled;
 }
 
 /* Each plot's x-axis elements by column: [guide, tick, label]. */
