@@ -41,6 +41,15 @@ empty commit, a227f6d, came from the hook overwriting the index).
    verdict on it on either machine: the change moves the control (SHA-256
    in the same process) on the new side. A decision here also needs a
    rule for judging it, e.g. worst speed per cell, or E-core share.
+   Four more thorough Mac runs, servil / turn / turn / servil (jobs
+   069-072): list 36, 37, 38, 36; small solo samples on E-cores 5.1%,
+   0.0%, 0.0%, 4.4%; servil's shared cells, median / 90th percentile:
+   16 KiB-8 MiB 0.18-0.22 / 0.18-0.24 with servil (both runs drew the
+   mode where the copies hold separate SME units; earlier records drew
+   the shared-unit mode, 0.31-0.35, in 30-70% of rounds) and 0.19-0.23 /
+   0.27-0.30 with the turn; 64 MiB 0.241 against 0.172; batches, 90th
+   percentile, 18.9-21.2 against 14.7-17.7. The turn trades the lucky
+   mode's speed for a bounded worst case, and ends the E-core placement.
 2. `candidate/neon-k4-pairs`: k4 as two NEON pairs. E-core 4 KiB -22%
    (beats upstream there), P-core 4 KiB +14%, which puts 4 KiB back on
    the list against SHA-256 ring. By the list: no.
