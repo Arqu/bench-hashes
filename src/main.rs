@@ -732,6 +732,9 @@ struct MachineMetadata {
     /// that report the same brand (every Linux VM on Apple silicon says
     /// "aarch64") can be told apart: see cpu_identity.
     cpu_identity: String,
+    /// Other programs' load during the measuring phase, where the OS
+    /// reports it (Linux, macOS); set once measuring ends.
+    load: Option<Load>,
 }
 
 /*
@@ -1014,7 +1017,7 @@ fn parse_selection(arguments: &[String]) -> (Selection, Vec<Algorithm>) {
 fn main() {
     let Options { selection, explicit, points, rounds, trace_path, quick } = parse_arguments();
     let mut trace = trace_path.map(ClockTrace::new);
-    let machine = machine_metadata();
+    let mut machine = machine_metadata();
 
     let (algorithms, selection_note) = match selection {
         Selection::Default => (DEFAULT_CONTENDERS.to_vec(), String::from("the default contenders")),
@@ -1033,7 +1036,8 @@ fn main() {
         }
     };
     let roster = Roster::new(algorithms, quick, points, rounds);
-    let (results, samples) = measure_all(&roster, trace.as_mut());
+    let (results, samples, load) = measure_all(&roster, trace.as_mut());
+    machine.load = load;
 
     if let Some(trace) = &trace {
         trace.write();
@@ -1131,7 +1135,7 @@ fn cell(results: &Results, algorithm_index: usize, point_index: usize) -> &Cell 
         .expect("the contender takes part in this point's use case")
 }
 
-fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results, RunSamples) {
+fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results, RunSamples, Option<Load>) {
     /* Inputs for the points measured; an empty buffer stands in for the rest. */
     let inputs: Vec<Vec<u8>> = (0..POINT_COUNT)
         .map(|index| if roster.measures(index) { make_input(POINTS[index].bytes) } else { Vec::new() })
@@ -1207,9 +1211,13 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
      * system-load effects across the algorithms.
      */
     progress.phase("measuring");
+    let mut load = LoadMonitor::start();
 
     for round in 0..roster.rounds {
         progress.round(round, &samples.solo);
+        if let Some(load) = load.as_mut() {
+            load.round_boundary();
+        }
 
         let algorithm_order = &roster.orders[round % roster.orders.len()];
 
@@ -1297,6 +1305,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
     }
 
     progress.finish(&samples.solo);
+    let load = load.map(LoadMonitor::finish);
 
     let mut results: Results = vec![vec![None; POINT_COUNT]; roster.len()];
 
@@ -1314,7 +1323,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
         }
     }
 
-    (results, samples)
+    (results, samples, load)
 }
 
 
@@ -2109,6 +2118,190 @@ mod sample_clock {
     }
 }
 
+/*
+ * Load from other programs during the measuring phase. The OS counts the
+ * CPU time every CPU spent busy; this process counts its own (every
+ * thread: the harness, the contenders, their worker threads). The
+ * difference is CPU time other programs took, and over a stretch of wall
+ * time it says how many CPUs they kept busy. On Linux the OS also counts
+ * steal time, which a hypervisor took from the virtual CPUs to run other
+ * work on the host: load a VM's guest cannot see any other way.
+ *
+ * The OS counts in ticks of 10 ms per CPU, so readings taken a second
+ * apart would carry an error of a few tenths of a CPU. The monitor reads
+ * at round boundaries and closes a window once LOAD_WINDOW_NS have passed;
+ * the report gives the run's average and its busiest window. Load in
+ * milli-CPUs: 1000 is one CPU kept busy throughout.
+ */
+const LOAD_WINDOW_NS: u64 = 5_000_000_000;
+/// A run whose busiest window had other programs (or the hypervisor)
+/// keep half a CPU or more busy is reported as busy: enough to slow the
+/// shared scenario and the multithreaded contenders, which use every CPU.
+const LOAD_BUSY_MILLI_CPUS: u64 = 500;
+
+mod cpu_times {
+    /// The machine's CPU time since boot, all CPUs summed: busy (not idle,
+    /// not waiting on I/O) and stolen by a hypervisor, in nanoseconds.
+    #[derive(Clone, Copy)]
+    pub struct CpuTimes {
+        pub busy_ns: u64,
+        pub steal_ns: u64,
+    }
+
+    #[cfg(unix)]
+    unsafe extern "C" {
+        fn sysconf(name: i32) -> i64;
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn read() -> Option<CpuTimes> {
+        const SC_CLK_TCK: i32 = 2;
+        let ticks_per_second = u64::try_from(unsafe { sysconf(SC_CLK_TCK) }).expect("sysconf(_SC_CLK_TCK) is positive");
+        let stat = std::fs::read_to_string("/proc/stat").ok()?;
+        let fields: Vec<u64> = stat
+            .lines()
+            .next()?
+            .strip_prefix("cpu ")?
+            .split_whitespace()
+            .map(|field| field.parse().expect("/proc/stat counts are integers"))
+            .collect();
+        /* user nice system idle iowait irq softirq steal (guest time is inside user). */
+        assert!(fields.len() >= 8, "/proc/stat's cpu line has at least eight fields");
+        let busy = fields[0] + fields[1] + fields[2] + fields[5] + fields[6];
+        let to_ns = |ticks: u64| ticks * 1_000_000_000 / ticks_per_second;
+        Some(CpuTimes { busy_ns: to_ns(busy), steal_ns: to_ns(fields[7]) })
+    }
+
+    #[cfg(target_vendor = "apple")]
+    pub fn read() -> Option<CpuTimes> {
+        /* host_statistics(HOST_CPU_LOAD_INFO): user, system, idle, nice ticks. */
+        const HOST_CPU_LOAD_INFO: i32 = 3;
+        const SC_CLK_TCK: i32 = 3;
+        unsafe extern "C" {
+            fn mach_host_self() -> u32;
+            fn host_statistics(host: u32, flavor: i32, info: *mut u32, count: *mut u32) -> i32;
+        }
+        let ticks_per_second = u64::try_from(unsafe { sysconf(SC_CLK_TCK) }).expect("sysconf(_SC_CLK_TCK) is positive");
+        let mut ticks = [0u32; 4];
+        let mut count = 4u32;
+        let rc = unsafe { host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, ticks.as_mut_ptr(), &mut count) };
+        if rc != 0 || count != 4 {
+            return None;
+        }
+        /* The counters are 32-bit and wrap; LoadMonitor takes wrapping differences. */
+        let busy = u64::from(ticks[0]) + u64::from(ticks[1]) + u64::from(ticks[3]);
+        Some(CpuTimes { busy_ns: busy * 1_000_000_000 / ticks_per_second, steal_ns: 0 })
+    }
+
+    #[cfg(not(any(target_os = "linux", target_vendor = "apple")))]
+    pub fn read() -> Option<CpuTimes> {
+        None
+    }
+}
+
+/// Other programs' load over one window, or over the whole run, in
+/// milli-CPUs.
+#[derive(Clone, Copy)]
+struct LoadReading {
+    other: u64,
+    steal: u64,
+}
+
+/// The load during a run: its average and each window's, in order.
+#[derive(Clone)]
+struct Load {
+    average: LoadReading,
+    windows: Vec<LoadReading>,
+}
+
+impl Load {
+    fn busiest(&self) -> LoadReading {
+        LoadReading {
+            other: self.windows.iter().map(|w| w.other).max().unwrap_or(self.average.other),
+            steal: self.windows.iter().map(|w| w.steal).max().unwrap_or(self.average.steal),
+        }
+    }
+
+    fn busy(&self) -> bool {
+        let busiest = self.busiest();
+        busiest.other.max(busiest.steal) >= LOAD_BUSY_MILLI_CPUS
+    }
+
+    /// One line for readers: "quiet: other programs kept 0.02 CPUs busy on
+    /// average, 0.10 in the busiest 5 s" (with the hypervisor's share
+    /// where it took any).
+    fn describe(&self) -> String {
+        let cpus = |milli: u64| {
+            let hundredths = (milli + 5) / 10;
+            format!("{}.{:02}", hundredths / 100, hundredths % 100)
+        };
+        let busiest = self.busiest();
+        let mut line = format!(
+            "{}: other programs kept {} CPUs busy on average, {} in the busiest {} s",
+            if self.busy() { "busy" } else { "quiet" },
+            cpus(self.average.other),
+            cpus(busiest.other),
+            LOAD_WINDOW_NS / 1_000_000_000,
+        );
+        if busiest.steal > 0 {
+            write!(line, "; the hypervisor withheld {} CPUs on average, {} at most", cpus(self.average.steal), cpus(busiest.steal)).unwrap();
+        }
+        if self.busy() {
+            line.push_str("; some results may read slower than this machine can run");
+        }
+        line
+    }
+}
+
+/// Reads the machine's and this process's CPU time at round boundaries.
+struct LoadMonitor {
+    first: (std::time::Instant, cpu_times::CpuTimes, u64),
+    window: (std::time::Instant, cpu_times::CpuTimes, u64),
+    windows: Vec<LoadReading>,
+}
+
+impl LoadMonitor {
+    fn reading() -> Option<(std::time::Instant, cpu_times::CpuTimes, u64)> {
+        let times = cpu_times::read()?;
+        Some((std::time::Instant::now(), times, trace_clocks::process_cpu_ns()))
+    }
+
+    /// None where the OS reports no CPU times.
+    fn start() -> Option<Self> {
+        let now = Self::reading()?;
+        Some(Self { first: now, window: now, windows: Vec::new() })
+    }
+
+    /// Other load between two readings, in milli-CPUs. Tick rounding can
+    /// put the machine's busy time a little under this process's own; that
+    /// reads as none.
+    fn between(from: (std::time::Instant, cpu_times::CpuTimes, u64), to: (std::time::Instant, cpu_times::CpuTimes, u64)) -> LoadReading {
+        let wall_ns = u64::try_from(to.0.duration_since(from.0).as_nanos()).expect("a run lasts under 584 years").max(1);
+        let busy_ns = to.1.busy_ns.wrapping_sub(from.1.busy_ns);
+        let own_ns = to.2 - from.2;
+        let steal_ns = to.1.steal_ns.wrapping_sub(from.1.steal_ns);
+        let milli = |ns: u64| u64::try_from(u128::from(ns) * 1000 / u128::from(wall_ns)).expect("load fits in u64");
+        LoadReading { other: milli(busy_ns.saturating_sub(own_ns)), steal: milli(steal_ns) }
+    }
+
+    fn round_boundary(&mut self) {
+        let now = Self::reading().expect("the OS kept reporting CPU times");
+        if now.0.duration_since(self.window.0).as_nanos() >= u128::from(LOAD_WINDOW_NS) {
+            self.windows.push(Self::between(self.window, now));
+            self.window = now;
+        }
+    }
+
+    fn finish(mut self) -> Load {
+        let now = Self::reading().expect("the OS kept reporting CPU times");
+        /* The last stretch counts as a window when it is at least half one long. */
+        if now.0.duration_since(self.window.0).as_nanos() >= u128::from(LOAD_WINDOW_NS / 2) {
+            self.windows.push(Self::between(self.window, now));
+        }
+        Load { average: Self::between(self.first, now), windows: self.windows }
+    }
+}
+
 /// Whether a cell under the time budget takes a sample this round:
 /// in every LONG_EVERY-th round (`slot` is the round plus the cell's own
 /// offset), and in every round while its median is not yet known to within
@@ -2681,6 +2874,12 @@ fn generate_samples_tsv(roster: &Roster, samples: &RunSamples, machine: &Machine
     ] {
         writeln!(out, "# {key}: {value}").unwrap();
     }
+    if let Some(load) = &machine.load {
+        let list = |pick: fn(&LoadReading) -> u64| load.windows.iter().map(|w| pick(w).to_string()).collect::<Vec<_>>().join(",");
+        writeln!(out, "# load: {}", load.describe()).unwrap();
+        writeln!(out, "# other load by {} s window (milli-CPUs): {}", LOAD_WINDOW_NS / 1_000_000_000, list(|w| w.other)).unwrap();
+        writeln!(out, "# steal by {} s window (milli-CPUs): {}", LOAD_WINDOW_NS / 1_000_000_000, list(|w| w.steal)).unwrap();
+    }
     for &algorithm in &roster.algorithms {
         for use_case in UseCase::ALL.iter().filter(|&&use_case| algorithm.takes_part(use_case)) {
             writeln!(out, "# kernel platform {} {:?}: {}", algorithm.key(), use_case, detect_kernels(algorithm, *use_case).platform).unwrap();
@@ -2789,6 +2988,10 @@ fn generate_text(roster: &Roster, results: &Results, samples: &RunSamples, machi
     writeln!(output, "  CPU: {}", machine.cpu_identity).unwrap();
     writeln!(output, "  {RUSTC_VERSION}; target {BUILD_TARGET}; features {TARGET_FEATURES}").unwrap();
     writeln!(output, "  clock: {}", sample_clock::NAME).unwrap();
+    match &machine.load {
+        Some(load) => writeln!(output, "  load during the run: {}", load.describe()).unwrap(),
+        None => writeln!(output, "  load during the run: not measured on this platform").unwrap(),
+    }
     writeln!(output, "  every contender matched golden digests on the timed inputs before timing began").unwrap();
 
     output
@@ -3083,6 +3286,7 @@ fn machine_metadata() -> MachineMetadata {
         cpu_count: cpus.len(),
         os_type,
         cpu_identity: cpu_identity(),
+        load: None,
     }
 }
 
@@ -4449,12 +4653,26 @@ fn shared_provenance_cats(machine: &MachineMetadata, selection_note: &str) -> Ve
         ProvCat {
             key: "machine",
             name: "Machine",
-            summary: format!("{} · {} CPUs · {}", machine.cpu_type, machine.cpu_count, machine.os_type),
+            summary: format!(
+                "{} · {} CPUs · {}{}",
+                machine.cpu_type,
+                machine.cpu_count,
+                machine.os_type,
+                match &machine.load {
+                    Some(load) if load.busy() => " · busy during the run",
+                    Some(_) => " · quiet during the run",
+                    None => "",
+                },
+            ),
             lines: vec![
                 format!(
                     "Machine: {} · {} logical CPUs · {}",
                     machine.cpu_type, machine.cpu_count, machine.os_type,
                 ),
+                match &machine.load {
+                    Some(load) => format!("Load during the run: {}", load.describe()),
+                    None => "Load during the run: not measured on this platform".to_owned(),
+                },
                 format!("Toolchain: {RUSTC_VERSION} · {BUILD_TARGET}"),
                 format!("Sample clock: {}", sample_clock::NAME),
             ],

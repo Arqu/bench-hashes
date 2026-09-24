@@ -81,16 +81,12 @@ before touching kernels or the pool); this repository's are in `NOTES.md`.
 - Branch naming `candidate/<topic>`; no promotion without the Mac verdict.
 - The Mac runner is launched manually by the user; code from GitHub only.
 
-## Waiting on Zooko
+## Decided September 25 (Zooko)
 
-- Start the Mac runner (`sh ~/piplayground/blake3-servil/tools/runner/setup-mac.sh`;
-  it also installs the runner that builds through the patch) so job 112
-  re-records the Mac for the published page.
-- Decisions asked on September 25: SHA-256 (sha2) shown when the graph
-  opens beside ring (sha2 leads at 64-128 B and in every batch); the
-  fork's build failing on AArch64 Linux with GCC < 14 or Clang < 17
-  (Debian 12, Raspberry Pi OS) where it could build without SME2;
-  whether README invites results as pull requests.
+- The fork builds without SME2 (a warning) when the compiler cannot
+  assemble it: `candidate/sme2-optional-build`, gated like any code change.
+- README invites results as pull requests (a folder per machine).
+- Every run reports other programs' load in its provenance (NOTES.md).
 
 ## Open problems
 
@@ -102,7 +98,11 @@ it, or at least predicted (AGENTS.md, "we own every slowdown").
    chunk, 4 KiB two scalars beside a pair (integer-bound); ideas estimated,
    not built: parents and root inside k4 (about 3.6%), a direct small-tree
    path (1-2%); a faster pair chain would move 2-3 KiB.
-2. **Benchmarks on hardware they cannot see or steer** (the VM): the host
+2. **Benchmarks on hardware they cannot see or steer** (the VM): runs
+   report other programs' load from OS counters, but this hypervisor
+   reports no steal time, so host load stays invisible in the guest (a
+   reference loop timed beside the samples would show it; NOTES.md, "Load
+   from other programs"). The host
    places vCPUs on P- or E-cores at will; cells come out two-speed with
    run-to-run splits. Round-by-round pairing and two-speed reporting exist;
    to weigh: inferring each sample's core kind from a reference loop timed

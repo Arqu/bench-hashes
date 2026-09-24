@@ -119,6 +119,20 @@ sha2 SHA-NI and portable code). The graph opens showing servil mt, both
 SHA-256 crates, and crates.io BLAKE3 (`SHOWN_AT_FIRST`); a run without
 any of them shows everything.
 
+**Load from other programs** (September 25, 2026, after a Mac record
+read 8-10% slow across every contender with dips in the batch plot, most
+likely from the user's own work on the Mac): at round boundaries the run
+reads the machine's busy CPU time (`/proc/stat`, macOS
+`host_statistics(HOST_CPU_LOAD_INFO)`) and its own process CPU time; the
+difference over 5 s windows (10 ms ticks make shorter ones noisy) is other
+programs' load, in milli-CPUs. Busy: the busiest window at 0.5 CPU or
+more. Provenance, text report, and samples (`# load:`, `# other load by
+5 s window`, `# steal by 5 s window`) carry it. VM quiet 0.02 CPUs
+average, 0.07 worst; two `yes` loops read 2.04. **Open**: this VM's
+hypervisor reports no steal (0 since boot through Mac jobs), so host load
+stays invisible in the guest; a reference loop timed beside the samples
+would see it.
+
 **Graph labels** (September 2026, after overlaps in the published
 graph): right-hand names stack 34 px apart, so eight fit inside a plot;
 x labels place the powers of two first, then the sizes between, on two

@@ -167,10 +167,10 @@ the crossover near 128–256 B is structural.
 BLAKE3 servil is the same crate from the `servil` branch of
 github.com/johnservil/BLAKE3, at the commit `Cargo.lock` pins, under
 the crate name `blake3-servil` so it links beside the crates.io crate.
-On AArch64 Linux and macOS the build requires a toolchain that
-assembles SME2 (Clang 17 or later, Xcode 15 or later, or GCC 14 or
-later with binutils 2.41) and stops with a message naming the fix
-without one. At run time the
+On AArch64 Linux and macOS the build includes the SME2 kernel when the
+C compiler assembles SME2 (Clang 17 or later, Xcode 15 or later, or GCC
+14 or later with binutils 2.41), and leaves it out with a warning
+otherwise; only CPUs with SME2 run it. At run time the
 fork reads the CPU: one that reports SME2 with a 512-bit streaming
 vector length gets the SME2 group kernel for sixteen chunks and up;
 every AArch64 core runs the scalar and integer + NEON hybrid kernels.
@@ -399,6 +399,23 @@ report), `bench-hashes.graph.svg` (the graph), and
 `bench-hashes.samples.tsv` (every sample of every cell, both scenarios,
 in the order taken, with the provenance and the CPU's identity as
 `# key: value` lines).
+
+## Load from other programs
+
+While it measures, the run reads how much CPU time the whole machine
+spent busy and how much this process used; the difference is CPU time
+other programs took. Linux also reports steal time, CPU time a
+hypervisor withheld from a virtual machine's CPUs for other work on the
+host. The OS counts both in 10 ms ticks, so the run sums them over
+windows of 5 seconds. The report, the samples file, and the graph's
+Provenance section give the run's average and its busiest window, in
+CPUs kept busy, and call the run busy when the busiest window reached
+half a CPU (other programs or steal). Measured in a quiet 16-CPU Linux
+VM: 0.02 CPUs on average; with two busy loops beside the run: 2.04.
+
+Hypervisors that report no steal time (Apple's Virtualization framework,
+for one) keep a VM's guest from seeing load on the host, so a VM can
+read quiet while the host is busy.
 
 ## Build settings and provenance
 

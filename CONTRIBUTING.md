@@ -66,6 +66,13 @@ benchmark.
   `bench-hashes.samples.tsv` (`contender`, `scenario`, `use_case`,
   `point`, `unit`, `ps_per_unit`).
 
+## Results from other machines
+
+Pull requests that add a machine's results are welcome: one folder under
+`benchmark-results/`, the three files a run writes, from a clean commit
+of this repository. A second machine of a kind we already have gets a
+folder name of its own.
+
 ## Adding a contender
 
 A contender is a variant of `Algorithm` in `src/main.rs`, with an entry

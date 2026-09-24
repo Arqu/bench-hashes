@@ -28,10 +28,6 @@ The first build takes a minute or two. The run checks every hash against
 known answers, then measures for a few minutes. The numbers come out most
 accurate when nothing else busy runs on the computer meanwhile.
 
-On Linux on 64-bit ARM, the build needs Clang 17 or later, or GCC 14 or
-later. With an older system compiler, install a newer Clang and name it
-in the command, for example `CC=clang-19 cargo run --release`.
-
 ## Read your results
 
 The run writes three files to `benchmark-results/`, in a folder named after
@@ -49,6 +45,11 @@ the first plot hashes one input per call, from 64 B to 128 MiB. The
 second hashes a batch of 64-byte messages per call. Higher is faster.
 Hover over a dot, or tap it, to compare every contender at that point.
 Click a name at the right to show or hide that contender.
+
+At the bottom, the Provenance section says what was measured and on
+what machine. Its Machine line also says whether the computer was quiet
+during the run or busy with other programs. If it says busy, run again
+when the computer is quieter: other programs slow the results down.
 
 The contenders:
 
@@ -85,6 +86,13 @@ results above are:
 A minute later your graph is at
 `https://YOU.github.io/bench-hashes/benchmark-results/FOLDER/bench-hashes.graph.svg`,
 where FOLDER is the folder the run created.
+
+We would be glad to add your results to ours: once they are pushed to
+your fork, open a pull request to `johnservil/bench-hashes` on GitHub.
+Say in it what computer you ran on. Results from a machine we already
+have go beside ours rather than over them: rename your folder first,
+for example
+`git mv benchmark-results/AppleM4Max.darwin25 benchmark-results/AppleM4Max.darwin25.yourname`.
 
 ## More
 
