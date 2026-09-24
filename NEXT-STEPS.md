@@ -8,6 +8,51 @@ Principles are in both repos' `AGENTS.md` (read them: minimax, "we own
 every slowdown a user could meet", presentation costs, branches); every
 measurement is in the fork's `NOTES-servil.md` and this repo's `NOTES.md`.
 
+## For the user this morning (the night of September 23-24, 2026)
+
+The night's objective, from the user: shrink the list of cells where a
+competitor beats servil or servil mt; `pypy3 tools/losses.py SAMPLES.tsv`
+in the fork prints it (score = cells lost by more than 3%; 37-38 on the
+Mac's thorough runs). Details and numbers: the fork's NOTES-servil.md,
+section "Session: kernels by core kind, the E-core trigger, the minimax
+list".
+
+**Landed on servil** (each through the whole gate, verdicts in
+`refs/notes/perf`): k7 and k9 + k3 for seven and twelve chunks (faster on
+P, E, and the VM); arrays sized for sixteen chaining values in hash() at
+2-16 KiB (Mac 2-4 KiB 4-5% faster; 4 KiB solo now within 2% of SHA-256
+ring). Tools: the runner, `wait_for.py`, `losses.py`, the hook fixes (an
+empty commit, a227f6d, came from the hook overwriting the index).
+
+**Decisions waiting for the user** (each a candidate branch):
+
+1. `candidate/one-sme2-call`: one SME2 call at a time per process; a
+   concurrent call runs NEON. Controls open problem 4: solo samples on
+   E-cores 3.7% -> 0.0% (every contender). Solo cells unchanged. Shared
+   cells lose the lucky mode (both copies on their own SME unit: 1 MiB
+   0.178 -> 0.224, batches 128+ +25-50%) and gain the unlucky one
+   (batches 16-64: 18.9 -> 12.3, -35%); worst case bounded by NEON. The
+   list: 38 -> 41 (servil mt against servil in shared batches of 32-64,
+   which copy gets SME2 being a coin toss). Runner jobs 060-062.
+2. `candidate/neon-k4-pairs`: k4 as two NEON pairs. E-core 4 KiB -22%
+   (beats upstream there), P-core 4 KiB +14%, which puts 4 KiB back on
+   the list against SHA-256 ring. By the list: no.
+3. `candidate/neon-plans-minimax`: k4 and k6 without a second scalar
+   chunk, 14 and 16 chunks on k9 + k5 / k9 + k7. mt 3-8 MiB -6 to -13%,
+   mt 256 KiB-1 MiB +3.5 to +10.5%, 4 KiB as in 2. By the list: no.
+   (2 and 3 predate two commits on servil; rebase before any use.)
+
+**What the list is made of.** Of the 37-38 cells, about 30 are single
+messages to 2 KiB and a batch of one: one BLAKE3 chunk is a dependency
+chain of at least 168 cycles per 64-byte block (2.6 cycles per byte) on
+this hardware, against hardware SHA-256's 1.4-1.6; folding G's rotations
+into its xors was 7-13% slower (an xor with a rotated operand takes two
+cycles). 3 KiB (SHA-256 ring +11-17%) is bound by the NEON pair kernel; at
+zero overhead it would gain 4%. 4 KiB sits within 2-9% of SHA-256 ring
+depending on the run. servil mt at 512 messages (+25% against servil) is
+the length pass before the SME2 kernels; no pass is good on both machines
+(open, NOTES).
+
 ## Where things stand (end of the September 23, 2026 session)
 
 - **Fork** `/workspace`: main branch **`servil`** (renamed from
