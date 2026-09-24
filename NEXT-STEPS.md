@@ -24,9 +24,10 @@ before touching kernels or the pool); this repository's are in `NOTES.md`.
   builds without SME2 on older compilers), pushed with its gate note; no
   candidates pending. bench-hashes pins it.
 - Benchmark branch `main`, pushed. Records for both machines: fork
-  7dba117, bench d32b03e (two-speed drawing), full `--all` runs, both
-  quiet (Mac runner job 117: 0.47 CPUs of other load on average, 0.76 at
-  most; VM 0.01). Job 116 read busy (1.1-1.5 CPUs) and was rerun.
+  7dba117, bench a0cebc6 (graph opens on three lines), full `--all` runs,
+  both quiet (Mac runner job 119: 0.47 CPUs of other load on average, 0.53
+  at most; VM 0.01). Mac jobs 116 and 118 read busy (1-1.8 CPUs) and were
+  rerun.
 - **The minimax list** (`pypy3 tools/losses.py <samples.tsv>` in the fork):
   48 cells on the VM and 49 on the Mac, every one lost to SHA-256 or SHA-256 ring: one
   message to 4 KiB (solo and shared, servil and servil mt), 2304, 3839,
