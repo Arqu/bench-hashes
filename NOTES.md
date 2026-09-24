@@ -13,8 +13,13 @@ and the list of ways it can still lie.
 
 ## What is settled
 
-**Sizes.** Twenty-three: 64 B to 128 MiB by powers of two but 16 MiB,
-plus 3 KiB and 3 MiB. Sixteen through 1 MiB came first; 2, 4, and 8 MiB were added
+**Sizes.** Twenty-seven: 64 B to 128 MiB by powers of two but 16 MiB,
+plus 3 KiB and 3 MiB, plus four sizes of real data between 2 and 8 KiB,
+chosen by use rather than by any implementation's structure: 2304 B (an
+802.11 frame body at its maximum), 3839 and 7935 B (the 802.11n A-MSDU
+maxima), 4470 B (the Packet over SONET/SDH MTU). None is a multiple of a
+chunk, as real inputs seldom are; they showed a trailing partial chunk
+costing the fork 7-65% until it ran beside the whole ones. Sixteen through 1 MiB came first; 2, 4, and 8 MiB were added
 to show the plateau, then 16 to 128 MiB when the fork's multithreaded
 rate was still climbing at 8 MiB (it levels from 4 MiB with the ranked
 pool; Rayon's still falls at 128 MiB on the VM). 16 MiB was dropped
@@ -234,10 +239,6 @@ automatically.
   which is the right answer, but nothing automated checks it.
 
 - **Idle between calls.** See "persistent worker threads" above.
-
-- **Per-copy clock traces.** `--trace-clocks` records the solo sample
-  and, for each shared copy, its time and its thread's P/E counts, read
-  outside the copy's timed interval.
 
 - **Noise floor.** `~` marks cells whose 95% median interval is at least
   5% of its median. Keep VM and native results separate: both are target
