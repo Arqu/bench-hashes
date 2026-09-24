@@ -23,7 +23,9 @@ P, E, and the VM); arrays sized for sixteen chaining values in hash() at
 2-16 KiB (Mac 2-4 KiB 4-5% faster; 4 KiB solo now within 2% of SHA-256
 ring); servil mt skips its length pass for batches of fewer than 1024
 one-block messages (512 messages: 12.40 -> 9.86 ns/msg, level with servil,
-off the list on both machines). Tools: the runner, `wait_for.py`, `losses.py`, the hook fixes (an
+off the list on both machines); hash() to 1 KiB reads a full final block
+in place (64 B -1.3 to -1.9%, now ahead of ab-blake3 there; 128 B-1 KiB
++0.0 to +0.7%). Tools: the runner, `wait_for.py`, `losses.py`, the hook fixes (an
 empty commit, a227f6d, came from the hook overwriting the index).
 
 **Decisions waiting for the user** (each a candidate branch):
