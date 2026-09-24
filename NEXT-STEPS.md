@@ -36,6 +36,11 @@ empty commit, a227f6d, came from the hook overwriting the index).
    (batches 16-64: 18.9 -> 12.3, -35%); worst case bounded by NEON. The
    list: 38 -> 41 (servil mt against servil in shared batches of 32-64,
    which copy gets SME2 being a coin toss). Runner jobs 060-062.
+   Rebased onto servil (d6e6c18, with the batch change of fc8cc85: the
+   prefix scan takes the turn too); suites pass. `perf_regress` gives no
+   verdict on it on either machine: the change moves the control (SHA-256
+   in the same process) on the new side. A decision here also needs a
+   rule for judging it, e.g. worst speed per cell, or E-core share.
 2. `candidate/neon-k4-pairs`: k4 as two NEON pairs. E-core 4 KiB -22%
    (beats upstream there), P-core 4 KiB +14%, which puts 4 KiB back on
    the list against SHA-256 ring. By the list: no.
