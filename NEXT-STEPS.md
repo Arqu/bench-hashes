@@ -65,13 +65,9 @@ empty commit, a227f6d, came from the hook overwriting the index).
    those cells leave the list. Recommendation: take it (VM clearly better,
    Mac worst cases better, Mac lucky mode worse; a native/VM split that
    needs the user's decision on the record, per AGENTS).
-2. `candidate/neon-k4-pairs`: k4 as two NEON pairs. E-core 4 KiB -22%
-   (beats upstream there), P-core 4 KiB +14%, which puts 4 KiB back on
-   the list against SHA-256 ring. By the list: no.
-3. `candidate/neon-plans-minimax`: k4 and k6 without a second scalar
-   chunk, 14 and 16 chunks on k9 + k5 / k9 + k7. mt 3-8 MiB -6 to -13%,
-   mt 256 KiB-1 MiB +3.5 to +10.5%, 4 KiB as in 2. By the list: no.
-   (2 and 3 predate two commits on servil; rebase before any use.)
+2. `candidate/neon-k4-pairs` and `candidate/neon-plans-minimax`: rejected
+   by the user (September 24), branches deleted. k8 as two scalars + quad
+   + pair: taken (fork 56e9680; 8 KiB P -15.6%, E +6.7%).
 
 **What the list is made of.** Of the 37-38 cells, about 30 are single
 messages to 2 KiB and a batch of one: one BLAKE3 chunk is a dependency
