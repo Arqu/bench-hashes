@@ -23,10 +23,11 @@ before touching kernels or the pool); this repository's are in `NOTES.md`.
 - Fork `/workspace`, branch **`servil`** at 7dba117 (2a82c8c's kernels;
   builds without SME2 on older compilers), pushed with its gate note; no
   candidates pending. bench-hashes pins it.
-- Benchmark branch `main`, pushed. Records for both machines: fork
-  7dba117, bench 795e9bb, full `--all` runs (the Mac's runner job 115),
-  both quiet by the new load line (Mac 0.47 CPUs of steady background,
-  VM 0.01).
+- Benchmark branch `main`, pushed. VM record: fork 7dba117, bench
+  d32b03e (two-speed drawing), quiet. Mac record: fork 7dba117, bench
+  795e9bb (job 115), quiet; its re-record on d32b03e (job 116) read
+  busy (1.1-1.5 CPUs of steady other load, medians within 2% of 115's)
+  and waits on Zooko: publish as busy, or rerun on a quieter Mac.
 - **The minimax list** (`pypy3 tools/losses.py <samples.tsv>` in the fork):
   48 cells on the VM and 49 on the Mac, every one lost to SHA-256 or SHA-256 ring: one
   message to 4 KiB (solo and shared, servil and servil mt), 2304, 3839,

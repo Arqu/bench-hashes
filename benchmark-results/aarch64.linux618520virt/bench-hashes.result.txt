@@ -1,184 +1,183 @@
-Hash speed on aarch64 (linux6.18.52-0-virt, 16 CPUs), 2026-09-24 18:52:18 UTC
+Hash speed on aarch64 (linux6.18.52-0-virt, 16 CPUs), 2026-09-24 19:13:43 UTC
 Full run: 96 rounds. Each cell is the median time per unit, lower is better; a|b: the cell ran at two speeds, both medians given, faster first; ~ marks a median known only to within 5%.
 
 SOLO: one copy of each contender on one thread, the machine otherwise idle.
 
   One message per call (ns/B)
   size              BLAKE3         SHA-256         SHA-1DC   BLAKE3 servil    SHA-256 ring       BLAKE3 mt    B3 servil mt       ab-blake3
-  64 B              0.782           0.521           2.818           0.738           0.665           0.910           0.739           0.761 
-  128 B             0.800           0.408           2.005           0.728           0.450           0.796           0.731           0.797 
-  256 B             0.786           0.364           1.575           0.728           0.362           0.787           0.728           0.786 
-  512 B             0.778           0.352           1.352           0.726           0.335           0.779           0.725           0.785 
-  1 KiB             0.775           0.346           1.315           0.722           0.322           0.775           0.725           0.782 
-  2 KiB             0.793           0.344           1.228           0.483           0.312           0.802           0.484           0.807 
-  2304 B            0.815           0.342           1.218           0.466           0.312           0.818           0.468           0.827 
-  3 KiB             0.805           0.342           1.233           0.357           0.310           0.808           0.357           0.811 
-  3839 B            0.813           0.343           1.217           0.348           0.314           0.818           0.348           0.821 
-  4 KiB             0.437           0.341           1.213           0.329           0.313           0.442           0.330           0.817 
-  4470 B            0.471           0.334           1.197           0.366           0.305           0.479           0.366           0.824 
-  7935 B            0.610           0.338           1.212           0.275           0.310           0.630           0.276           0.821 
-  8 KiB             0.432           0.337           1.213           0.264           0.311           4.037~          0.262           0.822 
-  16 KiB            0.423           0.336           1.207           0.229           0.305           5.505           0.230           0.813 
-  32 KiB            0.421           0.334           1.203           0.217           0.304           6.678           0.217           0.812 
-  64 KiB            0.426           0.336           1.214           0.211           0.305           7.078~    0.105|0.140~          0.815 
-  128 KiB           0.426           0.342           1.243           0.206           0.308     1.996|6.352~    0.068|0.088           0.818 
-  256 KiB           0.427           0.341           1.273           0.198           0.308     1.007|3.638~    0.056|0.078~          0.820 
-  512 KiB           0.431           0.339           1.285           0.184           0.311           1.836~    0.043|0.056~          0.827 
-  1 MiB             0.438           0.345           1.283           0.179           0.316     0.436|1.123~    0.036|0.047~          0.832 
-  2 MiB             0.435           0.353           1.267           0.175           0.312     0.154|0.553~    0.032|0.042~          0.828 
-  3 MiB             0.432           0.349           1.259           0.174           0.317     0.200|0.655~    0.038|0.048~          0.828 
-  4 MiB             0.431           0.345           1.260           0.176           0.315     0.121|0.331~    0.031|0.040~          0.829 
-  8 MiB             0.433           0.339           1.249           0.174           0.311     0.066|0.204~          0.032           0.825 
-  32 MiB            0.430           0.327           1.246           0.171           0.310     0.041|0.073~    0.027|0.036~          0.825 
-  64 MiB            0.430           0.337           1.246           0.169           0.310     0.037|0.049~          0.025           0.823 
-  128 MiB           0.431           0.334           1.247           0.167           0.312           0.038~          0.024           0.824 
+  64 B              0.774           0.511           2.814           0.730           0.749           0.898           0.733           0.754 
+  128 B             0.792           0.399           2.005           0.726           0.466           0.791           0.726           0.794 
+  256 B             0.779           0.363           1.568           0.720           0.387           0.774           0.721           0.776 
+  512 B             0.766           0.347           1.337           0.715           0.341           0.769           0.718           0.775 
+  1 KiB             0.768           0.343           1.300           0.715           0.324           0.761           0.717           0.772 
+  2 KiB             0.779           0.335           1.215           0.475           0.310           0.782           0.474           0.796 
+  2304 B            0.797           0.335           1.204           0.460           0.309           0.803           0.461           0.812 
+  3 KiB             0.785           0.338           1.221           0.354           0.312           0.792           0.352           0.799 
+  3839 B            0.800           0.337           1.208           0.346           0.314           0.800           0.347           0.818 
+  4 KiB             0.426           0.336           1.202           0.327           0.308           0.428           0.327           0.803 
+  4470 B            0.463           0.329           1.182           0.363           0.300           0.462           0.362           0.812 
+  7935 B            0.597           0.335           1.198           0.273           0.307           0.617           0.273           0.811 
+  8 KiB             0.419           0.334           1.195           0.261           0.305           3.965           0.261           0.811 
+  16 KiB            0.414           0.332           1.189           0.230           0.300           5.565           0.230           0.801 
+  32 KiB            0.410           0.334           1.195           0.218           0.301           6.642           0.218           0.800 
+  64 KiB            0.413           0.334           1.203           0.212           0.302           6.939     0.107|0.141~          0.806 
+  128 KiB           0.417           0.334           1.233           0.206           0.303     3.394|6.142~    0.068|0.087~          0.812 
+  256 KiB           0.419           0.334           1.259           0.198           0.303     1.527|3.426~    0.059|0.084~          0.808 
+  512 KiB           0.424           0.334           1.279           0.180           0.305     0.940|2.003~    0.042|0.053           0.807 
+  1 MiB             0.426           0.335           1.276           0.170           0.305     0.769|1.138~    0.035|0.046           0.823 
+  2 MiB             0.431           0.349           1.261           0.169           0.306     0.134|0.548~          0.035~          0.821 
+  3 MiB             0.424           0.338           1.255           0.168           0.310     0.186|0.652~    0.039|0.053~          0.822 
+  4 MiB             0.421           0.340           1.260           0.169           0.310     0.067|0.203~    0.035|0.045~          0.826 
+  8 MiB             0.425           0.332           1.248           0.170           0.301     0.061|0.147~    0.031|0.041~          0.822 
+  32 MiB            0.425           0.325           1.247           0.177           0.302~    0.042|0.079~          0.027           0.820 
+  64 MiB            0.428           0.330           1.247           0.178           0.302     0.039|0.056~          0.025           0.821 
+  128 MiB           0.429           0.324           1.246           0.172           0.303           0.035~          0.024           0.822 
 
   Many 64-byte messages per call (ns/msg)
   messages          BLAKE3         SHA-256         SHA-1DC   BLAKE3 servil    SHA-256 ring    B3 servil mt       ab-blake3
-  1                50.290          33.919         182.146          47.312          43.092          47.506          49.050 
-  2                47.753          33.064         178.578          28.280          43.080          28.782          46.408 
-  3                47.704          32.968         178.813          31.865          43.202          31.872          46.239 
-  4                47.754          32.736         178.211          25.462          42.869          25.400          46.112 
-  6                47.602          32.816         177.296          26.278          42.911          26.155          46.008 
-  8                47.646          32.353         178.895          20.059          42.676          19.971          46.161 
-  12               48.082          32.259         185.254          21.379          42.653          21.378          46.308 
-  16               47.685          31.654         181.996   10.178|13.673          42.085   10.174|13.704          23.868 
-  24               47.535          31.684         179.541          12.642          42.345          12.650          30.745 
-  32               47.044          31.155         177.513           9.911          41.727           9.925          23.326 
-  48               46.904          30.914         178.255           9.877          41.491           9.883          23.241 
-  64               46.766          30.942         176.079           9.822          41.426           9.812          22.896 
-  128              46.443          30.580         178.452          10.369          41.050          10.388          22.935 
-  256              46.480          30.956         178.623          10.236          41.170   10.228|13.858          22.887 
-  512              46.539          30.892         179.091          10.492          41.304          10.393          22.895 
-  1024             46.918          31.166         181.600          12.313          41.394     6.828|9.114~         22.842 
-  2048             47.291          31.852         185.045          11.924          41.954           5.711          23.323 
-  4096             47.281          31.947         186.254          11.560          42.364     4.294|5.416~         23.509 
-  8192             47.573          32.330         187.490          11.138          42.136           3.831          23.859 
-  16384            47.705          32.591         186.370          10.727          42.632           3.289          23.944 
-  32768            47.605          32.722         185.159          10.672          42.586           3.133          24.414 
-  65536            47.654          32.253         185.385          11.262          42.674           3.370          24.132 
-  131072           47.392          31.213         184.698          11.018          42.494           3.159          23.822 
-  262144           47.346          31.317         184.741          10.903          42.468     3.251|4.216          23.742 
+  1                50.225          33.742         182.719          47.173          49.412          47.328          48.950 
+  2                47.564          32.049         176.714          27.834          48.624          28.454          46.069 
+  3                47.527          32.127         179.086          31.547          48.371          31.729          46.034 
+  4                47.422          31.877         177.263          25.323          48.318          25.253          45.876 
+  6                47.435          31.806         176.461          26.336          48.409          26.361          45.787 
+  8                47.366          31.726         178.035          19.830          48.162          19.746          45.860 
+  12               47.978          31.649         184.287          21.194          48.044          21.139          45.918 
+  16               47.022          31.160         180.244          10.170          46.769          10.180          23.359 
+  24               47.239          31.127         177.955          12.691          46.829          12.699          30.246 
+  32               46.270          30.848         175.187           9.919          46.348           9.913          23.013 
+  48               46.143          30.565         175.836           9.868          46.105           9.871          22.833 
+  64               46.132          30.631         174.546           9.813          45.568           9.789          22.719 
+  128              45.754          30.563         175.105   10.401|14.969          45.779   10.414|14.973          22.633 
+  256              46.070          30.602         177.016   10.220|13.700          45.874   10.175|13.810          22.659 
+  512              45.671          30.662         177.541   10.153|12.984          45.899   10.135|13.020          22.634 
+  1024             46.113          30.906         178.114          12.128          46.341     6.626|8.998~         22.747 
+  2048             46.835          31.489         182.733          11.791          46.443           5.626          22.879 
+  4096             46.630          31.417         184.362          11.360          46.442           4.240          23.082 
+  8192             47.104          31.717         185.283          11.081          47.100           3.850          23.517 
+  16384            46.852          31.693         185.491          10.678          47.868           3.322          23.784 
+  32768            47.016          31.671         184.460          10.596          47.443           3.164          23.672 
+  65536            47.247          31.453         184.194          11.233          47.637           3.379          23.650 
+  131072           47.215          31.116         183.900          10.928          47.419           3.211          23.367 
+  262144           47.035          30.688         184.116          10.790          47.222           3.240          23.631 
 
 SHARED: two copies of the contender at once, each hashing its own input on its own thread; the time of each copy.
 
   One message per call (ns/B)
   size              BLAKE3         SHA-256         SHA-1DC   BLAKE3 servil    SHA-256 ring       BLAKE3 mt    B3 servil mt       ab-blake3
-  64 B              0.789           0.508           2.842           0.740           0.660           0.915           0.745           0.770 
-  128 B             0.806           0.398           2.015           0.736           0.444           0.800           0.735           0.803 
-  256 B             0.792           0.359           1.587           0.732           0.353           0.789           0.735           0.789 
-  512 B             0.784           0.348           1.361           0.729           0.329           0.784           0.731           0.790 
-  1 KiB             0.776           0.342           1.322           0.729           0.316           0.777           0.727           0.786 
-  2 KiB             0.796           0.340           1.235           0.482           0.310           0.811           0.481           0.807 
-  2304 B            0.816           0.340           1.233           0.462           0.310           0.825           0.466           0.830 
-  3 KiB             0.811           0.339           1.242           0.359           0.308           0.809           0.357           0.813 
-  3839 B            0.812           0.338           1.225           0.350           0.310           0.822           0.350           0.826 
-  4 KiB             0.435           0.336           1.220           0.332           0.308           0.436           0.332           0.823 
-  4470 B            0.469           0.335           1.210           0.369           0.305           0.475           0.368           0.830 
-  7935 B            0.610           0.338           1.223           0.278           0.308           0.627           0.278           0.826 
-  8 KiB             0.428           0.338           1.223           0.266           0.309          10.312           0.266           0.825 
-  16 KiB            0.424           0.338           1.225     0.231|0.303           0.306          12.828     0.231|0.303           0.825 
-  32 KiB            0.422           0.339           1.225     0.218|0.292           0.306          13.675     0.218|0.292           0.824 
-  64 KiB            0.423           0.338           1.234     0.210|0.285           0.306          12.192           0.137           0.828 
-  128 KiB           0.425           0.339           1.271     0.205|0.283           0.307     5.982|9.562~    0.083|0.114           0.831 
-  256 KiB           0.428           0.339           1.283     0.192|0.272           0.308     2.847|5.292~    0.064|0.092~          0.834 
-  512 KiB           0.432           0.338           1.295     0.177|0.252           0.309     0.398|1.920~    0.039|0.060~          0.840 
-  1 MiB             0.435           0.340           1.290     0.170|0.252           0.311     0.407|1.655~    0.031|0.052~          0.844 
-  2 MiB             0.434           0.344           1.277     0.171|0.245           0.308     0.182|0.669~    0.028|0.047~          0.835 
-  3 MiB             0.430           0.341           1.271     0.171|0.276           0.312     0.182|0.857~          0.046           0.834 
-  4 MiB             0.430           0.342           1.266     0.174|0.278           0.312     0.118|0.330~    0.033|0.045~          0.839 
-  8 MiB             0.429           0.335           1.263     0.173|0.277           0.306     0.095|0.227~    0.028|0.044~          0.832 
-  32 MiB            0.431           0.333           1.258     0.174|0.309           0.309     0.072|0.116~    0.023|0.045           0.830 
-  64 MiB            0.432           0.338           1.259     0.169|0.266~          0.308           0.069     0.023|0.045           0.830 
-  128 MiB           0.433           0.334           1.258     0.202|0.264~          0.309           0.067     0.027|0.046~          0.831 
+  64 B              0.781           0.498           2.797           0.735           0.647           0.904           0.739           0.761 
+  128 B             0.795           0.394           1.998           0.726           0.434           0.790           0.730           0.790 
+  256 B             0.778           0.361           1.566           0.721           0.350           0.779           0.720           0.773 
+  512 B             0.768           0.346           1.343           0.716           0.326           0.775           0.718           0.774 
+  1 KiB             0.762           0.339           1.303           0.714           0.315           0.766           0.713           0.770 
+  2 KiB             0.785           0.336           1.219           0.470           0.310           0.795           0.470           0.790 
+  2304 B            0.807           0.336           1.216           0.454           0.308           0.808           0.456           0.813 
+  3 KiB             0.794           0.338           1.223           0.352           0.307           0.794           0.351           0.800 
+  3839 B            0.799           0.335           1.211           0.348           0.308           0.807           0.348           0.815 
+  4 KiB             0.425           0.337           1.207           0.331           0.307           0.430           0.331           0.806 
+  4470 B            0.462           0.333           1.197           0.365           0.304           0.464           0.363           0.814 
+  7935 B            0.597           0.335           1.205           0.275           0.307           0.614           0.275           0.814 
+  8 KiB             0.421           0.338           1.210           0.265           0.307          10.218           0.264           0.813 
+  16 KiB            0.415           0.337           1.207     0.231|0.304           0.306          12.475     0.231|0.304           0.812 
+  32 KiB            0.414           0.336           1.213     0.216|0.292           0.305          13.640     0.216|0.292           0.810 
+  64 KiB            0.416           0.337           1.226     0.207|0.284           0.305          12.122~    0.077|0.133~          0.819 
+  128 KiB           0.418           0.337           1.248     0.204|0.282           0.306           6.853~          0.085           0.823 
+  256 KiB           0.421           0.337           1.271     0.193|0.272           0.305     1.050|3.654~    0.065|0.096~          0.824 
+  512 KiB           0.421           0.338           1.290     0.177|0.252           0.305     0.622|2.187~    0.038|0.061           0.828 
+  1 MiB             0.428           0.337           1.288     0.170|0.255           0.307     0.523|1.386~    0.031|0.052~          0.834 
+  2 MiB             0.428           0.344           1.274     0.171|0.244           0.305     0.181|0.589~    0.028|0.047           0.829 
+  3 MiB             0.421           0.339           1.267     0.172|0.274           0.308     0.196|0.923~    0.036|0.046~          0.830 
+  4 MiB             0.421           0.341           1.263     0.174|0.279           0.309     0.118|0.305~    0.028|0.045~          0.834 
+  8 MiB             0.422           0.333           1.262     0.170|0.274           0.302     0.093|0.171~    0.030|0.044~          0.828 
+  32 MiB            0.424           0.329           1.258     0.177|0.281~          0.304     0.073|0.111~    0.023|0.045           0.825 
+  64 MiB            0.428           0.330           1.258     0.174|0.245           0.305           0.070     0.023|0.045           0.829 
+  128 MiB           0.431           0.329           1.259     0.208|0.269           0.306           0.067     0.035|0.046~          0.830 
 
   Many 64-byte messages per call (ns/msg)
   messages          BLAKE3         SHA-256         SHA-1DC   BLAKE3 servil    SHA-256 ring    B3 servil mt       ab-blake3
-  1                50.762          34.127         182.820          47.723          43.381          47.905          49.369 
-  2                48.136          32.210         179.912          28.337          43.329          28.903          46.719 
-  3                48.110          32.198         180.786          32.030          43.256          32.039          46.516 
-  4                48.055          31.902         179.484          25.551          43.093          25.485          46.467 
-  6                48.044          31.744         178.525          26.382          42.975          26.375          46.395 
-  8                48.045          31.832         180.267          20.076          42.827          20.087          46.577 
-  12               48.446          31.822         186.647          21.482          42.788          21.478          46.540 
-  16               48.353          31.625         185.481   15.285|24.279          42.276   15.390|24.148          24.140 
-  24               48.114          31.660         181.660   13.518|25.319~         42.383   13.529|23.849          30.768 
-  32               47.618          30.958         179.284   20.293|28.455~         41.494   14.558|20.547          23.234 
-  48               46.576          30.785         178.455   13.058|19.736          40.435   13.174|19.830          22.579 
-  64               46.358          30.634         175.896   10.334|18.832          40.522   10.355|19.025          22.349 
-  128              46.328          30.651         177.539   12.085|18.722          40.446   12.056|18.381~         22.471 
-  256              46.513          30.700         178.610   13.367|17.912~         40.392          13.567          22.473 
-  512              46.369          30.671         179.294          13.576          40.569          13.417          22.490 
-  1024             46.711          30.741         180.339          14.763          40.797           9.327          22.670 
-  2048             47.640          31.248         184.696          15.609~         41.409     6.326|9.385~         23.025 
-  4096             47.509          31.349         187.459          15.882~         42.056     4.702|6.799~         23.453 
-  8192             47.831          31.401         188.082          14.894~         41.942           5.044          23.587 
-  16384            48.324          31.864         187.573   10.748|15.851          42.448           4.702          23.925 
-  32768            47.996          31.669         186.589   10.667|16.624~         42.499           4.399          24.097 
-  65536            47.988          31.524         186.793   11.232|20.452          42.437           4.380          23.878 
-  131072           47.848          31.215         186.180   11.165|20.233          42.414           4.764          23.757 
-  262144           47.667          31.315         186.329   10.934|20.210          42.394           4.893          23.863 
+  1                50.668          33.746         182.544          47.572          43.266          47.800          49.252 
+  2                48.023          31.676         178.543          27.987          42.646          28.520          46.490 
+  3                47.857          31.595         180.442          31.906          42.506          31.931          46.371 
+  4                47.973          31.595         179.187          25.562          42.101          25.537          46.312 
+  6                47.836          31.422         177.825          26.443          42.245          26.482          46.127 
+  8                47.790          31.543         179.721          19.942          42.191          19.930          46.246 
+  12               48.278          31.472         186.103          21.397          42.093          21.346          46.074 
+  16               47.868          31.349         183.893   15.364|23.683          41.689   15.369|23.641          23.426 
+  24               47.759          31.107         180.507   13.431|17.930~         41.734          13.453          30.340 
+  32               46.868          30.925         177.411   20.504|28.022~         40.620   14.573|20.614          22.816 
+  48               45.641          30.619         176.143   12.966|19.556          39.973   12.956|19.539          22.321 
+  64               45.865          30.588         173.485   10.418|18.872          40.202   10.432|18.754          22.282 
+  128              45.885          30.589         175.619          14.980          40.021          14.982          22.300 
+  256              45.757          30.559         176.093   13.318|18.717~         40.100          13.529          22.262 
+  512              45.968          30.514         177.206          13.522          40.067          13.512          22.449 
+  1024             46.139          30.721         178.725          14.738~         40.193           9.197          22.473 
+  2048             46.844          31.175         182.190          15.190~         40.714     6.241|8.773~         22.762 
+  4096             47.228          31.186         184.500          15.639~         41.181           4.816          23.019 
+  8192             47.315          31.382         186.030   11.112|16.008          41.202     5.004|6.333~         23.327 
+  16384            47.581          31.386         186.519   10.718|15.865          41.429           4.721          23.639 
+  32768            47.468          31.291         185.556   10.531|15.868~         41.180           4.373          23.574 
+  65536            47.732          31.149         186.150   10.970|20.165          41.558           4.331          23.386 
+  131072           47.611          30.928         185.986   10.858|19.978          41.585     4.672|6.571~         23.242 
+  262144           47.550          30.892         185.960   10.743|19.957          41.776           4.772          23.398 
 
 CHECKS: where BLAKE3 servil or servil mt is slower than another contender, or slower per unit on larger work than on a size that divides it; compared round by round (samples taken in the same moment), judged at the worse ratio where the ratios split in two, by 5% or more with the ratio's 95% interval above 1.
-  x2.28 BLAKE3 servil, BLAKE3 servil mt (solo, shared) slower than SHA-256 ring: 64 B to 4470 B; most at 1 KiB, 0.729 against 0.316 ns/B
-  x2.23 BLAKE3 servil mt (solo) slower than SHA-256 ring: 64 B to 3839 B; most at 1 KiB, 0.725 against 0.322 ns/B
-  x2.12 BLAKE3 servil, BLAKE3 servil mt (solo, shared) slower than SHA-256: 64 B to 2304 B; most at 1 KiB, 0.727 against 0.342 ns/B
-  x2.12 BLAKE3 servil (shared) slower than SHA-256: 64 B to 3 KiB; most at 1 KiB, 0.729 against 0.342 ns/B
-  x2.00 BLAKE3 servil mt (shared) slower per unit at 64 MiB to 128 MiB than at 32 MiB; most at 128 MiB, 0.046 against 0.023 ns/B
-  x1.98 BLAKE3 servil (shared) slower per unit at 32768 to 262144 messages than at 64 messages; most at 65536 messages, 20.424 against 10.318 ns/msg
-  x1.76 BLAKE3 servil (shared) slower per unit at 32 MiB than at 2 MiB; most at 32 MiB, 0.308 against 0.172 ns/B
-  x1.63 BLAKE3 servil (shared) slower per unit at 3 MiB to 8 MiB than at 1 MiB; most at 4 MiB, 0.276 against 0.170 ns/B
-  x1.58 BLAKE3 servil mt (shared) slower per unit at 4 MiB to 32 MiB than at 2 MiB; most at 32 MiB, 0.045 against 0.028 ns/B
-  x1.56 BLAKE3 servil (shared) slower per unit at 128 MiB than at 1 MiB; most at 128 MiB, 0.263 against 0.169 ns/B
-  x1.56 BLAKE3 servil mt (shared) slower per unit at 2 MiB to 3 MiB than at 1 MiB; most at 3 MiB, 0.047 against 0.031 ns/B
-  x1.52 BLAKE3 servil (shared) slower per unit at 64 MiB than at 8 MiB; most at 64 MiB, 0.267 against 0.174 ns/B
-  x1.51 BLAKE3 servil (shared) slower per unit at 256 to 8192 messages than at 64 messages; most at 4096 messages, 16.372 against 10.298 ns/msg
-  x1.46 BLAKE3 servil, BLAKE3 servil mt (shared) slower per unit at 48 messages than at 24 messages; most at 48 messages, 19.947 against 13.561 ns/msg
-  x1.44 BLAKE3 servil (shared) slower per unit at 16384 messages than at 8192 messages; most at 16384 messages, 16.078 against 11.203 ns/msg
-  x1.44 BLAKE3 servil mt (shared) slower per unit at 131072 to 262144 messages than at 65536 messages; most at 131072 messages, 5.139 against 3.477 ns/msg
-  x1.42 BLAKE3 servil (shared) slower per unit at 1 MiB to 2 MiB than at 512 KiB; most at 1 MiB, 0.253 against 0.176 ns/B
-  x1.41 BLAKE3 servil, BLAKE3 servil mt (solo, shared) slower than SHA-256: 1 message; most at 1 message, 47.905 against 34.127 ns/msg
-  x1.40 BLAKE3 servil mt (solo, shared) slower per unit at 128 to 512 messages than at 64 messages; most at 256 messages, 13.858 against 9.821 ns/msg
-  x1.35 BLAKE3 servil, BLAKE3 servil mt (shared) slower per unit at 128 KiB than at 64 KiB; most at 128 KiB, 0.283 against 0.209 ns/B
-  x1.31 BLAKE3 servil (shared) slower per unit at 256 KiB than at 128 KiB; most at 256 KiB, 0.274 against 0.206 ns/B
-  x1.31 BLAKE3 servil mt (shared) slower than BLAKE3 servil: 16 KiB; most at 16 KiB, 0.303 against 0.231 ns/B
-  x1.30 BLAKE3 servil (shared) slower per unit at 64 KiB than at 32 KiB; most at 64 KiB, 0.285 against 0.218 ns/B
-  x1.30 BLAKE3 servil (shared) slower per unit at 512 KiB than at 256 KiB; most at 512 KiB, 0.253 against 0.192 ns/B
-  x1.25 BLAKE3 servil (solo) slower per unit at 512 to 262144 messages than at 64 messages; most at 1024 messages, 12.313 against 9.822 ns/msg
-  x1.24 BLAKE3 servil, BLAKE3 servil mt (shared) slower per unit at 16 to 24 messages than at 8 messages; most at 24 messages, 25.319 against 20.286 ns/msg
-  x1.24 BLAKE3 servil, BLAKE3 servil mt (shared) slower than ab-blake3: 32 messages; most at 32 messages, 28.509 against 22.558 ns/msg
-  x1.23 BLAKE3 servil mt (solo) slower per unit at 262144 messages than at 65536 messages; most at 262144 messages, 4.182 against 3.315 ns/msg
-  x1.21 BLAKE3 servil mt (shared) slower per unit at 64 messages than at 16 messages; most at 64 messages, 18.979 against 15.350 ns/msg
-  x1.19 BLAKE3 servil mt (solo) slower than SHA-256 ring: 4470 B; most at 4470 B, 0.366 against 0.305 ns/B
-  x1.16 BLAKE3 servil (shared) slower per unit at 128 messages than at 16 messages; most at 128 messages, 18.189 against 15.244 ns/msg
-  x1.16 BLAKE3 servil mt (shared) slower per unit at 4096 messages than at 2048 messages; most at 4096 messages, 6.759 against 6.266 ns/msg
-  x1.15 BLAKE3 servil (shared) slower per unit at 32 messages than at 4 messages; most at 32 messages, 28.873 against 25.744 ns/msg
-  x1.15 BLAKE3 servil mt (shared) slower per unit at 16 KiB than at 8 KiB; most at 16 KiB, 0.303 against 0.265 ns/B
-  x1.15 BLAKE3 servil (shared) slower per unit at 16 KiB to 32 KiB than at 8 KiB; most at 16 KiB, 0.303 against 0.265 ns/B
-  x1.10 BLAKE3 servil, BLAKE3 servil mt (solo, shared) slower than SHA-256 ring: 1 message; most at 1 message, 47.905 against 43.381 ns/msg
-  x1.09 BLAKE3 servil, BLAKE3 servil mt (solo, shared) slower than SHA-256: 4470 B; most at 4470 B, 0.369 against 0.335 ns/B
-  x1.09 BLAKE3 servil mt (solo) slower per unit at 32 MiB than at 8 MiB; most at 32 MiB, 0.035 against 0.032 ns/B
-  x1.07 BLAKE3 servil mt (solo) slower per unit at 65536 messages than at 32768 messages; most at 65536 messages, 3.370 against 3.133 ns/msg
-  x1.05 BLAKE3 servil (solo) slower per unit at 128 messages than at 64 messages; most at 128 messages, 10.369 against 9.822 ns/msg
-  x1.05 BLAKE3 servil mt (solo) slower per unit at 3 MiB than at 1 MiB; most at 3 MiB, 0.039 against 0.036 ns/B
-  x1.05 BLAKE3 servil mt (shared) slower per unit at 8192 messages than at 4096 messages; most at 8192 messages, 5.044 against 4.779 ns/msg
+  x2.26 BLAKE3 servil, BLAKE3 servil mt (shared) slower than SHA-256 ring: 64 B to 4470 B; most at 1 KiB, 0.714 against 0.315 ns/B
+  x2.20 BLAKE3 servil, BLAKE3 servil mt (solo) slower than SHA-256 ring: 128 B to 4470 B; most at 1 KiB, 0.717 against 0.324 ns/B
+  x2.10 BLAKE3 servil, BLAKE3 servil mt (solo, shared) slower than SHA-256: 64 B to 2304 B; most at 1 KiB, 0.714 against 0.339 ns/B
+  x2.00 BLAKE3 servil mt (shared) slower per unit at 128 MiB than at 64 MiB; most at 128 MiB, 0.046 against 0.023 ns/B
+  x1.95 BLAKE3 servil mt (shared) slower per unit at 64 MiB than at 32 MiB; most at 64 MiB, 0.045 against 0.023 ns/B
+  x1.92 BLAKE3 servil (shared) slower per unit at 65536 to 262144 messages than at 64 messages; most at 65536 messages, 20.238 against 10.426 ns/msg
+  x1.72 BLAKE3 servil (shared) slower per unit at 32 MiB than at 4 MiB; most at 32 MiB, 0.307 against 0.173 ns/B
+  x1.64 BLAKE3 servil, BLAKE3 servil mt (shared, solo) slower per unit at 4 MiB than at 2 MiB; most at 4 MiB, 0.281 against 0.171 ns/B
+  x1.61 BLAKE3 servil, BLAKE3 servil mt (shared, solo) slower per unit at 8 MiB than at 1 MiB; most at 8 MiB, 0.274 against 0.171 ns/B
+  x1.61 BLAKE3 servil mt (shared) slower per unit at 2 MiB to 4 MiB than at 1 MiB; most at 2 MiB, 0.049 against 0.031 ns/B
+  x1.61 BLAKE3 servil (shared) slower per unit at 2 MiB to 3 MiB than at 1 MiB; most at 3 MiB, 0.274 against 0.170 ns/B
+  x1.58 BLAKE3 servil (shared) slower per unit at 128 MiB than at 1 MiB; most at 128 MiB, 0.269 against 0.170 ns/B
+  x1.57 BLAKE3 servil mt (shared) slower per unit at 32 MiB than at 2 MiB; most at 32 MiB, 0.044 against 0.028 ns/B
+  x1.54 BLAKE3 servil mt (shared) slower per unit at 8 MiB than at 4 MiB; most at 8 MiB, 0.045 against 0.029 ns/B
+  x1.52 BLAKE3 servil mt (solo, shared) slower per unit at 128 to 512 messages than at 64 messages; most at 128 messages, 14.973 against 9.803 ns/msg
+  x1.52 BLAKE3 servil (solo) slower per unit at 128 to 262144 messages than at 64 messages; most at 128 messages, 14.969 against 9.814 ns/msg
+  x1.51 BLAKE3 servil (shared) slower per unit at 32768 messages than at 8192 messages; most at 32768 messages, 16.690 against 11.122 ns/msg
+  x1.50 BLAKE3 servil (shared) slower per unit at 128 to 16384 messages than at 64 messages; most at 16384 messages, 15.864 against 10.437 ns/msg
+  x1.45 BLAKE3 servil mt (shared) slower than BLAKE3 servil: 32 to 48 messages; most at 48 messages, 19.530 against 12.951 ns/msg
+  x1.44 BLAKE3 servil, BLAKE3 servil mt (shared) slower per unit at 48 messages than at 24 messages; most at 48 messages, 19.551 against 13.433 ns/msg
+  x1.44 BLAKE3 servil (shared) slower per unit at 64 MiB than at 8 MiB; most at 64 MiB, 0.245 against 0.172 ns/B
+  x1.43 BLAKE3 servil, BLAKE3 servil mt (shared, solo) slower per unit at 1 MiB than at 512 KiB; most at 1 MiB, 0.256 against 0.178 ns/B
+  x1.42 BLAKE3 servil, BLAKE3 servil mt (solo, shared) slower than SHA-256: 1 message; most at 1 message, 47.800 against 33.746 ns/msg
+  x1.39 BLAKE3 servil mt (shared) slower per unit at 131072 messages than at 16384 messages; most at 131072 messages, 6.395 against 4.677 ns/msg
+  x1.35 BLAKE3 servil (shared) slower per unit at 128 KiB than at 64 KiB; most at 128 KiB, 0.282 against 0.207 ns/B
+  x1.35 BLAKE3 servil mt (shared) slower than BLAKE3 servil: 16 KiB to 32 KiB; most at 32 KiB, 0.292 against 0.216 ns/B
+  x1.34 BLAKE3 servil (shared) slower per unit at 32 messages than at 16 messages; most at 32 messages, 20.654 against 15.362 ns/msg
+  x1.32 BLAKE3 servil (shared) slower per unit at 256 KiB to 512 KiB than at 128 KiB; most at 256 KiB, 0.272 against 0.204 ns/B
+  x1.31 BLAKE3 servil (shared) slower per unit at 64 KiB than at 32 KiB; most at 64 KiB, 0.284 against 0.217 ns/B
+  x1.26 BLAKE3 servil, BLAKE3 servil mt (shared) slower per unit at 32 KiB than at 16 KiB; most at 32 KiB, 0.292 against 0.231 ns/B
+  x1.22 BLAKE3 servil mt (solo) slower per unit at 262144 messages than at 16384 messages; most at 262144 messages, 3.970 against 3.210 ns/msg
+  x1.19 BLAKE3 servil mt (shared) slower per unit at 64 messages than at 16 messages; most at 64 messages, 18.463 against 15.329 ns/msg
+  x1.18 BLAKE3 servil, BLAKE3 servil mt (shared) slower per unit at 16 messages than at 8 messages; most at 16 messages, 23.635 against 19.924 ns/msg
+  x1.18 BLAKE3 servil mt (shared) slower per unit at 2048 messages than at 1024 messages; most at 2048 messages, 8.657 against 8.554 ns/msg
+  x1.16 BLAKE3 servil, BLAKE3 servil mt (shared) slower per unit at 16 KiB than at 8 KiB; most at 16 KiB, 0.304 against 0.264 ns/B
+  x1.10 BLAKE3 servil, BLAKE3 servil mt (shared) slower than SHA-256 ring: 1 message; most at 1 message, 47.800 against 43.266 ns/msg
+  x1.10 BLAKE3 servil, BLAKE3 servil mt (solo, shared) slower than SHA-256: 4470 B; most at 4470 B, 0.363 against 0.329 ns/B
+  x1.09 BLAKE3 servil mt (shared) slower per unit at 262144 messages than at 65536 messages; most at 262144 messages, 4.772 against 4.331 ns/msg
+  x1.07 BLAKE3 servil mt (solo) slower per unit at 3 MiB than at 1 MiB; most at 3 MiB, 0.039 against 0.036 ns/B
+  x1.06 BLAKE3 servil mt (solo) slower per unit at 65536 messages than at 32768 messages; most at 65536 messages, 3.379 against 3.164 ns/msg
+  x1.05 BLAKE3 servil (solo) slower per unit at 64 MiB than at 2 MiB; most at 64 MiB, 0.178 against 0.169 ns/B
 
 TWO SPEEDS: the servil cells whose samples split into two speeds; a|b gives both medians, faster first, wherever a table shows one.
-  x1.95 BLAKE3 servil mt (shared) two speeds: 4 MiB to 128 MiB; most at 64 MiB, 0.023|0.045 ns/B, 37% of samples at the faster
-  x1.87 BLAKE3 servil (shared) two speeds: 16 to 256 messages; most at 24 messages, 13.518|25.319 ns/msg, 81% of samples at the faster
-  x1.84 BLAKE3 servil (shared) two speeds: 16384 to 262144 messages; most at 262144 messages, 10.934|20.210 ns/msg, 48% of samples at the faster
-  x1.83 BLAKE3 servil mt (shared) two speeds: 16 to 128 messages; most at 64 messages, 10.355|19.025 ns/msg, 84% of samples at the faster
-  x1.77 BLAKE3 servil (shared) two speeds: 16 KiB to 128 MiB; most at 32 MiB, 0.174|0.309 ns/B, 24% of samples at the faster
-  x1.67 BLAKE3 servil mt (shared) two speeds: 128 KiB to 2 MiB; most at 2 MiB, 0.028|0.047 ns/B, 18% of samples at the faster
-  x1.48 BLAKE3 servil mt (shared) two speeds: 2048 to 4096 messages; most at 2048 messages, 6.326|9.385 ns/msg, 88% of samples at the faster
-  x1.39 BLAKE3 servil mt (solo) two speeds: 64 KiB to 4 MiB; most at 256 KiB, 0.056|0.078 ns/B, 88% of samples at the faster
-  x1.35 BLAKE3 servil mt (solo) two speeds: 256 messages; most at 256 messages, 10.228|13.858 ns/msg, 89% of samples at the faster
-  x1.34 BLAKE3 servil, BLAKE3 servil mt (solo) two speeds: 16 messages; most at 16 messages, 10.174|13.704 ns/msg, 26% of samples at the faster
-  x1.33 BLAKE3 servil mt (shared) two speeds: 16 KiB to 32 KiB; most at 32 KiB, 0.218|0.292 ns/B, 43% of samples at the faster
-  x1.33 BLAKE3 servil mt (solo) two speeds: 1024 messages; most at 1024 messages, 6.828|9.114 ns/msg, 21% of samples at the faster
-  x1.33 BLAKE3 servil mt (solo) two speeds: 32 MiB; most at 32 MiB, 0.027|0.036 ns/B, 87% of samples at the faster
-  x1.29 BLAKE3 servil mt (solo) two speeds: 262144 messages; most at 262144 messages, 3.251|4.216 ns/msg, 89% of samples at the faster
-  x1.26 BLAKE3 servil mt (solo) two speeds: 4096 messages; most at 4096 messages, 4.294|5.416 ns/msg, 87% of samples at the faster
+  x1.95 BLAKE3 servil mt (shared) two speeds: 256 KiB to 128 MiB; most at 64 MiB, 0.023|0.045 ns/B, 37% of samples at the faster
+  x1.85 BLAKE3 servil (shared) two speeds: 8192 to 262144 messages; most at 262144 messages, 10.743|19.957 ns/msg, 45% of samples at the faster
+  x1.81 BLAKE3 servil (shared) two speeds: 16 to 64 messages; most at 64 messages, 10.418|18.872 ns/msg, 83% of samples at the faster
+  x1.79 BLAKE3 servil mt (shared) two speeds: 32 to 64 messages; most at 64 messages, 10.432|18.754 ns/msg, 83% of samples at the faster
+  x1.72 BLAKE3 servil mt (shared) two speeds: 16 KiB to 64 KiB; most at 64 KiB, 0.077|0.133 ns/B, 32% of samples at the faster
+  x1.61 BLAKE3 servil (shared) two speeds: 16 KiB to 128 MiB; most at 8 MiB, 0.170|0.274 ns/B, 43% of samples at the faster
+  x1.53 BLAKE3 servil mt (shared) two speeds: 16 messages; most at 16 messages, 15.369|23.641 ns/msg, 53% of samples at the faster
+  x1.43 BLAKE3 servil (solo) two speeds: 128 to 512 messages; most at 128 messages, 10.401|14.969 ns/msg, 50% of samples at the faster
+  x1.43 BLAKE3 servil mt (solo) two speeds: 128 to 1024 messages; most at 128 messages, 10.414|14.973 ns/msg, 48% of samples at the faster
+  x1.42 BLAKE3 servil mt (solo) two speeds: 64 KiB to 1 MiB; most at 256 KiB, 0.059|0.084 ns/B, 86% of samples at the faster
+  x1.40 BLAKE3 servil mt (shared) two speeds: 131072 messages; most at 131072 messages, 4.672|6.571 ns/msg, 89% of samples at the faster
+  x1.40 BLAKE3 servil (shared) two speeds: 256 messages; most at 256 messages, 13.318|18.717 ns/msg, 86% of samples at the faster
+  x1.40 BLAKE3 servil mt (shared) two speeds: 2048 messages; most at 2048 messages, 6.241|8.773 ns/msg, 84% of samples at the faster
+  x1.35 BLAKE3 servil mt (solo) two speeds: 3 MiB to 8 MiB; most at 3 MiB, 0.039|0.053 ns/B, 89% of samples at the faster
+  x1.26 BLAKE3 servil mt (shared) two speeds: 8192 messages; most at 8192 messages, 5.004|6.333 ns/msg, 89% of samples at the faster
 
 KERNELS: the code path each contender ran, from the point named on.
   One message per call:
@@ -200,7 +199,7 @@ KERNELS: the code path each contender ran, from the point named on.
     ab-blake3: 1 single_block_hash_many_exact::<N>, one compression per block; 16 single_block_hash_many_exact::<N>, NEON hash_many (4-way) per sixteen blocks
 
 PROVENANCE
-  bench-hashes 0.6.0+4693c2fe4a275c15421e987cd95ee1d0331a7b8d, https://github.com/johnservil/bench-hashes, commit 795e9bbe8a9fafc49282eac97919f6c775112ef1 (clean)
+  bench-hashes 0.6.0+4693c2fe4a275c15421e987cd95ee1d0331a7b8d, https://github.com/johnservil/bench-hashes, commit d32b03e45fa435f5344f8a287427ab5f9fa6a9ac (clean)
   contenders: every contender available on this machine
   BLAKE3: blake3 1.8.7; crate archive SHA-256 6d9e454fc11f76977dc803893aff6304ed33d6a26efae8696573bea74baa27ae; source registry+https://github.com/rust-lang/crates.io-index; single-threaded
   SHA-256: sha2 0.11.0; crate archive SHA-256 446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4; source registry+https://github.com/rust-lang/crates.io-index; single-threaded
