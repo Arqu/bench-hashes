@@ -12,5 +12,9 @@ resulting SVG, for `rsvg-convert` to render and a person to look at.
     node tools/graph-check/check.js benchmark-results/<machine>/bench-hashes.graph.svg
     node tools/graph-check/snapshot.js GRAPH.svg /tmp/zoomed.svg 2048 8192
     rsvg-convert -w 1300 /tmp/zoomed.svg -o /tmp/zoomed.png
+    node tools/graph-check/views.js GRAPH.svg /tmp/hover.svg /tmp/paths.svg
+
+`views.js` writes two states to look at: 2-8 KiB with a hover panel open,
+and the Code paths section open.
 
 In the VM: `apt-get install -y nodejs npm` first (lost on restart).

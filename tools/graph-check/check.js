@@ -29,7 +29,21 @@ function checkLayout(tag) {
       check(inside === (x[k] >= L - 0.05 && x[k] <= R + 0.05), `${tag}: plot ${p} point ${k} at ${x[k]} inside=${inside}`);
       const label = w.document.querySelector(`.size-label[data-plot="${p}"][data-size="${k}"]`);
       check(Math.abs(+label.getAttribute("x") - x[k]) < 0.05, `${tag}: plot ${p} label ${k} x`);
-      check((+label.getAttribute("opacity") > 0) === (x[k] >= D.plotLeft - 12 && x[k] <= D.plotRight + 12), `${tag}: plot ${p} label ${k} opacity`);
+      if (!(x[k] >= D.plotLeft - 12 && x[k] <= D.plotRight + 12)) check(+label.getAttribute("opacity") === 0, `${tag}: plot ${p} label ${k} outside the plot is hidden`);
+    }
+    // Shown labels never overlap within a row; a hidden label inside the
+    // plot fits on neither row beside the labels shown before it.
+    const ends = [-Infinity, -Infinity];
+    for (let k = 0; k < x.length; k++) {
+      const label = w.document.querySelector(`.size-label[data-plot="${p}"][data-size="${k}"]`);
+      const half = (label.textContent.length * 7.2 + 6) / 2, shown = +label.getAttribute("opacity") > 0;
+      const row = Math.round((+label.getAttribute("y") - plot.bottom - 24) / 13);
+      if (shown) {
+        check(x[k] - half >= ends[row] - 0.01, `${tag}: plot ${p} label ${k} overlaps row ${row}`);
+        ends[row] = x[k] + half;
+      } else if (x[k] >= D.plotLeft && x[k] <= D.plotRight) {
+        check(ends.every(e => x[k] - half < e), `${tag}: plot ${p} label ${k} hidden though a row has room`);
+      }
     }
     plot.series.forEach((s, i) => {
       if (!s || !w.__on[i]) return;
@@ -45,6 +59,16 @@ function checkLayout(tag) {
 }
 
 (async () => {
+  // The static render hid the same labels the script hides.
+  {
+    const staticDom = new JSDOM(`<!DOCTYPE html><html><body>${markup}</body></html>`);
+    D.plots.forEach((plot, p) => plot.x.forEach((_, k) => {
+      const sel = `.size-label[data-plot="${p}"][data-size="${k}"]`;
+      const before = staticDom.window.document.querySelector(sel).getAttribute("opacity") === "0";
+      const after = +w.document.querySelector(sel).getAttribute("opacity") === 0;
+      check(before === after, `static and script disagree on label ${p}/${k}`);
+    }));
+  }
   // Initial layout matches the static render's x positions.
   D.plots.forEach((plot, p) => plot.x.forEach((x, k) => check(Math.abs(T.currentX[p][k] - x) < 0.02, `initial x plot ${p} point ${k}: ${T.currentX[p][k]} vs ${x}`)));
   checkLayout("initial");
@@ -63,16 +87,36 @@ function checkLayout(tag) {
   checkLayout("2-4 KiB");
   console.log("2-4 KiB:", text("zoom-from"), "to", text("zoom-to"), "windows", T.win().map(x => `${x.k0}-${x.k1}`).join(" "),
     "sizes", D.plots.map((pl, p) => pl.sizes.slice(T.win()[p].k0, T.win()[p].k1 + 1).join(",")).join(" | "));
-  // Zoom in and out, and switch the unit mid-zoom.
+  // Step both ends, switching the unit mid-transition.
   w.zoomAll(); await sleep(700);
-  w.zoomIn(); await sleep(100); w.flipUnit(); await sleep(900);
-  checkLayout("in + unit");
-  console.log("zoom in:", text("zoom-from"), "to", text("zoom-to"));
-  w.zoomIn(); w.zoomIn(); w.zoomIn(); w.zoomIn(); await sleep(700);
-  checkLayout("in x5");
-  console.log("zoom in x5:", text("zoom-from"), "to", text("zoom-to"), "off:", ["zoom-in", "zoom-from-inc", "zoom-to-dec"].map(id => w.document.getElementById(id).getAttribute("data-off")).join(","));
-  w.zoomOut(); await sleep(700); checkLayout("out");
-  console.log("zoom out:", text("zoom-from"), "to", text("zoom-to"));
+  w.zoomStep("from", 3); w.zoomStep("to", -3); await sleep(100); w.flipUnit(); await sleep(900);
+  checkLayout("steps + unit");
+  console.log("steps + unit:", text("zoom-from"), "to", text("zoom-to"));
+  // The arrows hug their labels.
+  const tx = id => +((w.document.getElementById(id).getAttribute("transform") || "").match(/translate\(([-\d.]+)/) || [0, 0])[1];
+  const fromEnd = +w.document.getElementById("zoom-from").getAttribute("x") + text("zoom-from").length * 7.6;
+  check(Math.abs(tx("zoom-from-inc") - (fromEnd + 4)) < 0.2, "the first range's right arrow follows its label");
+  const toStart = +w.document.getElementById("zoom-to").getAttribute("x") - text("zoom-to").length * 7.6;
+  check(Math.abs(tx("zoom-to-dec") + 16 + 4 - toStart) < 0.2, "the last range's left arrow precedes its label");
+  // Hover every point of every plot: the panel holds its widest line.
+  w.zoomAll(); await sleep(700);
+  const ev0 = { pointerType: "mouse", stopPropagation() {} };
+  let widest = 0;
+  D.plots.forEach((plot, p) => plot.series.forEach((s, i) => { if (!s) return; plot.x.forEach((_, k) => {
+    w.hoverDot(ev0, p, i, k);
+    const box = w.document.getElementById("hover-box"), W = +box.getAttribute("width");
+    widest = Math.max(widest, W);
+    const bx = +box.getAttribute("x");
+    [...w.document.getElementById("hover-body").querySelectorAll("text")].forEach(t => {
+      const x = +t.getAttribute("x"), n = t.textContent.length, cls = t.getAttribute("class").split(" ")[0];
+      const cw = { "hover-head": 7.2, "hover-row": 6.4, "hover-ratio": 6.8, "hover-sub": 5.8, "hover-note": 5.0 }[cls] || 6.4;
+      const anchor = t.getAttribute("text-anchor");
+      const [lo, hi] = anchor === "end" ? [x - n * cw, x] : [x, x + n * cw];
+      check(lo >= -0.5 && hi <= W + 0.5 || W >= 640, `hover ${p}/${i}/${k}: "${t.textContent}" spans ${lo.toFixed(0)}-${hi.toFixed(0)} in a ${W}-wide panel`);
+    });
+  }); }));
+  console.log("widest hover panel", widest);
+  noNaN("hover all");
   // Beyond the batch axis: the batch plots keep their two nearest points.
   w.zoomAll(); await sleep(700);
   while (T.zTo - T.zFrom > 1) w.zoomStep("from", 1);

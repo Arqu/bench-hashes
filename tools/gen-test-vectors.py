@@ -22,7 +22,11 @@ ROOT = Path(__file__).resolve().parents[2]
 REFERENCE = ROOT / "reference_impl/reference_impl.rs"
 SIZES = sorted(set([1 << n for n in range(6, 28)] + [3 << 10, 3 << 20,
     0, 1, 63, 65, 1023, 1025, (16 << 10) - 1, (16 << 10) + 1,
-    (64 << 10) - 1, (64 << 10) + 1, (128 << 10) + 1, (256 << 10) + 1]))
+    (64 << 10) - 1, (64 << 10) + 1, (128 << 10) + 1, (256 << 10) + 1,
+    # Sizes of real data between 2 and 8 KiB (the axis's usage points):
+    # an 802.11 frame body (MSDU) at most, an 802.11n A-MSDU of the smaller
+    # and the larger maximum, a Packet over SONET/SDH MTU.
+    2304, 3839, 7935, 4470]))
 MESSAGE_LEN = 64
 # The many-messages axis in src/main.rs (POINTS); the batch entry point's
 # const generic accepts exactly these counts.

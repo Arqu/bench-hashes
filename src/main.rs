@@ -64,7 +64,7 @@ const LONG_EVERY_UNSURE: usize = 2;
 const LONG_MIN_SAMPLES: usize = 8;
 
 /// Points on the one-message axis, and on the many-messages axis.
-const INPUT_COUNT: usize = 23;
+const INPUT_COUNT: usize = 27;
 const BATCH_COUNT: usize = 24;
 /// Every measured (contender, x) cell lies on one of the two axes.
 const POINT_COUNT: usize = INPUT_COUNT + BATCH_COUNT;
@@ -127,8 +127,12 @@ const POINTS: [Point; POINT_COUNT] = [
     Point::one("512 B", 512),
     Point::one("1 KiB", 1024),
     Point::one("2 KiB", 2 * 1024),
+    Point::one("2304 B", 2304),
     Point::one("3 KiB", 3 * 1024),
+    Point::one("3839 B", 3839),
     Point::one("4 KiB", 4 * 1024),
+    Point::one("4470 B", 4470),
+    Point::one("7935 B", 7935),
     Point::one("8 KiB", 8 * 1024),
     Point::one("16 KiB", 16 * 1024),
     Point::one("32 KiB", 32 * 1024),
@@ -3348,7 +3352,7 @@ const PLOT_LEFT: f64 = 110.0;
 const PLOT_RIGHT: f64 = 1000.0;
 /// The first plot's top, below the title, two method lines, and its own
 /// heading; each further plot sits PLOT_PITCH lower.
-const PLOT_TOP: f64 = 150.0;
+const PLOT_TOP: f64 = 172.0;
 const PLOT_HEIGHT: f64 = 340.0;
 /// Room under a plot for its x labels, axis title, and shape legend, and
 /// above the next for its heading.
@@ -3566,7 +3570,8 @@ fn generate_svg(
         plot.provenance_top = provenance_top;
     }
 
-    let provenance_cats = shared_provenance_cats(machine, selection_note);
+    let mut provenance_cats = shared_provenance_cats(machine, selection_note);
+    provenance_cats.push(code_path_cat(roster, &plots));
     let provenance_total = provenance_cats.len()
         + provenance_cats.iter().map(|cat| cat.lines.len()).sum::<usize>()
         + roster
@@ -3660,8 +3665,6 @@ fn generate_svg(
     .hover-row-focus { font-weight: 700; }
     .hover-ratio { font-size: 11px; font-weight: 600; }
     .hover-note { font-size: 9px; font-style: italic; fill: #9a9a9a; }
-    .hover-path { font-weight: 700; fill: #333333; }
-    .hover-why { font-size: 10px; fill: #555555; }
   </style>
 "##,
     );
@@ -3707,37 +3710,40 @@ fn generate_svg(
     writeln!(svg, "  </g>").unwrap();
 
     /*
-     * Zoom, beside the first plot's title: the inputs every plot shows, as
-     * a range of input sizes (a batch counts its messages' bytes). Arrows
-     * step the first or last point shown by one data point; minus and plus
-     * widen or narrow the range by about half; "all" shows every point.
-     * The script fills in the labels; without script the graph shows every
-     * point and the controls are inert.
+     * Zoom, a row above the first plot: the inputs every plot shows, as a
+     * range of input sizes (a batch counts its messages' bytes). The first
+     * input shown sits at the left, over the axis's small end, the last at
+     * the right; each arrow steps its end by one data point, and "all"
+     * shows every point. Arrows hug their labels (width estimated from the
+     * characters, as the script does when it relabels). Without script the
+     * graph shows every point and the controls are inert.
      */
-    let zoom_x = PLOT_RIGHT - 386.0;
-    let zoom_y = PLOT_TOP - 44.0;
-    writeln!(svg, r##"  <g id="zoom" transform="translate({zoom_x:.1} {zoom_y:.1})">"##).unwrap();
-    writeln!(svg, r##"    <text class="zoom-word" x="0" y="13">inputs</text>"##).unwrap();
+    let smallest = plots.iter().map(|plot| POINTS[plot.points.start].bytes).min().expect("a graph has plots");
+    let largest = plots.iter().map(|plot| POINTS[plot.points.end - 1].bytes).max().expect("a graph has plots");
+    writeln!(svg, r##"  <g id="zoom" transform="translate(0 {:.1})">"##, ZOOM_ROW_TOP).unwrap();
     let button = |svg: &mut String, id: &str, x: f64, width: f64, glyph: &str, action: &str, title: &str| {
         writeln!(
             svg,
-            r##"    <g class="zoom-btn" id="{id}" onclick="event.stopPropagation(); {action}"><title>{title}</title><rect x="{x:.1}" y="0" width="{width:.1}" height="18" rx="4"/><text x="{:.1}" y="13" text-anchor="middle">{glyph}</text></g>"##,
-            x + width / 2.0,
+            r##"    <g class="zoom-btn" id="{id}" transform="translate({x:.1} 0)" onclick="event.stopPropagation(); {action}"><title>{title}</title><rect x="0" y="0" width="{width:.1}" height="18" rx="4"/><text x="{:.1}" y="13" text-anchor="middle">{glyph}</text></g>"##,
+            width / 2.0,
         )
         .unwrap();
     };
-    button(&mut svg, "zoom-from-dec", 44.0, 16.0, "‹", "zoomStep('from', -1)", "Show one smaller input");
-    let smallest = plots.iter().map(|plot| POINTS[plot.points.start].bytes).min().expect("a graph has plots");
-    let largest = plots.iter().map(|plot| POINTS[plot.points.end - 1].bytes).max().expect("a graph has plots");
-    writeln!(svg, r##"    <text class="zoom-label" id="zoom-from" x="102" y="13" text-anchor="middle">{}</text>"##, format_bytes(smallest)).unwrap();
-    button(&mut svg, "zoom-from-inc", 144.0, 16.0, "›", "zoomStep('from', 1)", "Hide the smallest input shown");
-    writeln!(svg, r##"    <text class="zoom-word" x="173" y="13" text-anchor="middle">to</text>"##).unwrap();
-    button(&mut svg, "zoom-to-dec", 186.0, 16.0, "‹", "zoomStep('to', -1)", "Hide the largest input shown");
-    writeln!(svg, r##"    <text class="zoom-label" id="zoom-to" x="244" y="13" text-anchor="middle">{}</text>"##, format_bytes(largest)).unwrap();
-    button(&mut svg, "zoom-to-inc", 286.0, 16.0, "›", "zoomStep('to', 1)", "Show one larger input");
-    button(&mut svg, "zoom-out", 314.0, 18.0, "−", "zoomOut()", "Show about twice the range of inputs");
-    button(&mut svg, "zoom-in", 334.0, 18.0, "+", "zoomIn()", "Show about half the range of inputs");
-    button(&mut svg, "zoom-all", 356.0, 30.0, "all", "zoomAll()", "Show every input");
+    let from_label = format_bytes(smallest);
+    let to_label = format_bytes(largest);
+    writeln!(svg, r##"    <text class="zoom-word" x="{PLOT_LEFT:.1}" y="13">inputs from</text>"##).unwrap();
+    let from_x = PLOT_LEFT + ZOOM_FROM_WORD;
+    button(&mut svg, "zoom-from-dec", from_x, 16.0, "‹", "zoomStep('from', -1)", "Show one smaller input");
+    writeln!(svg, r##"    <text class="zoom-label" id="zoom-from" x="{:.1}" y="13">{from_label}</text>"##, from_x + 16.0 + ZOOM_PAD).unwrap();
+    button(&mut svg, "zoom-from-inc", from_x + 16.0 + 2.0 * ZOOM_PAD + zoom_label_width(&from_label), 16.0, "›", "zoomStep('from', 1)", "Hide the smallest input shown");
+    let to_inc_x = PLOT_RIGHT - 16.0;
+    let to_label_end = to_inc_x - ZOOM_PAD;
+    let to_dec_x = to_label_end - zoom_label_width(&to_label) - ZOOM_PAD - 16.0;
+    writeln!(svg, r##"    <text class="zoom-word" id="zoom-to-word" x="{:.1}" y="13" text-anchor="end">to</text>"##, to_dec_x - 6.0).unwrap();
+    button(&mut svg, "zoom-to-dec", to_dec_x, 16.0, "‹", "zoomStep('to', -1)", "Hide the largest input shown");
+    writeln!(svg, r##"    <text class="zoom-label" id="zoom-to" x="{to_label_end:.1}" y="13" text-anchor="end">{to_label}</text>"##).unwrap();
+    button(&mut svg, "zoom-to-inc", to_inc_x, 16.0, "›", "zoomStep('to', 1)", "Show one larger input");
+    button(&mut svg, "zoom-all", PLOT_RIGHT + 14.0, 30.0, "all", "zoomAll()", "Show every input");
     writeln!(svg, "  </g>").unwrap();
 
     /*
@@ -3952,18 +3958,27 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
      * log axis), it drops to a second row with a short tick joining it to
      * its column.
      */
-    /* About 7.2 px per character at the bold label font, plus a gutter. */
+    /*
+     * About 7.2 px per character at the bold label font, plus a gutter.
+     * Left to right, a label takes the first row if it clears the last
+     * label there, else the second, else it stays hidden (points a few
+     * percent apart, such as 7935 B and 8 KiB, show their labels once the
+     * zoom spreads them). The script applies the same rule.
+     */
     let label_width = |k: usize| POINTS[plot.points.start + k].label.chars().count() as f64 * 7.2 + 6.0;
-    let mut label_rows = vec![0u8; plot.len()];
-    for k in 1..plot.len() {
-        let gap = plot.x_positions[k] - plot.x_positions[k - 1];
-        if gap < (label_width(k - 1) + label_width(k)) / 2.0 && label_rows[k - 1] == 0 {
-            label_rows[k] = 1;
+    let mut label_rows = vec![None; plot.len()];
+    let mut row_ends = [f64::NEG_INFINITY; 2];
+    for k in 0..plot.len() {
+        let left = plot.x_positions[k] - label_width(k) / 2.0;
+        if let Some(row) = (0..2).find(|&row| left >= row_ends[row]) {
+            label_rows[k] = Some(row as u8);
+            row_ends[row] = plot.x_positions[k] + label_width(k) / 2.0;
         }
     }
     for (k, point_index) in plot.points.clone().enumerate() {
         let x = plot.x_positions[k];
-        let row = label_rows[k];
+        let row = label_rows[k].unwrap_or(0);
+        let hidden = label_rows[k].is_none();
         let label_y = bottom + 24.0 + 13.0 * f64::from(row);
 
         writeln!(
@@ -3979,13 +3994,14 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
             r##"  <line x1="{x:.2}" y1="{:.1}" x2="{x:.2}" y2="{:.1}" class="size-tick" data-plot="{p}" data-size="{k}"{}/>"##,
             bottom + 4.0,
             bottom + 24.0 + 13.0 - 10.0,
-            if row == 1 { "" } else { r#" display="none""# },
+            if row == 1 && !hidden { "" } else { r#" display="none""# },
         )
             .unwrap();
 
         writeln!(
             svg,
-            r##"  <text x="{x:.2}" y="{label_y:.1}" class="size-label" text-anchor="middle" data-plot="{p}" data-size="{k}">{}</text>"##,
+            r##"  <text x="{x:.2}" y="{label_y:.1}" class="size-label" text-anchor="middle" data-plot="{p}" data-size="{k}"{}>{}</text>"##,
+            if hidden { r#" opacity="0""# } else { "" },
             xml_escape(POINTS[point_index].label),
         )
             .unwrap();
@@ -4186,21 +4202,20 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
            right-hand names match the marks in the plot. Names share one x
            across contenders; shapes fill fixed slots, so rows align. Each
            shape carries a tooltip naming its code path. */
-        let mut swatch_marks: Vec<(Mark, &str, &str)> = Vec::new();
+        let mut swatch_marks: Vec<(Mark, &str)> = Vec::new();
         for kernel in &kernels.kernels {
             if !swatch_marks.iter().any(|slot| slot.0 == kernel.mark) {
-                swatch_marks.push((kernel.mark, &kernel.name, &kernel.why));
+                swatch_marks.push((kernel.mark, &kernel.name));
             }
         }
         let name_x = label_x + 14.0 + (SWATCH_SLOTS as f64) * 13.0;
         writeln!(svg, r##"      <g class="series-swatch" transform="translate(0 0)">"##).unwrap();
-        for (mark_index, (mark, name, why)) in swatch_marks.iter().enumerate() {
+        for (mark_index, (mark, name)) in swatch_marks.iter().enumerate() {
             writeln!(
                 svg,
-                r##"        <g transform="translate({:.1} 0)"><title>{}: {}</title>{}</g>"##,
+                r##"        <g transform="translate({:.1} 0)"><title>{}</title>{}</g>"##,
                 label_x + 4.5 + mark_index as f64 * 13.0,
                 xml_escape(name),
-                xml_escape(why),
                 mark_shape(*mark, color, 4.5),
             )
             .unwrap();
@@ -4367,18 +4382,30 @@ fn place_value_labels(plot: &Plot, results: &Results) -> Vec<Vec<f64>> {
     placed
 }
 
-/// An input size for the zoom labels: "192 B", "1.5 KiB", "16 MiB". The
-/// script's fmtBytes writes the same.
+/// The zoom row's top, between the method lines and the first plot's title.
+const ZOOM_ROW_TOP: f64 = 100.0;
+/// Room for "inputs from" before the first arrow.
+const ZOOM_FROM_WORD: f64 = 68.0;
+/// Gap between an arrow and its label.
+const ZOOM_PAD: f64 = 4.0;
+
+/// A zoom label's width at its bold 12 px font, estimated from its
+/// characters; the script's zoomLabelWidth uses the same figure.
+fn zoom_label_width(label: &str) -> f64 {
+    label.chars().count() as f64 * 7.6
+}
+
+/// An input size: whole MiB or KiB where it is one, else exact bytes
+/// ("16 MiB", "3 KiB", "2304 B", "1025 B"). The script's fmtBytes writes
+/// the same.
 fn format_bytes(bytes: usize) -> String {
-    let (value, unit) = if bytes < 1024 {
-        (bytes as f64, "B")
-    } else if bytes < 1024 * 1024 {
-        (bytes as f64 / 1024.0, "KiB")
+    if bytes >= 1 << 20 && bytes % (1 << 20) == 0 {
+        format!("{} MiB", bytes >> 20)
+    } else if bytes >= 1 << 10 && bytes % (1 << 10) == 0 {
+        format!("{} KiB", bytes >> 10)
     } else {
-        (bytes as f64 / (1024.0 * 1024.0), "MiB")
-    };
-    let text = if value.fract() == 0.0 { format!("{value:.0}") } else { format!("{value:.1}") };
-    format!("{text} {unit}")
+        format!("{bytes} B")
+    }
 }
 
 fn json_string(text: &str) -> String {
@@ -4472,6 +4499,40 @@ fn shared_provenance_cats(machine: &MachineMetadata, selection_note: &str) -> Ve
             ],
         },
     ]
+}
+
+/*
+ * What each code path is, folded away at the bottom: the dots' shapes and
+ * the hover panel name a contender's code path; this section says what
+ * each name means and from which size it runs, contender by contender,
+ * for one message and for batches.
+ */
+fn code_path_cat(roster: &Roster, plots: &[Plot]) -> ProvCat {
+    let mut lines = Vec::new();
+    for (algorithm_index, algorithm) in roster.algorithms.iter().enumerate() {
+        for use_case in UseCase::ALL {
+            let Some(plot) = plots.iter().find(|plot| plot.use_case == use_case) else { continue };
+            let Some(kernels) = &plot.kernels[algorithm_index] else { continue };
+            for kernel in &kernels.kernels {
+                let from = if kernel.first == 0 { "from the start".to_owned() } else { format!("from {}", format_bytes(kernel.first)) };
+                let text = format!("{} · {} · {} {from}: {}", algorithm.name(), use_case.heading(), kernel.name, kernel.why);
+                /* One line to about 180 characters; longer ones continue indented. */
+                let mut line = String::new();
+                for word in text.split(' ') {
+                    if !line.is_empty() && line.len() + word.len() > 180 {
+                        lines.push(std::mem::take(&mut line));
+                        line.push_str("    ");
+                    }
+                    if !line.is_empty() && !line.ends_with("    ") {
+                        line.push(' ');
+                    }
+                    line.push_str(word);
+                }
+                lines.push(line);
+            }
+        }
+    }
+    ProvCat { key: "paths", name: "Code paths", summary: "what each dot shape's code path is, contender by contender".to_owned(), lines }
 }
 
 /* Provenance that belongs to one contender and hides with it: the
@@ -4611,9 +4672,8 @@ fn write_interaction_script(
                     .expect("every kernel starts at or below the axis's largest point");
                 write!(
                     data,
-                    "{{\"from\":{first},\"name\":{},\"why\":{},\"mark\":\"{}\"}}",
+                    "{{\"from\":{first},\"name\":{},\"mark\":\"{}\"}}",
                     json_string(&kernel.name),
-                    json_string(&kernel.why),
                     kernel.mark.name(),
                 )
                 .unwrap();
@@ -4703,10 +4763,11 @@ function xsFor(p) {
   const left = DATA.plotLeft + DATA.xInset, width = DATA.plotRight - DATA.plotLeft - 2 * DATA.xInset;
   return DATA.plots[p].bytes.map(v => left + (Math.log2(v) - w0) / (w1 - w0) * width);
 }
-/* "192 B", "1.5 KiB", "16 MiB", as the Rust side's format_bytes writes. */
+/* Whole MiB or KiB where the size is one, else bytes, as the Rust side's format_bytes writes. */
 function fmtBytes(bytes) {
-  const [v, u] = bytes < 1024 ? [bytes, "B"] : bytes < 1048576 ? [bytes / 1024, "KiB"] : [bytes / 1048576, "MiB"];
-  return (Number.isInteger(v) ? v.toFixed(0) : v.toFixed(1)) + " " + u;
+  if (bytes >= 1048576 && bytes % 1048576 === 0) return bytes / 1048576 + " MiB";
+  if (bytes >= 1024 && bytes % 1024 === 0) return bytes / 1024 + " KiB";
+  return bytes + " B";
 }
 function setZoom(from, to) {
   from = Math.max(0, from); to = Math.min(ALLB.length - 1, to);
@@ -4737,34 +4798,26 @@ function setZoom(from, to) {
 function zoomStep(end, delta) {
   if (end === "from") setZoom(zFrom + delta, zTo); else setZoom(zFrom, zTo + delta);
 }
-/* About half the range: a quarter of the points off each end, one at least. */
-function zoomIn() {
-  const n = zTo - zFrom;
-  if (n <= 1) return;
-  const cut = Math.max(1, Math.floor(n / 4));
-  const from = zFrom + cut, to = Math.max(from + 1, zTo - cut);
-  setZoom(from, to);
-}
-/* About twice the range, spilling to the other end at an edge. */
-function zoomOut() {
-  const last = ALLB.length - 1, add = Math.max(1, Math.ceil((zTo - zFrom) / 2));
-  let from = zFrom - add, to = zTo + add;
-  if (from < 0) { to -= from; from = 0; }
-  if (to > last) { from = Math.max(0, from - (to - last)); to = last; }
-  setZoom(from, to);
-}
 function zoomAll() { setZoom(0, ALLB.length - 1); }
+/* A zoom label's width, as the Rust side's zoom_label_width estimates it. */
+const zoomLabelWidth = text => text.length * 7.6;
 function updateZoomControls() {
   const last = ALLB.length - 1;
-  document.getElementById("zoom-from").textContent = fmtBytes(ALLB[zFrom]);
-  document.getElementById("zoom-to").textContent = fmtBytes(ALLB[zTo]);
+  const from = fmtBytes(ALLB[zFrom]), to = fmtBytes(ALLB[zTo]);
+  document.getElementById("zoom-from").textContent = from;
+  document.getElementById("zoom-to").textContent = to;
+  /* Arrows hug their labels: the first range's right arrow, the last range's left arrow and its word. */
+  const fromLabelX = +document.getElementById("zoom-from").getAttribute("x");
+  document.getElementById("zoom-from-inc").setAttribute("transform", `translate(${(fromLabelX + zoomLabelWidth(from) + 4).toFixed(1)} 0)`);
+  const toLabelEnd = +document.getElementById("zoom-to").getAttribute("x");
+  const toDecX = toLabelEnd - zoomLabelWidth(to) - 4 - 16;
+  document.getElementById("zoom-to-dec").setAttribute("transform", `translate(${toDecX.toFixed(1)} 0)`);
+  document.getElementById("zoom-to-word").setAttribute("x", (toDecX - 6).toFixed(1));
   const off = (id, disabled) => document.getElementById(id).setAttribute("data-off", disabled ? "true" : "false");
   off("zoom-from-dec", zFrom === 0);
   off("zoom-from-inc", zFrom + 1 >= zTo);
   off("zoom-to-dec", zTo - 1 <= zFrom);
   off("zoom-to-inc", zTo === last);
-  off("zoom-in", zTo - zFrom <= 1);
-  off("zoom-out", zFrom === 0 && zTo === last);
   off("zoom-all", zFrom === 0 && zTo === last);
 }
 
@@ -5048,24 +5101,25 @@ function relayoutPlot(p) {
    * the static render's rule.
    */
   const labelY = row => plot.bottom + 24 + 13 * row;
-  let prevX = -Infinity, prevWidth = 0, prevRow = 1;
+  const rowEnds = [-Infinity, -Infinity];
   for (let k = 0; k < X.length; k++) {
     const x = X[k];
     const opacity = Math.max(0, Math.min(1, (Math.min(x - DATA.plotLeft, DATA.plotRight - x) + 12) / 12));
     const [grid, tick, label] = xAxis[p][k];
     grid.setAttribute("x1", x.toFixed(2)); grid.setAttribute("x2", x.toFixed(2));
     grid.setAttribute("opacity", opacity.toFixed(3));
+    /* The static render's rule: the first row that clears, else hidden. */
     const width = label.textContent.length * 7.2 + 6;
-    let row = 0;
+    let row = -1;
     if (opacity > 0) {
-      if (x - prevX < (prevWidth + width) / 2 && prevRow === 0) row = 1;
-      prevX = x; prevWidth = width; prevRow = row;
+      row = rowEnds.findIndex(end => x - width / 2 >= end);
+      if (row >= 0) rowEnds[row] = x + width / 2;
     }
-    label.setAttribute("x", x.toFixed(2)); label.setAttribute("y", labelY(row).toFixed(1));
-    label.setAttribute("opacity", opacity.toFixed(3));
+    label.setAttribute("x", x.toFixed(2)); label.setAttribute("y", labelY(Math.max(row, 0)).toFixed(1));
+    label.setAttribute("opacity", (row >= 0 ? opacity : 0).toFixed(3));
     tick.setAttribute("x1", x.toFixed(2)); tick.setAttribute("x2", x.toFixed(2));
     tick.setAttribute("opacity", opacity.toFixed(3));
-    tick.setAttribute("display", row === 1 && opacity > 0 ? "inline" : "none");
+    tick.setAttribute("display", row === 1 ? "inline" : "none");
   }
 }
 
@@ -5091,7 +5145,7 @@ DATA.plots.forEach((plot, p) => plot.series.forEach((s, i) => {
   });
 }));
 
-const provOpen = {run: false, machine: false, sources: false};
+const provOpen = {run: false, machine: false, sources: false, paths: false};
 
 function toggleProv(cat) {
   provOpen[cat] = !provOpen[cat];
@@ -5169,15 +5223,6 @@ function markGlyph(mark, color) {
   return el;
 }
 
-function wrapText(text, maxChars) {
-  const lines = []; let line = "";
-  for (const word of text.split(" ")) {
-    if (line && (line + " " + word).length > maxChars) { lines.push(line); line = word; }
-    else line = line ? line + " " + word : word;
-  }
-  if (line) lines.push(line);
-  return lines;
-}
 
 function textEl(x, y, cls, content, extra) {
   const t = document.createElementNS(NS, "text");
@@ -5206,22 +5251,35 @@ function showHover(p, focus, k) {
   const name = i => DATA.names[i];
   const rows = plot.series.map((s, i) => s ? [i, s.med[k]] : null).filter(r => r && on[r[0]]).sort((a, b) => a[1] - b[1]);
 
-  const PAD = 10, LINE = 16, W = 350;
+  const PAD = 10, LINE = 16;
+  /*
+   * Text widths, estimated from character counts at each class's font
+   * size (a browser measures text only once it is displayed): wide enough
+   * for the system sans fonts the style names.
+   */
+  const widthOf = (text, cls) => text.length * ({ "hover-head": 7.2, "hover-row": 6.4, "hover-ratio": 6.8, "hover-sub": 5.8, "hover-note": 5.0 }[cls] || 6.4);
+  let wide = 350;
+  const note = (el, extra) => { wide = Math.max(wide, (+el.getAttribute("x") || 0) + widthOf(el.textContent, el.getAttribute("class").split(" ")[0]) + (extra || 0) + PAD); return el; };
   let y = PAD + 12;
-  body.appendChild(textEl(PAD, y, "hover-head", `${name(focus)} at ${plot.sizes[k]}`));
+  body.appendChild(note(textEl(PAD, y, "hover-head", `${name(focus)} at ${plot.sizes[k]}`)));
   y += 14;
   /* In the rate unit the fastest sample (min time) is the top of the range. */
   const asc = (a, b) => unit === "ns" ? [a, b] : [b, a];
   const [rLo, rHi] = asc(f.min[k], f.max[k]);
   const speedRow = (label, m, lo, hi, share) => {
     const spread = (hi - lo) / m;
-    const note = spread >= DATA.spreadWide ? " · poorly determined" : spread >= DATA.spreadNoticeable ? " · less certain" : "";
+    const noteText = spread >= DATA.spreadWide ? " · poorly determined" : spread >= DATA.spreadNoticeable ? " · less certain" : "";
     const [cLo, cHi] = asc(lo, hi);
-    const row = textEl(PAD, y, "hover-sub",
-      `${label} ${fmt(m, p)} ${unitLabel(p)} (${fmtOther(m, p)}) · 95% interval ${fmt(cLo, p)}–${fmt(cHi, p)}${share}${note}`);
-    if (spread >= DATA.spreadWide) row.setAttribute("fill", "#b45309");
-    body.appendChild(row);
-    y += 13;
+    /* One line for a one-speed point; a speed of two takes two, its share first. */
+    const lines = share
+      ? [`${label} ${fmt(m, p)} ${unitLabel(p)} (${fmtOther(m, p)})${share}`, `   95% interval ${fmt(cLo, p)}–${fmt(cHi, p)}${noteText}`]
+      : [`${label} ${fmt(m, p)} ${unitLabel(p)} (${fmtOther(m, p)}) · 95% interval ${fmt(cLo, p)}–${fmt(cHi, p)}${noteText}`];
+    for (const text of lines) {
+      const row = note(textEl(PAD, y, "hover-sub", text));
+      if (spread >= DATA.spreadWide) row.setAttribute("fill", "#b45309");
+      body.appendChild(row);
+      y += 13;
+    }
   };
   if (f.two[k]) {
     const total = f.cnt[k] + f.cnt2[k];
@@ -5232,53 +5290,25 @@ function showHover(p, focus, k) {
   } else {
     speedRow("median", f.med[k], f.low[k], f.high[k], "");
   }
-  body.appendChild(textEl(PAD, y, "hover-sub", `extremes ${fmt(rLo, p)}–${fmt(rHi, p)} ${unitLabel(p)} over ${f.n[k]} samples`));
+  body.appendChild(note(textEl(PAD, y, "hover-sub", `extremes ${fmt(rLo, p)}–${fmt(rHi, p)} ${unitLabel(p)} over ${f.n[k]} samples`)));
 
-  /* Code path at this point; the first point of a new path explains why. */
+  /* Code path at this point, by name; the Code paths section at the bottom says what it is. */
   let ri = 0;
   f.kernels.forEach((r, j) => { if (k >= r.from) ri = j; });
   const kernel = f.kernels[ri];
-  const isTransition = ri > 0 && kernel.from === k;
   y += 14;
-  const pathRow = textEl(PAD, y, "hover-sub", "");
+  const pathRow = textEl(PAD + 14, y, "hover-sub", "code path: " + kernel.name);
   const shape = markGlyph(kernel.mark, DATA.colors[focus]);
   shape.setAttribute("transform", `translate(${PAD + 5} ${y - 3.5}) scale(0.8)`);
   body.appendChild(shape);
-  pathRow.setAttribute("x", PAD + 14);
-  pathRow.textContent = (isTransition ? "new path from here: " : "code path: ") + kernel.name;
-  if (isTransition) pathRow.setAttribute("class", "hover-sub hover-path");
-  body.appendChild(pathRow);
-  if (isTransition) {
-    for (const line of wrapText(kernel.why, 62)) {
-      y += 13;
-      body.appendChild(textEl(PAD + 14, y, "hover-why", line));
-    }
-  }
+  body.appendChild(note(pathRow));
   y += 10;
 
   if (rows.length > 1) {
-    y += LINE;
-    body.appendChild(textEl(PAD, y, "hover-sub", "contender"));
-    body.appendChild(textEl(PAD + 150, y, "hover-sub", unitLabel(p), { "text-anchor": "end" }));
-    body.appendChild(textEl(PAD + 215, y, "hover-sub", otherUnitLabel(p), { "text-anchor": "end" }));
-    body.appendChild(textEl(W - PAD, y, "hover-sub", `relative to ${name(focus)}`, { "text-anchor": "end" }));
-    y += 4;
-    for (const [i, med] of rows) {
-      y += LINE;
+    /* Each row's cells, then columns as wide as their widest entry. */
+    const other = v => fmtOther(v, p).replace(" " + otherUnitLabel(p), "");
+    const table = rows.map(([i, med]) => {
       const s = plot.series[i];
-      /* Swatch: this contender's mark at this point, in its own colour. */
-      let rj = 0;
-      s.kernels.forEach((r, j) => { if (k >= r.from) rj = j; });
-      const sw = markGlyph(s.kernels[rj].mark, DATA.colors[i]);
-      sw.setAttribute("class", "hover-swatch");
-      sw.setAttribute("style", `fill: ${DATA.colors[i]}`);
-      sw.setAttribute("transform", `translate(${PAD + 5} ${y - 4}) scale(0.85)`);
-      body.appendChild(sw);
-      const cls = "hover-row" + (i === focus ? " hover-row-focus" : "");
-      body.appendChild(textEl(PAD + 15, y, cls, name(i)));
-      body.appendChild(textEl(PAD + 150, y, cls, speedsText(s, k, p), { "text-anchor": "end" }));
-      const other = v => fmtOther(v, p).replace(" " + otherUnitLabel(p), "");
-      body.appendChild(textEl(PAD + 215, y, cls, s.two[k] ? `${other(s.med[k])} | ${other(s.med2[k])}` : other(med), { "text-anchor": "end" }));
       let rel, color;
       if (i === focus) { rel = "—"; color = "#9a9a9a"; }
       else {
@@ -5293,13 +5323,48 @@ function showHover(p, focus, k) {
         else if (rMax <= 0.95) { rel = "\u25bc " + x(1 / rMax, 1 / rMin) + "\u00d7 slower"; color = "#b91c1c"; }
         else { rel = x(rMin, rMax) + "\u00d7, faster or slower"; color = "#777777"; }
       }
-      body.appendChild(textEl(W - PAD, y, "hover-ratio", rel, { "text-anchor": "end", fill: color }));
+      return { i, s, name: name(i), value: speedsText(s, k, p), other: s.two[k] ? `${other(s.med[k])} | ${other(s.med2[k])}` : other(med), rel, color };
+    });
+    const GAP = 14;
+    const colW = (key, cls, head) => Math.max(widthOf(head, "hover-sub"), ...table.map(r => widthOf(r[key], cls)));
+    const nameX = PAD + 15;
+    const valueEnd = nameX + colW("name", "hover-row", "contender") + GAP + colW("value", "hover-row", unitLabel(p));
+    const otherEnd = valueEnd + GAP + colW("other", "hover-row", otherUnitLabel(p));
+    const relW = colW("rel", "hover-ratio", `relative to ${name(focus)}`);
+    wide = Math.max(wide, otherEnd + GAP + relW + PAD);
+    y += LINE;
+    body.appendChild(textEl(PAD, y, "hover-sub", "contender"));
+    body.appendChild(textEl(valueEnd, y, "hover-sub", unitLabel(p), { "text-anchor": "end" }));
+    body.appendChild(textEl(otherEnd, y, "hover-sub", otherUnitLabel(p), { "text-anchor": "end" }));
+    const relHead = textEl(0, y, "hover-sub", `relative to ${name(focus)}`, { "text-anchor": "end" });
+    body.appendChild(relHead);
+    y += 4;
+    const relCells = [relHead];
+    for (const r of table) {
+      y += LINE;
+      /* Swatch: this contender's mark at this point, in its own colour. */
+      let rj = 0;
+      r.s.kernels.forEach((kr, j) => { if (k >= kr.from) rj = j; });
+      const sw = markGlyph(r.s.kernels[rj].mark, DATA.colors[r.i]);
+      sw.setAttribute("class", "hover-swatch");
+      sw.setAttribute("style", `fill: ${DATA.colors[r.i]}`);
+      sw.setAttribute("transform", `translate(${PAD + 5} ${y - 4}) scale(0.85)`);
+      body.appendChild(sw);
+      const cls = "hover-row" + (r.i === focus ? " hover-row-focus" : "");
+      body.appendChild(textEl(nameX, y, cls, r.name));
+      body.appendChild(textEl(valueEnd, y, cls, r.value, { "text-anchor": "end" }));
+      body.appendChild(textEl(otherEnd, y, cls, r.other, { "text-anchor": "end" }));
+      const rel = textEl(0, y, "hover-ratio", r.rel, { "text-anchor": "end", fill: r.color });
+      body.appendChild(rel);
+      relCells.push(rel);
     }
     y += 12;
-    body.appendChild(textEl(PAD, y, "hover-note", `each row's speed compared with ${name(focus)}; medians, ranked fastest first`));
+    body.appendChild(note(textEl(PAD, y, "hover-note", `each row's speed compared with ${name(focus)}; medians, ranked fastest first`)));
     y += 4;
+    /* The comparison column ends at the panel's right edge, known once every line is measured. */
+    relCells.forEach(el => el.setAttribute("x", wide - PAD));
   }
-  const H = y + PAD - 6;
+  const H = y + PAD - 6, W = Math.min(wide, 640);
 
   /* Place beside the column, flipping left near the right edge. */
   const x = currentX[p][k];
@@ -5354,8 +5419,6 @@ window.hoverLabel = hoverLabel;
 window.setUnit = setUnit;
 window.flipUnit = flipUnit;
 window.zoomStep = zoomStep;
-window.zoomIn = zoomIn;
-window.zoomOut = zoomOut;
 window.zoomAll = zoomAll;
 updateZoomControls();
 relayout();
@@ -5583,8 +5646,8 @@ mod correctness_tests {
     fn tick_and_size_labels() {
         let ticks: Vec<String> = [70.0, 10.0, 7.0, 1.5, 1.0, 0.7, 0.2, 0.15, 0.1, 0.05, 0.015].iter().map(|&v| format_gbps_tick(v)).collect();
         assert_eq!(ticks, ["70", "10", "7.0", "1.5", "1.0", "0.7", "0.2", "0.15", "0.1", "0.05", "0.015"]);
-        let sizes: Vec<String> = [64, 192, 1024, 1536, 3072, 1 << 20, 3 << 20, 16 << 20].iter().map(|&b| format_bytes(b)).collect();
-        assert_eq!(sizes, ["64 B", "192 B", "1 KiB", "1.5 KiB", "3 KiB", "1 MiB", "3 MiB", "16 MiB"]);
+        let sizes: Vec<String> = [64, 192, 1024, 1025, 1536, 2304, 3072, 1 << 20, 3 << 20, 16 << 20].iter().map(|&b| format_bytes(b)).collect();
+        assert_eq!(sizes, ["64 B", "192 B", "1 KiB", "1025 B", "1536 B", "2304 B", "3 KiB", "1 MiB", "3 MiB", "16 MiB"]);
     }
 
     #[test]
