@@ -46,8 +46,8 @@ dependencies = [
 
 [[package]]
 name = "blake3-servil"
-version = "0.1.0"
-source = "git+https://github.com/johnservil/BLAKE3?branch=servil#7fb70394085159e6180cde97aa419245d6f3886f"
+version = "0.1.0+7fe31c3f411a7cad7e13ce104fae40d4eb2e2f75"
+source = "git+https://github.com/johnservil/BLAKE3?branch=servil#0b8629c4e63bcb3da330326a7791c9162d401a70"
 dependencies = [
  "arrayvec",
  "cc",
