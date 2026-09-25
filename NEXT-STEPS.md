@@ -32,6 +32,10 @@ before touching kernels or the pool); this repository's are in `NOTES.md`.
   0.58 against 0.33, 1 MiB 0.205 against 0.174; servil mt 1 MiB 0.131
   against 0.032 (the pool per 64 KiB piece); BLAKE3 mt (`update_rayon`)
   about 1 ns/B.
+- **Crux probe answered** (probe/sme-scalar, job 142): integer work runs
+  beside the SME unit at no cost (fork NOTES, "The core's integer units
+  run beside the SME unit"); next, an SME2 kernel with integer lanes (16
+  SME2 chunks + 4 integer chunks per group, about +25%).
 - **Next** (Zooko, September 25): the SME2-thread design: in st mode the calling thread uses SME2 as much as sizes justify
   (the SME2 lock kept, a doc warning about concurrent callers); in mt mode
   the calling thread is the one SME2 thread, streaming continuously,
