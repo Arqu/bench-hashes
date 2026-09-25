@@ -110,6 +110,30 @@ before touching kernels or the pool); this repository's are in `NOTES.md`.
 - README invites results as pull requests (a folder per machine).
 - Every run reports other programs' load in its provenance (NOTES.md).
 
+## Idea: a truly streaming (pipelined) hasher (Zooko, September 25)
+
+`Hasher::update` is synchronous: the caller waits while we hash, and our
+resources idle while the caller produces the next piece, a pipeline
+bubble at every call. A pipelined API buffers between the two: the caller
+hands over pieces and returns at once while our threads (the SME2
+streamer, NEON workers) hash behind it; `finalize` drains. BLAKE3 suits
+this as SHA-256 cannot: every piece's place in the tree is known from its
+offset, so pieces hash in parallel and out of order, and only the CV-stack
+merge runs in order. Design points:
+- Back-pressure: bounded buffers; when full, the producer blocks (simplest,
+  the standard bounded-channel answer), or an async form returns Pending.
+- Copying: `update(&[u8])` borrows, so hashing after return means copying,
+  which on M4 costs about what hashing costs at mt speeds. Zero-copy
+  forms: the caller fills our buffers (`buffer() -> &mut [u8]`, then
+  `submit(n)`; blocking on `buffer()` is the back-pressure), or hands us
+  owned buffers. Buffers of one power-of-two size make every piece a whole
+  subtree.
+- Contract: multithreaded by nature (another thread hashes); fits the
+  "one caller thread, we spread under the hood" recommended usage.
+- Benchmark: a use case where the producer does work per piece (a copy
+  from a source buffer, as a read would), timed end to end, so the overlap
+  shows; synchronous contenders run the same producer.
+
 ## Open problems
 
 Each stays open until controlled, explained to users with how to control
