@@ -99,6 +99,12 @@ before touching kernels or the pool); this repository's are in `NOTES.md`.
 
 ## Decided September 25 (Zooko)
 
+- **The recommended usage first** (fork AGENTS.md): optimize for one
+  thread making all calls; misuse and shared machines measured and cared
+  for, no longer a veto. To ask: should `perf_regress` report shared-cell
+  regressions without stopping? Also to write: a "for best performance"
+  section in the API docs and the fork's README.
+
 - The fork builds without SME2 (a warning) when the compiler cannot
   assemble it: `candidate/sme2-optional-build`, gated like any code change.
 - README invites results as pull requests (a folder per machine).
