@@ -24,12 +24,15 @@ before touching kernels or the pool); this repository's are in `NOTES.md`.
   (tag `v0.1.0+7fe31c3...`, commit 0b8629c, made by `tools/gen-ver.py`,
   Zooko's technique), with the overlap group (accepted trade) and the
   parent kernels with a scalar lane. bench-hashes 0.7.0 pins it.
-- Benchmark branch `main`, released as 0.7.0. Records for both machines:
-  fork 0b8629c, full `--all` runs, both quiet (Mac runner job 139: 0.49
-  CPUs of other load; VM 0.01; job 138 read busy and was rerun).
-- **Next** (Zooko, September 25): the streaming `Hasher` use case in the
-  benchmark (pieces of 64 KiB, solo and shared); then the SME2-thread
-  design: in st mode the calling thread uses SME2 as much as sizes justify
+- Benchmark branch `main` (0.7.0 released before it): **the streamed use
+  case** (update per 64 KiB piece, solo and shared). Records for both
+  machines: fork c6d61a6 (`Hasher::update_multithreaded`), full `--all`
+  runs, both quiet (Mac runner job 141: 0.23 CPUs; VM 0.03). Mac, solo,
+  streamed against one-shot: servil 64 B 0.92 against 0.70 ns/B, 3 KiB
+  0.58 against 0.33, 1 MiB 0.205 against 0.174; servil mt 1 MiB 0.131
+  against 0.032 (the pool per 64 KiB piece); BLAKE3 mt (`update_rayon`)
+  about 1 ns/B.
+- **Next** (Zooko, September 25): the SME2-thread design: in st mode the calling thread uses SME2 as much as sizes justify
   (the SME2 lock kept, a doc warning about concurrent callers); in mt mode
   the calling thread is the one SME2 thread, streaming continuously,
   integer lanes beside it if the crux probe allows, workers NEON only.
