@@ -125,6 +125,18 @@ ring, and crates.io BLAKE3 (`SHOWN_AT_FIRST`; Zooko, September 25, 2026:
 fewer lines for the viewer, sha2 one click away); a run without any of
 them shows everything.
 
+**The streamed use case** (September 25, 2026, Zooko): the one-message
+sizes fed through each contender's incremental API in 64 KiB pieces, solo
+and shared; one piece size, to keep the run time down (a full default run
+grows by about half). It exposes what one-shot calls hide: first quick
+run (VM), BLAKE3 servil through `Hasher` at 3 KiB 0.53 ns/B against 0.33
+one-shot, 3839 B 0.58 against 0.34, 7935 B 0.44 against 0.27 (the hasher
+cannot plan the whole input, and holds the last chunk back until
+finalize); BLAKE3 mt's `update_rayon` per 64 KiB piece 2.7-7 ns/B; the
+fork's `update_multithreaded` 0.09-0.14 from 64 KiB. `hash_batch` takes
+the `Point` (use case and message count) so a stream and a message of one
+size are told apart; `--points` names a streamed point `streamed LABEL`.
+
 **Load from other programs** (September 25, 2026, after a Mac record
 read 8-10% slow across every contender with dips in the batch plot, most
 likely from the user's own work on the Mac): at round boundaries the run

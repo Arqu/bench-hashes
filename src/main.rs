@@ -68,7 +68,12 @@ const LONG_MIN_SAMPLES: usize = 8;
 const INPUT_COUNT: usize = 27;
 const BATCH_COUNT: usize = 24;
 /// Every measured (contender, x) cell lies on one of the two axes.
-const POINT_COUNT: usize = INPUT_COUNT + BATCH_COUNT;
+const STREAM_COUNT: usize = INPUT_COUNT;
+const POINT_COUNT: usize = INPUT_COUNT + BATCH_COUNT + STREAM_COUNT;
+/// The streaming use case feeds its input to each contender's incremental
+/// API in pieces of this many bytes (a typical read buffer), the last one
+/// shorter.
+const PIECE_LEN: usize = 64 * 1024;
 /// Every message in the many-messages use case is one BLAKE3 block, the
 /// one size ab-blake3's batch entry point accepts.
 const MESSAGE_LEN: usize = 64;
@@ -112,6 +117,11 @@ const AB_BLAKE3_SOURCE_INFO: &str = env!("AB_BLAKE3_SOURCE_INFO");
  * boundaries hands its threads unequal work there. 16 MiB was measured
  * and dropped: interpolated from 8 and 32 MiB, every contender's median
  * fell within the difference between two runs, on both machines.
+ *
+ * The streamed axis repeats the one-message sizes, each input fed to the
+ * contender's incremental API (update, then finalize) in PIECE_LEN
+ * pieces: below PIECE_LEN one update, above it one per piece, so the
+ * implementation never sees the total up front.
  *
  * The many-messages axis counts 64-byte messages per batch, from one to
  * 262144 (16 MiB of input). Powers of two from 1 to 16 show a SIMD batch
@@ -173,6 +183,33 @@ const POINTS: [Point; POINT_COUNT] = [
     Point::many("65536", 65536),
     Point::many("131072", 131072),
     Point::many("262144", 262144),
+    Point::streamed("64 B", 64),
+    Point::streamed("128 B", 128),
+    Point::streamed("256 B", 256),
+    Point::streamed("512 B", 512),
+    Point::streamed("1 KiB", 1024),
+    Point::streamed("2 KiB", 2 * 1024),
+    Point::streamed("2304 B", 2304),
+    Point::streamed("3 KiB", 3 * 1024),
+    Point::streamed("3839 B", 3839),
+    Point::streamed("4 KiB", 4 * 1024),
+    Point::streamed("4470 B", 4470),
+    Point::streamed("7935 B", 7935),
+    Point::streamed("8 KiB", 8 * 1024),
+    Point::streamed("16 KiB", 16 * 1024),
+    Point::streamed("32 KiB", 32 * 1024),
+    Point::streamed("64 KiB", 64 * 1024),
+    Point::streamed("128 KiB", 128 * 1024),
+    Point::streamed("256 KiB", 256 * 1024),
+    Point::streamed("512 KiB", 512 * 1024),
+    Point::streamed("1 MiB", 1024 * 1024),
+    Point::streamed("2 MiB", 2 * 1024 * 1024),
+    Point::streamed("3 MiB", 3 * 1024 * 1024),
+    Point::streamed("4 MiB", 4 * 1024 * 1024),
+    Point::streamed("8 MiB", 8 * 1024 * 1024),
+    Point::streamed("32 MiB", 32 * 1024 * 1024),
+    Point::streamed("64 MiB", 64 * 1024 * 1024),
+    Point::streamed("128 MiB", 128 * 1024 * 1024),
 ];
 
 /// results[contender_index][point_index], contenders in the roster's
@@ -233,10 +270,12 @@ impl RunSamples {
 enum UseCase {
     OneMessage,
     ManyMessages,
+    /// One message fed through the incremental API in PIECE_LEN pieces.
+    Streaming,
 }
 
 impl UseCase {
-    const ALL: [UseCase; 2] = [UseCase::OneMessage, UseCase::ManyMessages];
+    const ALL: [UseCase; 3] = [UseCase::OneMessage, UseCase::ManyMessages, UseCase::Streaming];
 
     /// The contiguous run of POINTS on this use case's axis.
     fn points(self) -> std::ops::Range<usize> {
@@ -251,6 +290,7 @@ impl UseCase {
         match self {
             Self::OneMessage => "Input size (logarithmic spacing)",
             Self::ManyMessages => "Messages per batch, 64 B each (logarithmic spacing)",
+            Self::Streaming => "Input size, fed in 64 KiB pieces (logarithmic spacing)",
         }
     }
 
@@ -258,13 +298,14 @@ impl UseCase {
         match self {
             Self::OneMessage => "One message per call",
             Self::ManyMessages => "Many 64-byte messages per call",
+            Self::Streaming => "One message, streamed in 64 KiB pieces",
         }
     }
 
     /// The x column's header in the text report.
     fn column(self) -> &'static str {
         match self {
-            Self::OneMessage => "size",
+            Self::OneMessage | Self::Streaming => "size",
             Self::ManyMessages => "messages",
         }
     }
@@ -277,7 +318,7 @@ impl UseCase {
      */
     fn units(self, point: Point, iterations: usize) -> u64 {
         match self {
-            Self::OneMessage => point.bytes as u64 * iterations as u64,
+            Self::OneMessage | Self::Streaming => point.bytes as u64 * iterations as u64,
             Self::ManyMessages => point.messages as u64 * iterations as u64,
         }
     }
@@ -285,28 +326,28 @@ impl UseCase {
     /// The unit a sample is per, in the samples file.
     fn unit_key(self) -> &'static str {
         match self {
-            Self::OneMessage => "B",
+            Self::OneMessage | Self::Streaming => "B",
             Self::ManyMessages => "msg",
         }
     }
 
     fn time_unit(self) -> &'static str {
         match self {
-            Self::OneMessage => "ns/B",
+            Self::OneMessage | Self::Streaming => "ns/B",
             Self::ManyMessages => "ns/msg",
         }
     }
 
     fn rate_unit(self) -> &'static str {
         match self {
-            Self::OneMessage => "GB/s",
+            Self::OneMessage | Self::Streaming => "GB/s",
             Self::ManyMessages => "Mmsg/s",
         }
     }
 
     fn rate_unit_long(self) -> &'static str {
         match self {
-            Self::OneMessage => "Gigabytes per second",
+            Self::OneMessage | Self::Streaming => "Gigabytes per second",
             Self::ManyMessages => "Million messages per second",
         }
     }
@@ -314,7 +355,7 @@ impl UseCase {
     /// rate = rate_scale / (ns per unit): 1 ns/B is 1 GB/s; 1 ns/msg is 1000 Mmsg/s.
     fn rate_scale(self) -> u64 {
         match self {
-            Self::OneMessage => 1,
+            Self::OneMessage | Self::Streaming => 1,
             Self::ManyMessages => 1000,
         }
     }
@@ -335,6 +376,7 @@ impl Point {
     fn name(&self) -> String {
         match self.use_case {
             UseCase::OneMessage => self.label.to_owned(),
+            UseCase::Streaming => format!("{} streamed", self.label),
             UseCase::ManyMessages if self.messages == 1 => "1 message".to_owned(),
             UseCase::ManyMessages => format!("{} messages", self.label),
         }
@@ -342,6 +384,10 @@ impl Point {
 
     const fn one(label: &'static str, bytes: usize) -> Self {
         Self { label, bytes, messages: 1, use_case: UseCase::OneMessage }
+    }
+
+    const fn streamed(label: &'static str, bytes: usize) -> Self {
+        Self { label, bytes, messages: 1, use_case: UseCase::Streaming }
     }
 
     const fn many(label: &'static str, messages: usize) -> Self {
@@ -352,7 +398,7 @@ impl Point {
     /// batches below QUICK_MESSAGES.
     fn quick(&self) -> bool {
         match self.use_case {
-            UseCase::OneMessage => self.bytes < QUICK_BYTES,
+            UseCase::OneMessage | UseCase::Streaming => self.bytes < QUICK_BYTES,
             UseCase::ManyMessages => self.messages < QUICK_MESSAGES,
         }
     }
@@ -461,6 +507,8 @@ impl Algorithm {
         match use_case {
             UseCase::OneMessage => true,
             UseCase::ManyMessages => !matches!(self, Self::Blake3Rayon),
+            /* ab-blake3 has no incremental API. */
+            UseCase::Streaming => !matches!(self, Self::AbBlake3),
         }
     }
 
@@ -557,10 +605,10 @@ impl Algorithm {
             | Self::Sha1Dc
             | Self::Sha256CommonCrypto
             | Self::Sha256Ring => "single-threaded",
-            Self::Blake3Servil => "single-threaded; blake3_servil::hash for one message, blake3_servil::hash_many for a batch",
+            Self::Blake3Servil => "single-threaded; blake3_servil::hash for one message, blake3_servil::hash_many for a batch, Hasher::update for a stream",
             Self::AbBlake3 => "single-threaded; ab_blake3::const_hash for one message, ab_blake3::single_block_hash_many_exact::<N> for a batch of N 64-byte messages",
-            Self::Blake3Rayon => "multithreaded; Hasher::update_rayon on Rayon's global pool, the crate's own multithreading as a program gets it by default: the tree splits recursively over the pool, and inputs under a few chunks stay on the caller's thread",
-            Self::Blake3ServilMt => "multithreaded; blake3_servil::hash_multithreaded for one message and hash_many_multithreaded for a batch: the fork chooses whether to use its shared resident workers; the kernel tables below show the thresholds",
+            Self::Blake3Rayon => "multithreaded; Hasher::update_rayon (per piece, for a stream) on Rayon's global pool, the crate's own multithreading as a program gets it by default: the tree splits recursively over the pool, and inputs under a few chunks stay on the caller's thread",
+            Self::Blake3ServilMt => "multithreaded; blake3_servil::hash_multithreaded for one message, hash_many_multithreaded for a batch, and Hasher::update_multithreaded for a stream: the fork chooses whether to use its shared resident workers; the kernel tables below show the thresholds",
         }
     }
 
@@ -955,7 +1003,12 @@ fn parse_arguments() -> Options {
         let mut indices: Vec<usize> = list
             .split(',')
             .map(|label| {
-                POINTS.iter().position(|point| point.label == label.trim()).unwrap_or_else(|| {
+                /* "streamed 64 KiB" names a streamed point; a plain label the others. */
+                let (use_streamed, label) = match label.trim().strip_prefix("streamed ") {
+                    Some(rest) => (true, rest),
+                    None => (false, label.trim()),
+                };
+                POINTS.iter().position(|point| point.label == label && (point.use_case == UseCase::Streaming) == use_streamed).unwrap_or_else(|| {
                     let labels: Vec<&str> = POINTS.iter().map(|point| point.label).collect();
                     panic!("--points: no point labelled {label:?}; the labels are {}", labels.join(", "))
                 })
@@ -1157,13 +1210,15 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
     for (seed, buffers) in [(0, &inputs), (1, &duo_inputs)] {
         for (index, (point, input)) in POINTS.iter().zip(buffers).enumerate() {
             if roster.measures(index) {
-                check_input(&roster.algorithms, input, point.messages, seed);
+                check_input(&roster.algorithms, input, *point, seed);
             }
         }
     }
     for &(len, seed, _) in test_vectors::VECTORS {
         if !POINTS.iter().any(|point| point.messages == 1 && point.bytes == len) {
-            check_input(&roster.algorithms, &make_input_seeded(len, seed), 1, seed);
+            let input = make_input_seeded(len, seed);
+            check_input(&roster.algorithms, &input, Point::one("", len), seed);
+            check_input(&roster.algorithms, &input, Point::streamed("", len), seed);
         }
     }
     let duo = Duo::new();
@@ -1184,7 +1239,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
         for algorithm_index in 0..roster.len() {
             let algorithm = roster.algorithms[algorithm_index];
             if algorithm.takes_part(point.use_case) && roster.measures(point_index) {
-                let (iterations, per_iteration_ns) = calibrate_batch(algorithm, &inputs[point_index], point.messages);
+                let (iterations, per_iteration_ns) = calibrate_batch(algorithm, &inputs[point_index], *point);
                 batch_iterations[algorithm_index][point_index] = iterations;
                 budgeted[algorithm_index][point_index] = iterations == 1 && per_iteration_ns >= LONG_HASH_NS;
             }
@@ -1256,7 +1311,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
 
                 /* The solo sample: this thread runs the batch, alone. */
                 let started = sample_clock::now();
-                run_batch(algorithm, input, point.messages, iterations);
+                run_batch(algorithm, input, point, iterations);
                 let elapsed_ns = sample_clock::since_ns(started);
 
                 /*
@@ -1264,7 +1319,7 @@ fn measure_all(roster: &Roster, mut trace: Option<&mut ClockTrace>) -> (Results,
                  * run a batch each at once, on two threads, and each copy's
                  * own time is a sample.
                  */
-                let copies = duo.run(algorithm, input, &duo_inputs[size_index], point.messages, iterations);
+                let copies = duo.run(algorithm, input, &duo_inputs[size_index], point, iterations);
 
                 let total_units = point.use_case.units(point, iterations);
                 let per_unit = |ns: u64| -> u64 {
@@ -1469,15 +1524,15 @@ fn make_input_seeded(size: usize, seed: u64) -> Vec<u8> {
 /// message, SHA-256 over the concatenated digests for a batch of
 /// `messages`. Multithreaded entries also run two simultaneous calls over
 /// the same vectors, exercising shared pools.
-fn check_input(algorithms: &[Algorithm], input: &[u8], messages: usize, seed: u64) {
+fn check_input(algorithms: &[Algorithm], input: &[u8], point: Point, seed: u64) {
     assert!(!algorithms.is_empty(), "correctness checks need a contender");
-    let use_case = if messages == 1 { UseCase::OneMessage } else { UseCase::ManyMessages };
-    for &algorithm in algorithms.iter().filter(|algorithm| algorithm.takes_part(use_case)) {
+    let messages = point.messages;
+    for &algorithm in algorithms.iter().filter(|algorithm| algorithm.takes_part(point.use_case)) {
         assert!(algorithm.availability().is_ok(), "{} must be available", algorithm.key());
         let expected = expected_digest(algorithm.family(), input.len(), messages, seed);
         let check = || {
             let mut digests = Vec::new();
-            hash_batch(algorithm, input, messages, 1, |digest| digests.extend_from_slice(digest));
+            hash_batch(algorithm, input, point, 1, |digest| digests.extend_from_slice(digest));
             let actual = if messages == 1 { digests } else { Sha256::digest(&digests).to_vec() };
             assert_digest_matches(algorithm, input.len(), messages, seed, &expected, &actual);
         };
@@ -1528,8 +1583,8 @@ fn assert_digest_matches(algorithm: Algorithm, len: usize, messages: usize, seed
     }
 }
 
-fn run_batch(algorithm: Algorithm, input: &[u8], messages: usize, iterations: usize) {
-    hash_batch(algorithm, input, messages, iterations, |digest| { black_box(digest); });
+fn run_batch(algorithm: Algorithm, input: &[u8], point: Point, iterations: usize) {
+    hash_batch(algorithm, input, point, iterations, |digest| { black_box(digest); });
 }
 
 /*
@@ -1547,12 +1602,18 @@ fn run_batch(algorithm: Algorithm, input: &[u8], messages: usize, iterations: us
 fn hash_batch(
     algorithm: Algorithm,
     input: &[u8],
-    messages: usize,
+    point: Point,
     iterations: usize,
     mut consume: impl FnMut(&[u8]),
 ) {
     assert!(iterations > 0, "batch size must be positive");
+    let messages = point.messages;
     assert!(messages == 1 || input.len() == messages * MESSAGE_LEN, "a batch is {messages} messages of {MESSAGE_LEN} bytes");
+    assert!(algorithm.takes_part(point.use_case), "{} takes no part in {:?}", algorithm.key(), point.use_case);
+
+    if point.use_case == UseCase::Streaming {
+        return hash_stream(algorithm, input, iterations, consume);
+    }
 
     match algorithm {
         Algorithm::Blake3 => each_message(input, messages, iterations, |m| *blake3::hash(m).as_bytes(), consume),
@@ -1595,6 +1656,75 @@ fn hash_batch(
                 }
             }
         }
+    }
+}
+
+/*
+ * The streaming use case: each contender's incremental API, fed `input` in
+ * PIECE_LEN pieces (one update when it is shorter, none when empty), then
+ * finalized; one digest per pass into `consume`.
+ */
+fn hash_stream(algorithm: Algorithm, input: &[u8], iterations: usize, consume: impl FnMut(&[u8])) {
+    use sha2::Digest as _;
+    use sha1_checked::digest::Update as _;
+    match algorithm {
+        Algorithm::Blake3 => each_stream(input, iterations, |pieces| {
+            let mut hasher = blake3::Hasher::new();
+            pieces.for_each(|piece| { hasher.update(piece); });
+            *hasher.finalize().as_bytes()
+        }, consume),
+        Algorithm::Blake3Rayon => each_stream(input, iterations, |pieces| {
+            let mut hasher = blake3::Hasher::new();
+            pieces.for_each(|piece| { hasher.update_rayon(piece); });
+            *hasher.finalize().as_bytes()
+        }, consume),
+        Algorithm::Blake3Servil => each_stream(input, iterations, |pieces| {
+            let mut hasher = blake3_servil::Hasher::new();
+            pieces.for_each(|piece| { hasher.update(piece); });
+            *hasher.finalize().as_bytes()
+        }, consume),
+        Algorithm::Blake3ServilMt => each_stream(input, iterations, |pieces| {
+            let mut hasher = blake3_servil::Hasher::new();
+            pieces.for_each(|piece| { hasher.update_multithreaded(piece); });
+            *hasher.finalize().as_bytes()
+        }, consume),
+        Algorithm::Sha256 => each_stream(input, iterations, |pieces| {
+            let mut hasher = Sha256::new();
+            pieces.for_each(|piece| hasher.update(piece));
+            let digest: [u8; 32] = hasher.finalize().into();
+            digest
+        }, consume),
+        Algorithm::Sha256Ring => each_stream(input, iterations, |pieces| {
+            let mut context = ring::digest::Context::new(&ring::digest::SHA256);
+            pieces.for_each(|piece| context.update(piece));
+            let mut digest = [0u8; 32];
+            digest.copy_from_slice(context.finish().as_ref());
+            digest
+        }, consume),
+        Algorithm::Sha256CommonCrypto => each_stream(input, iterations, |pieces| common_crypto::sha256_pieces(pieces), consume),
+        Algorithm::Sha1Dc => each_stream(input, iterations, |pieces| {
+            let mut hasher = sha1_checked::Sha1::new();
+            pieces.for_each(|piece| hasher.update(piece));
+            let mut digest = [0u8; 20];
+            digest.copy_from_slice(hasher.try_finalize().hash());
+            digest
+        }, consume),
+        Algorithm::AbBlake3 => unreachable!("ab-blake3 takes no part in the streaming use case"),
+    }
+}
+
+/// `iterations` streams of `input` through `hash`, which receives the
+/// pieces in order; the digest of each goes to `consume`.
+#[inline(always)]
+fn each_stream<D: AsRef<[u8]>>(
+    input: &[u8],
+    iterations: usize,
+    hash: impl Fn(&mut dyn Iterator<Item = &[u8]>) -> D,
+    mut consume: impl FnMut(&[u8]),
+) {
+    for _ in 0..iterations {
+        let mut pieces = black_box(input).chunks(PIECE_LEN);
+        consume(hash(&mut pieces).as_ref());
     }
 }
 
@@ -1720,7 +1850,7 @@ struct DuoCopy {
 struct DuoJob {
     algorithm: Algorithm,
     inputs: [*const [u8]; 2],
-    messages: usize,
+    point: Point,
     iterations: usize,
     /// Which workers have taken this job (a bit each).
     taken: u8,
@@ -1753,13 +1883,13 @@ impl Duo {
     /// Run `iterations` of `algorithm` on both threads at once, copy 0 over
     /// `input` and copy 1 over `other`; returns each copy's time from its
     /// own start and its counts. The sample is the later finish.
-    fn run(&self, algorithm: Algorithm, input: &[u8], other: &[u8], messages: usize, iterations: usize) -> [DuoCopy; 2] {
+    fn run(&self, algorithm: Algorithm, input: &[u8], other: &[u8], point: Point, iterations: usize) -> [DuoCopy; 2] {
         use std::sync::atomic::Ordering;
         assert_eq!(input.len(), other.len(), "the two copies hash inputs of one size");
         {
             let mut job = self.job.lock().unwrap();
             assert!(job.is_none(), "one duo job at a time");
-            *job = Some(DuoJob { algorithm, inputs: [input, other], messages, iterations, taken: 0 });
+            *job = Some(DuoJob { algorithm, inputs: [input, other], point, iterations, taken: 0 });
             self.posted.notify_all();
         }
         /*
@@ -1822,7 +1952,7 @@ impl Duo {
             let perf0 = trace_clocks::perf_counters();
             let started = sample_clock::now();
             // Sound: run() holds the borrows until both finishes are read.
-            run_batch(job.algorithm, unsafe { &*job.inputs[copy] }, job.messages, job.iterations);
+            run_batch(job.algorithm, unsafe { &*job.inputs[copy] }, job.point, job.iterations);
             let elapsed_ns = sample_clock::since_ns(started);
             let perf = trace_clocks::perf_counters().since(perf0);
             let mut finished = self.finished.lock().unwrap();
@@ -1862,15 +1992,22 @@ mod common_crypto {
     }
 
     pub fn sha256(input: &[u8]) -> [u8; DIGEST_LEN] {
-        let len = u32::try_from(input.len()).expect("CC_SHA256_Update takes a 32-bit length");
+        sha256_pieces(&mut std::iter::once(input))
+    }
+
+    /// One Update per piece, in order.
+    pub fn sha256_pieces(pieces: &mut dyn Iterator<Item = &[u8]>) -> [u8; DIGEST_LEN] {
         let mut context = Context { count: [0; 2], hash: [0; 8], wbuf: [0; 16] };
         let mut digest = [0u8; DIGEST_LEN];
-        // Safe: `context` is a valid CC_SHA256_CTX for the three calls,
-        // `input` is valid for `len` bytes, and Final writes exactly 32
+        // Safe: `context` is a valid CC_SHA256_CTX for every call, each
+        // piece is valid for its `len` bytes, and Final writes exactly 32
         // bytes to `digest`. Each call returns 1 on success.
         unsafe {
             assert_eq!(CC_SHA256_Init(&mut context), 1, "CC_SHA256_Init failed");
-            assert_eq!(CC_SHA256_Update(&mut context, input.as_ptr(), len), 1, "CC_SHA256_Update failed");
+            for piece in pieces {
+                let len = u32::try_from(piece.len()).expect("CC_SHA256_Update takes a 32-bit length");
+                assert_eq!(CC_SHA256_Update(&mut context, piece.as_ptr(), len), 1, "CC_SHA256_Update failed");
+            }
             assert_eq!(CC_SHA256_Final(digest.as_mut_ptr(), &mut context), 1, "CC_SHA256_Final failed");
         }
         digest
@@ -1881,6 +2018,10 @@ mod common_crypto {
 mod common_crypto {
     /// Never called: Roster::new rejects the contender off Apple.
     pub fn sha256(_input: &[u8]) -> [u8; 32] {
+        unreachable!("CommonCrypto SHA-256 is an Apple-only contender")
+    }
+
+    pub fn sha256_pieces(_pieces: &mut dyn Iterator<Item = &[u8]>) -> [u8; 32] {
         unreachable!("CommonCrypto SHA-256 is an Apple-only contender")
     }
 }
@@ -2328,13 +2469,13 @@ fn long_cell_wants_sample(taken: &[u64], slot: usize) -> bool {
 fn calibrate_batch(
     algorithm: Algorithm,
     input: &[u8],
-    messages: usize,
+    point: Point,
 ) -> (usize, u128) {
     let mut iterations = 1usize;
 
     loop {
         let started = sample_clock::now();
-        run_batch(algorithm, input, messages, iterations);
+        run_batch(algorithm, input, point, iterations);
         let elapsed_ns = u128::from(sample_clock::since_ns(started));
 
         /*
@@ -2731,7 +2872,8 @@ fn detect_kernels(algorithm: Algorithm, use_case: UseCase) -> Kernels {
         Algorithm::AbBlake3 => detect_ab_blake3_kernels(),
     };
     match use_case {
-        UseCase::OneMessage => one_message,
+        /* A stream runs the one-message kernels piece by piece. */
+        UseCase::OneMessage | UseCase::Streaming => one_message,
         UseCase::ManyMessages if algorithm == Algorithm::AbBlake3 => detect_ab_blake3_many_kernels(),
         UseCase::ManyMessages if algorithm == Algorithm::Blake3Servil => {
             servil_kernels(blake3_servil::kernel_report_many())
@@ -3102,6 +3244,7 @@ fn checks(roster: &Roster, results: &Results, samples: &RunSamples) -> (Vec<Stri
                     ([one], _) => POINTS[*one].name(),
                     ([first, .., last], UseCase::ManyMessages) => format!("{} to {} messages", POINTS[*first].label, POINTS[*last].label),
                     ([first, .., last], UseCase::OneMessage) => format!("{} to {}", POINTS[*first].label, POINTS[*last].label),
+                    ([first, .., last], UseCase::Streaming) => format!("{} to {} streamed", POINTS[*first].label, POINTS[*last].label),
                     ([], _) => unreachable!("a run holds a point"),
                 };
                 /* The runs of consecutive points where `flag` holds. */
@@ -3143,7 +3286,7 @@ fn checks(roster: &Roster, results: &Results, samples: &RunSamples) -> (Vec<Stri
 
                 /* Larger work slower per unit than a size that divides it, runs sharing that size. */
                 let size = |index: usize| match use_case {
-                    UseCase::OneMessage => POINTS[index].bytes,
+                    UseCase::OneMessage | UseCase::Streaming => POINTS[index].bytes,
                     UseCase::ManyMessages => POINTS[index].messages,
                 };
                 /* For each point: the divisor it is most slower than, with the verdict. */
@@ -4040,6 +4183,7 @@ fn write_plot(svg: &mut String, plot: &Plot, roster: &Roster, results: &Results,
     let heading_note = format!("{} · {}", plot.scenario.subtitle(), match plot.use_case {
         UseCase::OneMessage => "one input of the size per call",
         UseCase::ManyMessages => "a call per message, or per batch where the crate offers one; BLAKE3 mt sits out",
+        UseCase::Streaming => "the crate's incremental API: update per 64 KiB piece, then finalize; ab-blake3 sits out",
     });
     writeln!(
         svg,
@@ -4829,7 +4973,7 @@ fn contender_provenance_lines(
             algorithm.mode(),
         )],
         Algorithm::Blake3Servil => vec![
-            format!("{name}: {} · hash, hash_many for a batch", short_git_source(BLAKE3_SERVIL_SOURCE_INFO)),
+            format!("{name}: {} · hash, hash_many for a batch, Hasher::update for a stream", short_git_source(BLAKE3_SERVIL_SOURCE_INFO)),
             format!("{name}: single-threaded · platform {platform}"),
         ],
         Algorithm::Sha256CommonCrypto => vec![format!("{name}: {} · {}", algorithm.mode(), kernels.kernels[0].name)],
@@ -4847,7 +4991,7 @@ fn contender_provenance_lines(
             format!("{name}: {}", algorithm.thread_resources().expect("BLAKE3 mt runs on Rayon's pool")),
         ],
         Algorithm::Blake3ServilMt => vec![
-            format!("{name}: {} · hash_multithreaded, hash_many_multithreaded for a batch", short_git_source(BLAKE3_SERVIL_SOURCE_INFO)),
+            format!("{name}: {} · hash_multithreaded, hash_many_multithreaded for a batch, Hasher::update_multithreaded for a stream", short_git_source(BLAKE3_SERVIL_SOURCE_INFO)),
             format!("{name}: multithreaded on the fork's own threads · platform {platform}"),
         ],
         Algorithm::AbBlake3 => vec![format!(
@@ -4908,7 +5052,7 @@ fn write_interaction_script(
             json_string(plot.use_case.rate_unit()),
             json_string(plot.use_case.rate_unit_long()),
             json_string(match plot.use_case {
-                UseCase::OneMessage => "Nanoseconds per byte",
+                UseCase::OneMessage | UseCase::Streaming => "Nanoseconds per byte",
                 UseCase::ManyMessages => "Nanoseconds per message",
             }),
         )
@@ -5962,7 +6106,8 @@ mod correctness_tests {
         let algorithms: Vec<_> = Algorithm::ALL.into_iter()
             .filter(|a| a.availability().is_ok()).collect();
         for &(len, seed, _) in test_vectors::VECTORS {
-            check_input(&algorithms, &make_input_seeded(len, seed), 1, seed);
+            check_input(&algorithms, &make_input_seeded(len, seed), Point::one("", len), seed);
+            check_input(&algorithms, &make_input_seeded(len, seed), Point::streamed("", len), seed);
         }
     }
 
@@ -5982,7 +6127,7 @@ mod correctness_tests {
             .filter(|a| a.availability().is_ok()).collect();
         for point in &POINTS[UseCase::ManyMessages.points()] {
             for seed in [0, 1] {
-                check_input(&algorithms, &make_input_seeded(point.bytes, seed), point.messages, seed);
+                check_input(&algorithms, &make_input_seeded(point.bytes, seed), *point, seed);
             }
         }
         assert_eq!(test_vectors::MANY_VECTORS.len(), 2 * BATCH_COUNT, "two seeds per batch size");
@@ -5991,7 +6136,11 @@ mod correctness_tests {
     #[test]
     fn use_case_axes_are_contiguous_and_cover_every_point() {
         assert_eq!(UseCase::OneMessage.points(), 0..INPUT_COUNT);
-        assert_eq!(UseCase::ManyMessages.points(), INPUT_COUNT..POINT_COUNT);
+        assert_eq!(UseCase::ManyMessages.points(), INPUT_COUNT..INPUT_COUNT + BATCH_COUNT);
+        assert_eq!(UseCase::Streaming.points(), INPUT_COUNT + BATCH_COUNT..POINT_COUNT);
+        for (one, streamed) in POINTS[UseCase::OneMessage.points()].iter().zip(&POINTS[UseCase::Streaming.points()]) {
+            assert_eq!((one.label, one.bytes), (streamed.label, streamed.bytes), "the streamed axis repeats the one-message sizes");
+        }
         assert!(POINTS[UseCase::ManyMessages.points()].iter().all(|p| p.bytes == p.messages * MESSAGE_LEN));
     }
 
@@ -6003,7 +6152,7 @@ mod correctness_tests {
             (Algorithm::Sha1Dc, "da39a3ee5e6b4b0d3255bfef95601890afd80709"),
         ] {
             let mut calls = 0;
-            hash_batch(algorithm, &[], 1, 3, |digest| {
+            hash_batch(algorithm, &[], Point::one("", 0), 3, |digest| {
                 let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
                 assert_eq!(hex, expected);
                 calls += 1;

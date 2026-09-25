@@ -19,7 +19,7 @@ checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
 name = "bench-hashes"
-version = "0.6.0+4693c2fe4a275c15421e987cd95ee1d0331a7b8d"
+version = "0.7.0+115ddb91e7ab86e85e9430de171de1cf2347834e"
 dependencies = [
  "ab-blake3",
  "blake3",
@@ -47,7 +47,7 @@ dependencies = [
 [[package]]
 name = "blake3-servil"
 version = "0.1.0+7fe31c3f411a7cad7e13ce104fae40d4eb2e2f75"
-source = "git+https://github.com/johnservil/BLAKE3?branch=servil#0b8629c4e63bcb3da330326a7791c9162d401a70"
+source = "git+https://github.com/johnservil/BLAKE3?branch=servil#c6d61a61bcab353e1fa7e0003691c1e53dbb4c5d"
 dependencies = [
  "arrayvec",
  "cc",

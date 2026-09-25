@@ -50,8 +50,9 @@ benchmark.
 ## Rules that keep results comparable
 
 - **Contenders are black boxes.** The benchmark lists a contender, calls
-  its plain entry point (single-threaded, multithreaded, or a batch call)
-  with no pool, cap, or wrapper of its own, and asks the fork for its
+  its plain entry point (single-threaded, multithreaded, a batch call, or
+  its incremental API for a stream) with no pool, cap, or wrapper of its
+  own, and asks the fork for its
   `kernel_report()`. A contender without a batch entry point hashes a
   batch as `for m in batch { hash(m) }`.
 - **Expected digests come from independent implementations**: the BLAKE3
@@ -77,8 +78,9 @@ folder name of its own.
 
 A contender is a variant of `Algorithm` in `src/main.rs`, with an entry
 in `Algorithm::ALL`, a key, a name, a colour, a provenance string, a mode
-description, a kernel description (`detect_kernels`), and an arm in
-`hash_batch`. The harness handles selection, interleaving, checking, and
+description, a kernel description (`detect_kernels`), an arm in
+`hash_batch`, and one in `hash_stream` (or `takes_part` false for the
+streamed use case). The harness handles selection, interleaving, checking, and
 reporting for any count from two to eight.
 
 ## Maintainers' notes

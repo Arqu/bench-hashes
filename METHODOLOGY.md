@@ -3,11 +3,15 @@
 This file explains what a run measures, how it keeps the numbers honest,
 and what each contender runs. [README.md](README.md) says how to run it.
 
-Every run measures each contender in two use cases and two scenarios.
+Every run measures each contender in three use cases and two scenarios.
 **One message per call**: a call hashes one input, at twenty-seven sizes
 from 64 B to 128 MiB, reported per byte. **Many messages per call**: a
 call hashes a batch of 64-byte messages, at twenty-four batch sizes from
-1 to 262144 messages, reported per message. **Solo**: one copy of the
+1 to 262144 messages, reported per message. **Streamed**: the same
+inputs as one message, fed to the contender's incremental API (an update
+per 64 KiB piece, the last one shorter, then finalize), so the
+implementation never learns the total size in advance; reported per
+byte. **Solo**: one copy of the
 contender, the machine otherwise idle. **Shared**: two copies at once.
 The report and the graph show each use case once per scenario, solo
 first.
@@ -56,6 +60,21 @@ time on the platform's hardware counter (`CLOCK_UPTIME_RAW` on Darwin,
 `CLOCK_MONOTONIC` on Linux, via `std::time::Instant`), so a throttled
 clock, a busy SME unit, or a GPU's latency counts as the user would
 feel it.
+
+## The streamed use case
+
+A program that reads a file or a socket hands a hash its input piece by
+piece: `update` per read, then `finalize`. The streamed axis measures
+that at the one-message sizes, with pieces of 64 KiB (a common read
+buffer): an input below 64 KiB is one update, a larger one an update per
+piece. Every contender takes part through its incremental API
+(`Hasher::update` in both BLAKE3 crates, `update_rayon` for BLAKE3 mt,
+`Hasher::update_multithreaded` for BLAKE3 servil mt, `Digest::update`
+in sha2 and sha1-checked, ring's `Context::update`, CommonCrypto's
+`CC_SHA256_Update`) but ab-blake3, which has none. The expected digests
+are the one-message ones. Not knowing the total costs where a one-shot
+call plans for it: a BLAKE3 `Hasher` hashes the whole subtrees it can
+and holds back the last chunk until `finalize`.
 
 ## The many-messages use case
 
@@ -309,8 +328,7 @@ The contenders run in a Williams design: a set of orders that together
 place every contender in every position equally often and realise every
 "Y right after X" adjacency equally often — the balance all permutations
 would give (n orders for an even count of contenders, 2n for odd). Point
-order (the fifty-one input sizes and batch sizes of the two use cases
-together) rotates independently. Each contender/point combination is
+order (the seventy-eight points of the three use cases together) rotates independently. Each contender/point combination is
 calibrated separately so its timed samples last about 1 ms each.
 
 Each combination collects 96 solo samples and 192 shared ones (fewer
@@ -365,7 +383,7 @@ determined. The text report marks such cells with `~`.
 
 ## The graph
 
-The SVG shows four plots, each use case solo and then shared, each with
+The SVG shows six plots, each use case solo and then shared, each with
 median lines and confidence bands on a log-log grid.
 
 A switch above the first y axis flips every plot between rate (the
