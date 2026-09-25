@@ -8,47 +8,59 @@ principles are in both repositories' `AGENTS.md`; the fork's hardware
 facts, design, and rejected ideas are in its `NOTES-servil.md` (read it
 before touching kernels or the pool); this repository's are in `NOTES.md`.
 
+## Resume here (checkpoint, September 25, 2026, night)
+
+Zooko is asleep; work autonomously with the usual practices (candidate
+branches, the gate, probes on the Mac, notes, commits). In order:
+
+1. **Promote `candidate/sme2-flat`** (fork, pushed, a3aa406): the flat walk
+   for whole subtrees of 256 KiB to 1 MiB on SME2, with the 18-chunk
+   kernel (16 SME2 lanes + 2 integer chunks; `tools/gen_sme2_hybrid.py`,
+   `c/blake3_sme2_hybrid_aarch64.S`, `sme2::compress_subtree_flat`). Done:
+   lib suites 70 / 67 / 57; the VM check (hook): no regression, faster
+   256 KiB -6.3%, 1 MiB -7.1%, 3 MiB -4.8%. To do: doc tests, vectors,
+   bench tests (patched); Mac `perf_regress compare servil
+   candidate/sme2-flat` (runner job); update `kernel_report()` (lib.rs,
+   about line 1304: add the flat walk from 256 KiB, "SME2 groups with an
+   integer lane"); fast-forward, gate note (`git notes --ref perf`), push,
+   delete the branch; pin bench-hashes (`cargo update -p blake3-servil`),
+   re-record both machines (Mac: runner job, `--all`; rerun if its load
+   line says busy), commit, push. Then consider widening the flat walk
+   (below 256 KiB; the Hasher's pieces) with measurements.
+2. **The `efficient` module** (Zooko approved): `blake3_servil::efficient::
+   {hash, hash_many, hash_multithreaded, Hasher}`, same results, tuned for
+   E-cores and energy: no SME2 unless measured cheaper, NEON plans without
+   the second scalar lane (the "minimax plans", E +16-24%), few threads,
+   workers that sleep. The default functions stay P-core first.
+3. **An E-core scenario and an energy probe** to judge step 2: the cells at
+   background QoS; `proc_pid_rusage` energy (`ri_billed_energy`, nJ),
+   checked for reliability first.
+4. Then, in Zooko's order of interest: the **SME2 thread** for mt mode (the
+   calling thread streams SME2 continuously, integer lanes beside, workers
+   NEON; two SME2 units may be reachable: github.io/blake3-sme2 measured
+   two SME2 threads at 2x one); the **pipelined streaming hasher** (below);
+   a **"for best performance"** section in the API docs and README; the
+   single-session tree (chunks, parents, root in one streaming session).
+
 ## Where things stand (September 25, 2026)
 
-- **Three audiences, three sets of documents** (fork AGENTS.md,
-  "Audiences"): bench-hashes' README.md (run, read, share; the Pages home
-  page) and METHODOLOGY.md for people who run it; CONTRIBUTING.md in both
-  repositories for other developer teams; AGENTS, NEXT-STEPS, NOTES for
-  us.
-- **bench-hashes runs from a plain clone**: `cargo run --release` builds
-  the fork from git at the commit Cargo.lock pins, runs in full
-  (`--quick` for seconds), and measures BLAKE3 servil, servil mt, sha2,
-  and ring. The graph opens on servil mt, SHA-256 ring, and
-  crates.io BLAKE3; its labels no longer overlap.
-- Fork `/workspace`, branch **`servil`**: release **blake3-servil 0.1.0**
-  (tag `v0.1.0+7fe31c3...`, commit 0b8629c, made by `tools/gen-ver.py`,
-  Zooko's technique), with the overlap group (accepted trade) and the
-  parent kernels with a scalar lane. bench-hashes 0.7.0 pins it.
-- Benchmark branch `main` (0.7.0 released before it): **the streamed use
-  case** (update per 64 KiB piece, solo and shared). Records for both
-  machines: fork c6d61a6 (`Hasher::update_multithreaded`), full `--all`
-  runs, both quiet (Mac runner job 141: 0.23 CPUs; VM 0.03). Mac, solo,
-  streamed against one-shot: servil 64 B 0.92 against 0.70 ns/B, 3 KiB
-  0.58 against 0.33, 1 MiB 0.205 against 0.174; servil mt 1 MiB 0.131
-  against 0.032 (the pool per 64 KiB piece); BLAKE3 mt (`update_rayon`)
-  about 1 ns/B.
-- **Crux probe answered** (probe/sme-scalar, job 142): integer work runs
-  beside the SME unit at no cost (fork NOTES, "The core's integer units
-  run beside the SME unit"); next, an SME2 kernel with integer lanes (16
-  SME2 chunks + 4 integer chunks per group, about +25%).
-- **Next** (Zooko, September 25): the SME2-thread design: in st mode the calling thread uses SME2 as much as sizes justify
-  (the SME2 lock kept, a doc warning about concurrent callers); in mt mode
-  the calling thread is the one SME2 thread, streaming continuously,
-  integer lanes beside it if the crux probe allows, workers NEON only.
-  Contract: make all calls from one thread for best speed.
-- **The minimax list** (`pypy3 tools/losses.py <samples.tsv>` in the fork):
-  48 cells on each machine, every one lost to SHA-256 or SHA-256 ring: one
-  message to 4 KiB (solo and shared, servil and servil mt), 2304, 3839,
-  4470 B, and a batch of one message. Servil solo against SHA-256 ring on
-  the Mac (e16e836): 2 KiB 1.53x slower, 3 KiB 1.11x, 4 KiB 1.06x, 2304 B
-  1.47x, 3839 B 1.11x, 4470 B 1.18x; 7935 B 0.89x and 8 KiB 0.86x
-  (faster). Up to 2 KiB this is structural (NOTES: a chunk's dependency
-  chain).
+- **Decisions of the day** (fork AGENTS.md): the recommended usage first
+  (one thread makes all calls; shared and misuse measured and reported in
+  every benchmark, no longer a veto); `perf_regress` holds a change past 3%
+  in any solo cell or 10% in any shared cell; accepted trades need every
+  slowed cell ahead of every competitor and Zooko's decision; measure wall
+  time and cycles, both, always (`examples/support/clocks.rs`).
+- **Findings** (fork NOTES-servil.md): integer work runs beside the SME
+  unit for free (job 142); streaming mode lowers the P clock to 3.93 GHz
+  from 4.51; the SME unit has a slow state (3.2 cycles per ns) after idle
+  time; the 18-chunk kernel is faster on P (-10%) and E (cycles -2%).
+- Fork `servil`: release **blake3-servil 0.1.0** (tag `v0.1.0+7fe31c3...`,
+  `tools/gen-ver.py`, Zooko's technique), then `Hasher::update_multithreaded`
+  (c6d61a6) and docs. bench-hashes: 0.7.0 released, then the **streamed use
+  case** (64 KiB pieces, solo and shared; six plots); records on fork
+  c6d61a6, both quiet.
+- Kept probes: `probe/sme-scalar`, `probe/sme2-hybrid`, `probe/neon-cold`,
+  `probe/mixed-parents`, `probe/overlap-old`/`-new`.
 
 ## How to work
 
