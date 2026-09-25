@@ -20,14 +20,20 @@ before touching kernels or the pool); this repository's are in `NOTES.md`.
   (`--quick` for seconds), and measures BLAKE3 servil, servil mt, sha2,
   and ring. The graph opens on servil mt, SHA-256 ring, and
   crates.io BLAKE3; its labels no longer overlap.
-- Fork `/workspace`, branch **`servil`** at de1f2f8: parent kernels with a
-  scalar lane (p3/p5/p7/p9; batches of 3-15 one-block messages 8-38%
-  faster on P- and E-cores and the VM), gate note attached; no candidates
-  pending. bench-hashes pins it.
-- Benchmark branch `main`, pushed. Records for both machines: fork
-  de1f2f8, full `--all` runs, both quiet (Mac runner job 124: 0.51 CPUs
-  of other load; VM 0.01). Mac batches: 3 messages 30.3 -> 19.5 ns, 6
-  24.5 -> 19.2, 12 20.4 -> 18.1.
+- Fork `/workspace`, branch **`servil`**: release **blake3-servil 0.1.0**
+  (tag `v0.1.0+7fe31c3...`, commit 0b8629c, made by `tools/gen-ver.py`,
+  Zooko's technique), with the overlap group (accepted trade) and the
+  parent kernels with a scalar lane. bench-hashes 0.7.0 pins it.
+- Benchmark branch `main`, released as 0.7.0. Records for both machines:
+  fork 0b8629c, full `--all` runs, both quiet (Mac runner job 139: 0.49
+  CPUs of other load; VM 0.01; job 138 read busy and was rerun).
+- **Next** (Zooko, September 25): the streaming `Hasher` use case in the
+  benchmark (pieces of 64 KiB, solo and shared); then the SME2-thread
+  design: in st mode the calling thread uses SME2 as much as sizes justify
+  (the SME2 lock kept, a doc warning about concurrent callers); in mt mode
+  the calling thread is the one SME2 thread, streaming continuously,
+  integer lanes beside it if the crux probe allows, workers NEON only.
+  Contract: make all calls from one thread for best speed.
 - **The minimax list** (`pypy3 tools/losses.py <samples.tsv>` in the fork):
   48 cells on each machine, every one lost to SHA-256 or SHA-256 ring: one
   message to 4 KiB (solo and shared, servil and servil mt), 2304, 3839,
