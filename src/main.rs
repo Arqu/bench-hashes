@@ -2678,6 +2678,13 @@ impl Kernels {
         Self { platform, kernels }
     }
 
+    /// The kernels that start at `bytes` or below: those an input of at
+    /// most `bytes` can reach.
+    fn up_to(mut self, bytes: usize) -> Self {
+        self.kernels.retain(|kernel| kernel.first <= bytes);
+        self
+    }
+
     /// Index of the kernel for an input of `bytes` (a batch's bytes in all).
     fn kernel_index_for(&self, bytes: usize) -> usize {
         self.kernels
@@ -2872,8 +2879,9 @@ fn detect_kernels(algorithm: Algorithm, use_case: UseCase) -> Kernels {
         Algorithm::AbBlake3 => detect_ab_blake3_kernels(),
     };
     match use_case {
-        /* A stream runs the one-message kernels piece by piece. */
-        UseCase::OneMessage | UseCase::Streaming => one_message,
+        UseCase::OneMessage => one_message,
+        /* A stream runs the one-message kernels piece by piece, so those that start past PIECE_LEN never run. */
+        UseCase::Streaming => one_message.up_to(PIECE_LEN),
         UseCase::ManyMessages if algorithm == Algorithm::AbBlake3 => detect_ab_blake3_many_kernels(),
         UseCase::ManyMessages if algorithm == Algorithm::Blake3Servil => {
             servil_kernels(blake3_servil::kernel_report_many())
